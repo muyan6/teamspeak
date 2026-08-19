@@ -1472,6 +1472,12 @@ footer {
     width: 100%;
     min-height: 44px;
   }
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .elastic-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .modal .tbl {
     min-width: 640px;
   }
