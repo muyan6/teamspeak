@@ -751,12 +751,22 @@ export class StatsService {
     const startKey = range === 'week' ? this.weekStartKey() : this.monthStartKey();
     return this.db
       .prepare(
-        `SELECT channel_name as channelName, SUM(member_seconds) as memberSeconds
-         FROM channel_daily_activity WHERE server_key = ? AND day >= ?
-         GROUP BY channel_id HAVING memberSeconds > 0
-         ORDER BY memberSeconds DESC LIMIT ?`
+        `WITH totals AS (
+           SELECT channel_id, SUM(member_seconds) AS memberSeconds
+           FROM channel_daily_activity WHERE server_key = ? AND day >= ?
+           GROUP BY channel_id
+         )
+         SELECT (
+           SELECT latest.channel_name
+           FROM channel_daily_activity AS latest
+           WHERE latest.server_key = ? AND latest.channel_id = totals.channel_id AND latest.day >= ?
+           ORDER BY latest.day DESC
+           LIMIT 1
+         ) AS channelName, totals.memberSeconds
+         FROM totals WHERE totals.memberSeconds > 0
+         ORDER BY totals.memberSeconds DESC LIMIT ?`
       )
-      .all(this.serverKey, startKey, limit) as Array<{ channelName: string; memberSeconds: number }>;
+      .all(this.serverKey, startKey, this.serverKey, startKey, limit) as Array<{ channelName: string; memberSeconds: number }>;
   }
 
   getCurrentOnline(): Array<{

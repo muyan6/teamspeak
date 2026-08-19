@@ -9,6 +9,7 @@ export interface ManagedSubsite {
   ts3Host: string;
   queryPort: number;
   serverPort: number;
+  serverId: number;
   username: string;
   password: string;
   publicHost: string;
@@ -31,6 +32,7 @@ export interface CreateManagedSubsiteInput {
   ts3Host?: unknown;
   queryPort?: unknown;
   serverPort?: unknown;
+  serverId?: unknown;
   username?: unknown;
   password?: unknown;
   publicHost?: unknown;
@@ -51,6 +53,12 @@ function asText(value: unknown): string {
 function asPort(value: unknown, fallback: number): number {
   const parsed = Number(value ?? fallback);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) throw new Error('端口必须是 1 到 65535 的整数');
+  return parsed;
+}
+
+function asServerId(value: unknown, fallback = 0): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error('虚拟服务器 ID 必须是非负整数');
   return parsed;
 }
 
@@ -84,6 +92,7 @@ function fromRow(row: Record<string, unknown>, credentialCipher: CredentialCiphe
     ts3Host: String(row.ts3_host),
     queryPort: Number(row.query_port),
     serverPort: Number(row.server_port),
+    serverId: Number(row.server_id ?? 0),
     username: String(row.query_username),
     password: credentialCipher.decrypt(String(row.query_password)),
     publicHost: String(row.public_host),
@@ -111,6 +120,7 @@ export class MultiSubsiteRegistry {
       ts3_host TEXT NOT NULL,
       query_port INTEGER NOT NULL,
       server_port INTEGER NOT NULL,
+      server_id INTEGER NOT NULL DEFAULT 0,
       query_username TEXT NOT NULL,
       query_password TEXT NOT NULL,
       public_host TEXT NOT NULL,
@@ -120,6 +130,10 @@ export class MultiSubsiteRegistry {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )`);
+    const columns = db.prepare('PRAGMA table_info(managed_subsites)').all<{ name: string }>();
+    if (!columns.some((column) => column.name === 'server_id')) {
+      db.exec('ALTER TABLE managed_subsites ADD COLUMN server_id INTEGER NOT NULL DEFAULT 0');
+    }
     db.exec(`CREATE TABLE IF NOT EXISTS multi_subsite_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -182,13 +196,14 @@ export class MultiSubsiteRegistry {
     if (!adminPassword || adminPassword.length < 8) throw new Error('分站后台密码至少需要 8 个字符');
     const queryPort = asPort(input.queryPort, 10011);
     const serverPort = asPort(input.serverPort, 9987);
+    const serverId = asServerId(input.serverId);
     const publicHost = asText(input.publicHost) || ts3Host;
     const publicPort = asPort(input.publicPort, serverPort);
     const now = Date.now();
     try {
       const result = this.db.prepare(`INSERT INTO managed_subsites
-        (slug, display_name, domain, ts3_host, query_port, server_port, query_username, query_password, public_host, public_port, admin_password, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+        (slug, display_name, domain, ts3_host, query_port, server_port, server_id, query_username, query_password, public_host, public_port, admin_password, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
         .run(
           slug,
           displayName,
@@ -196,6 +211,7 @@ export class MultiSubsiteRegistry {
           ts3Host,
           queryPort,
           serverPort,
+          serverId,
           username,
           this.credentialCipher.encrypt(password),
           publicHost,
@@ -217,12 +233,13 @@ export class MultiSubsiteRegistry {
     return this.get(id) as ManagedSubsite;
   }
 
-  updateTs3Config(id: number, config: { host: string; queryPort: number; serverPort: number; username: string; password: string }): void {
-    const result = this.db.prepare(`UPDATE managed_subsites SET ts3_host = ?, query_port = ?, server_port = ?, query_username = ?, query_password = ?, updated_at = ? WHERE id = ?`)
+  updateTs3Config(id: number, config: { host: string; queryPort: number; serverPort: number; serverId: number; username: string; password: string }): void {
+    const result = this.db.prepare(`UPDATE managed_subsites SET ts3_host = ?, query_port = ?, server_port = ?, server_id = ?, query_username = ?, query_password = ?, updated_at = ? WHERE id = ?`)
       .run(
         config.host,
         config.queryPort,
         config.serverPort,
+        config.serverId,
         config.username,
         this.credentialCipher.encrypt(config.password),
         Date.now(),

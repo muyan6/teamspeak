@@ -99,11 +99,21 @@ export class WeeklyChampionService {
     let granted = false;
     const alreadyWinner = cfg.lastWinnerClientDbId === clientDbId;
     if (!alreadyWinner) {
-      // 先移除上一任冠军的服务器组，避免多人同时持有
-      if (cfg.lastWinnerClientDbId) {
-        await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
-      }
       granted = await this.ts3.addClientToServerGroup(cfg.serverGroupId, clientDbId);
+      if (!granted) {
+        this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE id = 1').run(Date.now());
+        return { nickname: top.nickname, seconds: top.seconds, granted: false };
+      }
+
+      // 先确认新冠军已获得权限，再移除旧冠军；移除失败时回滚新权限并保留旧状态供下轮重试。
+      if (cfg.lastWinnerClientDbId) {
+        const removed = await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
+        if (!removed) {
+          await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, clientDbId);
+          this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE id = 1').run(Date.now());
+          return { nickname: top.nickname, seconds: top.seconds, granted: false };
+        }
+      }
     }
 
     this.db

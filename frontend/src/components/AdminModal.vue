@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, ref } from 'vue';
-import { api } from '../api';
+import { api, authState } from '../api';
 
 type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tutorial' | 'ts3' | 'modules' | 'subsites';
 
 const password = ref('');
-const authed = ref(api.isAuthed());
+const authed = authState;
 const loginError = ref('');
 const isPlatformAdmin = ref(false);
 const activeTab = ref<AdminTab>('elastic');
@@ -23,7 +23,6 @@ async function login(): Promise<void> {
   loginError.value = '';
   try {
     await api.login(password.value);
-    authed.value = true;
   } catch (error) {
     loginError.value = (error as Error).message;
   }
@@ -31,7 +30,6 @@ async function login(): Promise<void> {
 
 function logout(): void {
   api.logout();
-  authed.value = false;
   password.value = '';
 }
 

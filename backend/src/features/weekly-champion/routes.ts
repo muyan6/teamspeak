@@ -3,7 +3,7 @@ import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
 
 export function registerWeeklyChampionRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
-  router.get('/champion/config', (_req, res) => {
+  router.get('/champion/config', admin, (_req, res) => {
     res.json(deps.champion.getConfig());
   });
 

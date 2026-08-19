@@ -164,6 +164,7 @@ function loadTs3Config(config: AppConfig, configStore: SiteConfigStore, credenti
     host: saved.host || config.ts3.host,
     queryPort: saved.queryPort ?? config.ts3.queryPort,
     serverPort: saved.serverPort ?? config.ts3.serverPort,
+    serverId: saved.serverId ?? config.ts3.serverId,
     username: saved.username || config.ts3.username,
     password,
   };

@@ -65,7 +65,7 @@ npm run dev
 | `TS3_HOST` | 被监控 TS3 服务器地址；仅作为首次启动时的迁移兜底，推荐在后台填写 | 否 |
 | `TS3_QUERY_PORT` | ServerQuery 端口，默认 `10011` | 否 |
 | `TS3_SERVER_PORT` | 语音端口，默认 `9987` | 否 |
-| `TS3_SERVER_ID` | 虚拟服务器 ID，默认 `1` | 否 |
+| `TS3_SERVER_ID` | 虚拟服务器 ID；留空或设为 `0` 时按语音端口选择，填写正整数时按 ID 选择 | 否 |
 | `TS3_QUERY_USERNAME` | ServerQuery 账号，默认 `serveradmin` | 否 |
 | `TS3_QUERY_PASSWORD` | ServerQuery 密码；仅作为首次启动时的迁移兜底，推荐在后台填写 | 否 |
 | `TS3_PUBLIC_HOST` | 站点对外展示的地址（留空则显示 `TS3_HOST`） | 否 |

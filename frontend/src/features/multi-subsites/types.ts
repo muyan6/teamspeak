@@ -6,6 +6,7 @@ export interface ManagedSubsite {
   ts3Host: string;
   queryPort: number;
   serverPort: number;
+  serverId: number;
   username: string;
   publicHost: string;
   publicPort: number;
@@ -23,6 +24,7 @@ export interface CreateManagedSubsiteInput {
   ts3Host: string;
   queryPort: number;
   serverPort: number;
+  serverId: number;
   username: string;
   password: string;
   publicHost?: string;

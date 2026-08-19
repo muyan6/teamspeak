@@ -1,9 +1,12 @@
 import http from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockTs3Server } from './mock-ts3-server.js';
-import { openDatabase } from '../src/db/database.js';
-import { Ts3ClientWrapper } from '../src/ts3/client.js';
+import { AppDatabase, migrateStatsSchema, openDatabase, SCHEMA } from '../src/db/database.js';
+import { getTs3ServerKey, Ts3ClientWrapper } from '../src/ts3/client.js';
 import { StatsService } from '../src/services/stats.js';
 import { ElasticChannelService } from '../src/features/elastic-channels/service.js';
 import { AchievementService } from '../src/features/achievements/service.js';
@@ -42,6 +45,77 @@ describe('TS3 监控后端核心链路', () => {
     expect(state).not.toBeNull();
     expect(state!.clientsOnline).toBe(2);
     expect(state!.maxClients).toBe(32);
+  });
+
+  it('统计表重建失败时回滚，并恢复旧版本遗留的临时表数据', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ts3-monitor-migration-'));
+    const failedPath = join(dir, 'failed.db');
+    const recoveryPath = join(dir, 'recovery.db');
+    const failedDb = new AppDatabase(failedPath);
+    try {
+      failedDb.exec(`CREATE TABLE channel_activity (
+        channel_id INTEGER NOT NULL,
+        channel_name TEXT NOT NULL,
+        parent_id INTEGER,
+        total_member_minutes INTEGER NOT NULL,
+        last_updated INTEGER NOT NULL
+      )`);
+      failedDb.exec(`INSERT INTO channel_activity VALUES (9, '旧频道', 0, 10, 1), (9, '旧频道', 0, 20, 2)`);
+      failedDb.exec(SCHEMA);
+
+      expect(() => migrateStatsSchema(failedDb)).toThrow();
+      expect(failedDb.prepare('SELECT COUNT(*) AS count FROM channel_activity').get<{ count: number }>()?.count).toBe(2);
+      expect(failedDb.prepare("SELECT name FROM sqlite_master WHERE name IN ('channel_activity__old', 'channel_activity__new')").all()).toHaveLength(0);
+    } finally {
+      failedDb.close();
+    }
+
+    const interruptedDb = new AppDatabase(recoveryPath);
+    interruptedDb.exec(`CREATE TABLE online_clients__old (
+      client_database_id INTEGER PRIMARY KEY,
+      unique_identifier TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      servergroup_ids TEXT,
+      channel_id INTEGER,
+      channel_name TEXT,
+      connected_time INTEGER,
+      last_seen INTEGER NOT NULL
+    )`);
+    interruptedDb.exec("INSERT INTO online_clients__old VALUES (7, 'uid-7', '恢复用户', '1', 1, '大厅', 1, 2)");
+    interruptedDb.close();
+
+    try {
+      const recoveredDb = openDatabase(recoveryPath);
+      expect(recoveredDb.prepare('SELECT server_key, nickname FROM online_clients WHERE client_database_id = 7').get()).toEqual({
+        server_key: 'legacy',
+        nickname: '恢复用户',
+      });
+      expect(recoveredDb.prepare("SELECT name FROM sqlite_master WHERE name = 'online_clients__old'").all()).toHaveLength(0);
+      recoveredDb.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('指定虚拟服务器 ID 时按 SID 选择，并隔离统计数据键', async () => {
+    const sidMock = new MockTs3Server(10014);
+    const sidClient = new Ts3ClientWrapper({
+      host: '127.0.0.1',
+      queryPort: 10014,
+      serverPort: 9987,
+      serverId: 42,
+      username: 'serveradmin',
+      password: '',
+    });
+    await sidMock.start();
+    try {
+      await sidClient.start();
+      expect(sidMock.selectedServer).toEqual({ type: 'sid', value: 42 });
+      expect(getTs3ServerKey(sidClient.getConfig())).toBe('127.0.0.1:10014:sid:42');
+    } finally {
+      sidClient.stop();
+      sidMock.stop();
+    }
   });
 
   it('读取客户端列表', async () => {
@@ -266,6 +340,66 @@ describe('TS3 监控后端核心链路', () => {
     await champion.check();
     expect(grants).toEqual([[7, 333]]);
     championDb.close();
+  });
+
+  it('周冠军授予或旧冠军移除失败时保留原获奖者并允许下轮重试', async () => {
+    const championDb = openDatabase(':memory:');
+    const stats = { getTopUsers: () => [{ clientDatabaseId: 200, nickname: '新冠军', seconds: 3600 }] } as never;
+    const calls: string[] = [];
+    const champion = new WeeklyChampionService(championDb, {
+      addClientToServerGroup: async () => {
+        calls.push('add');
+        return false;
+      },
+      removeClientFromServerGroup: async () => {
+        calls.push('remove');
+        return true;
+      },
+    } as never, stats);
+    champion.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+    championDb.prepare('UPDATE champion_config SET last_winner_client_db_id = 100, last_winner_nickname = ? WHERE id = 1').run('旧冠军');
+
+    await champion.check();
+    await champion.check();
+    expect(calls).toEqual(['add', 'add']);
+    expect(champion.getConfig().lastWinnerClientDbId).toBe(100);
+
+    const rollbackCalls: string[] = [];
+    const rollbackChampion = new WeeklyChampionService(championDb, {
+      addClientToServerGroup: async () => {
+        rollbackCalls.push('add-new');
+        return true;
+      },
+      removeClientFromServerGroup: async (_groupId: number, clientDbId: number) => {
+        rollbackCalls.push(`remove-${clientDbId}`);
+        return clientDbId !== 100;
+      },
+    } as never, stats);
+    const result = await rollbackChampion.check();
+    expect(result?.granted).toBe(false);
+    expect(rollbackCalls).toEqual(['add-new', 'remove-100', 'remove-200']);
+    expect(rollbackChampion.getConfig().lastWinnerClientDbId).toBe(100);
+    championDb.close();
+  });
+
+  it('周期频道排行榜采用最新日期保存的频道名称', () => {
+    const channelsDb = openDatabase(':memory:');
+    const stats = new StatsService(channelsDb);
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const formatDay = (value: Date): string => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    const earlier = new Date(weekStart);
+    earlier.setDate(earlier.getDate() + 1);
+    const latest = new Date(weekStart);
+    latest.setDate(latest.getDate() + 2);
+    channelsDb.prepare('INSERT INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)')
+      .run('legacy', 5, '旧频道名', formatDay(earlier), 100);
+    channelsDb.prepare('INSERT INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)')
+      .run('legacy', 5, '新频道名', formatDay(latest), 200);
+
+    expect(stats.getTopChannels('week')).toEqual([{ channelName: '新频道名', memberSeconds: 300 }]);
+    channelsDb.close();
   });
 
   it('同步 ServerQuery 身份资料会回填 UID，且不修改本地统计时长', () => {

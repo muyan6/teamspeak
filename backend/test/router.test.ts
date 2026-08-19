@@ -67,6 +67,7 @@ describe('管理接口与配置回归', () => {
     token: string;
     savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }>;
     siteConfig: Map<string, string>;
+    clientDbListCalls: () => number;
   }> {
     const auth = new AuthService('test-password', 'test-secret');
     const siteConfig = new Map<string, string>();
@@ -86,6 +87,7 @@ describe('管理接口与配置回归', () => {
     }];
 
     const savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }> = [];
+    let clientDbListCalls = 0;
     const deps = {
       auth,
       configStore: {
@@ -125,7 +127,14 @@ describe('管理接口与配置回归', () => {
         connected: true,
         lastError: '',
         getChannels: async () => [],
-        getConfig: () => ({ host: 'localhost', queryPort: 10011, serverPort: 9987, username: 'serveradmin', password: '' }),
+        getClientDbList: async () => {
+          clientDbListCalls += 1;
+          return [
+            { clientDatabaseId: 1, uniqueIdentifier: 'uid-1', nickname: '重复昵称', created: 1, lastConnected: 1, totalConnections: 1 },
+            { clientDatabaseId: 2, uniqueIdentifier: 'uid-2', nickname: '重复昵称', created: 1, lastConnected: 1, totalConnections: 1 },
+          ];
+        },
+        getConfig: () => ({ host: 'localhost', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '' }),
         updateConfig: () => undefined,
       },
       publicServer: { host: 'localhost', port: 9987 },
@@ -140,7 +149,7 @@ describe('管理接口与配置回归', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
-    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs, siteConfig };
+    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs, siteConfig, clientDbListCalls: () => clientDbListCalls };
   }
 
   it('弹性频道接口要求管理员凭证，避免泄露频道密码', async () => {
@@ -187,6 +196,19 @@ describe('管理接口与配置回归', () => {
     expect(savedChampionConfigs).toEqual([{ enabled: 0, serverGroupId: null, checkIntervalHours: 24 }]);
   });
 
+  it('周冠军配置读取接口要求管理员凭证', async () => {
+    const { baseUrl, token } = await startRouter();
+    expect((await fetch(`${baseUrl}/champion/config`)).status).toBe(401);
+    expect((await fetch(`${baseUrl}/champion/config`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+  });
+
+  it('同名用户查询只拉取一次成员数据库', async () => {
+    const { baseUrl, clientDbListCalls } = await startRouter();
+    const response = await fetch(`${baseUrl}/stats/user?nickname=${encodeURIComponent('重复昵称')}`);
+    expect(response.status).toBe(409);
+    expect(clientDbListCalls()).toBe(1);
+  });
+
   it('TS3 连接密码以密文写入配置存储', async () => {
     const { baseUrl, token, siteConfig } = await startRouter();
     const response = await fetch(`${baseUrl}/admin/ts3-config`, {
@@ -196,6 +218,7 @@ describe('管理接口与配置回归', () => {
         host: 'ts3.example.com',
         queryPort: 10011,
         serverPort: 9987,
+        serverId: 3,
         username: 'serveradmin',
         password: 'query-password',
       }),
@@ -204,6 +227,7 @@ describe('管理接口与配置回归', () => {
     const stored = siteConfig.get('ts3Connection') || '';
     expect(stored).not.toContain('query-password');
     expect(JSON.parse(stored).password).toMatch(/^enc:v1:/);
+    expect(JSON.parse(stored).serverId).toBe(3);
   });
 
   it('教程与站点信息配置需要管理员凭证并能完整读写', async () => {

@@ -4,7 +4,7 @@ import { api } from '../../api';
 import type { Ts3ConnectionInfo } from '../../types';
 
 const connection = ref<Ts3ConnectionInfo | null>(null);
-const form = ref({ host: '', queryPort: 10011, serverPort: 9987, username: '', password: '' });
+const form = ref({ host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: '', password: '' });
 const saving = ref(false);
 const reconnecting = ref(false);
 const notice = ref('');
@@ -28,6 +28,7 @@ async function refreshConnection(updateForm = false): Promise<Ts3ConnectionInfo>
       host: config.host,
       queryPort: config.queryPort,
       serverPort: config.serverPort,
+      serverId: config.serverId,
       username: config.username,
       password: '',
     };
@@ -119,6 +120,10 @@ onBeforeUnmount(() => {
       <input v-model.number="form.serverPort" class="input" type="number" min="1" max="65535" />
     </div>
     <div class="field">
+      <label>虚拟服务器 ID（可选）</label>
+      <input v-model.number="form.serverId" class="input" type="number" min="0" step="1" />
+    </div>
+    <div class="field">
       <label>ServerQuery 账号</label>
       <input v-model="form.username" class="input" placeholder="serveradmin" />
     </div>
@@ -126,7 +131,7 @@ onBeforeUnmount(() => {
       <label>ServerQuery 密码</label>
       <input v-model="form.password" class="input" type="password" placeholder="留空保持原密码" />
     </div>
-    <p class="hint">保存后将立即使用新配置重新连接被监控的 TS3 服务器。公开显示地址不受影响。</p>
+    <p class="hint">虚拟服务器 ID 为 0 时按语音端口选择；填写正整数时按该 ID 选择。保存后将立即重新连接，公开显示地址不受影响。</p>
     <div class="modal-actions">
       <button class="btn primary" :disabled="saving" @click="save">{{ saving ? (reconnecting ? '连接检测中...' : '保存中...') : '保存并重连' }}</button>
     </div>

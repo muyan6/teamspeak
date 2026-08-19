@@ -27,6 +27,7 @@ export class MockTs3Server {
   channels: MockChannel[] = [];
   serverName = 'Mock TS3 Server';
   maxClients = 32;
+  selectedServer: { type: 'port' | 'sid'; value: number } | null = null;
   private nextClid = 100;
   private nextCid = 10;
   private nextDbId = 1000;
@@ -129,8 +130,14 @@ export class MockTs3Server {
     switch (cmd) {
       case 'login':
         return ok;
-      case 'use':
+      case 'use': {
+        const sid = params.get('sid') || args.find((arg) => /^\d+$/.test(arg));
+        const port = params.get('port');
+        this.selectedServer = sid
+          ? { type: 'sid', value: Number(sid) }
+          : { type: 'port', value: Number(port) };
         return ok;
+      }
       case 'version':
         return 'version=3.5.0 platform=linux build=12345\n' + ok;
       case 'whoami':

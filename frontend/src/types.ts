@@ -180,6 +180,7 @@ export interface Ts3ConnectionInfo {
   host: string;
   queryPort: number;
   serverPort: number;
+  serverId: number;
   username: string;
   hasPassword: boolean;
   connected: boolean;

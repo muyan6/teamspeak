@@ -52,7 +52,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       host: ts3Host,
       queryPort,
       serverPort: intEnv(env, 'TS3_SERVER_PORT', 9987),
-      serverId: intEnv(env, 'TS3_SERVER_ID', 1),
+      // 未显式设置时继续按语音端口选择虚拟服务器，避免改变已有部署的连接目标。
+      serverId: intEnv(env, 'TS3_SERVER_ID', 0),
       username: env.TS3_QUERY_USERNAME || 'serveradmin',
       password: env.TS3_QUERY_PASSWORD || '',
     },

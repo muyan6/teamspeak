@@ -38,7 +38,7 @@ class ManagedSubsiteRuntime {
     this.db = openDatabase(path.resolve(path.dirname(rootConfig.dbPath), 'subsites', `${subsite.slug}.db`));
     const config: AppConfig = {
       ...rootConfig,
-      ts3: { host: subsite.ts3Host, queryPort: subsite.queryPort, serverPort: subsite.serverPort, serverId: 1, username: subsite.username, password: subsite.password },
+      ts3: { host: subsite.ts3Host, queryPort: subsite.queryPort, serverPort: subsite.serverPort, serverId: subsite.serverId, username: subsite.username, password: subsite.password },
       publicServer: { host: subsite.publicHost, port: subsite.publicPort },
       site: { ...rootConfig.site, title: subsite.displayName, serverName: subsite.displayName, slug: subsite.slug, domain: subsite.domain },
     };
@@ -154,7 +154,7 @@ export class MultiSubsiteRuntimeManager {
 
   isManagedSubsiteHost(host: string): boolean {
     const normalized = host.toLowerCase().replace(/\.$/, '');
-    return this.registry.hasHost(normalized) || Boolean(this.registry.baseDomain && normalized.endsWith(`.${this.registry.baseDomain}`));
+    return this.registry.hasHost(normalized);
   }
 
   private start(subsite: ManagedSubsite): void {

@@ -9,7 +9,6 @@ export interface ElasticGroup {
   createThreshold: number;
   deleteThreshold: number;
   password: string | null;
-  channelGroupId: number | null;
   baseChannelId: number | null;
   maxChannels: number;
   enabled: number;
@@ -40,14 +39,13 @@ export class ElasticChannelService {
     createThreshold: number;
     deleteThreshold: number;
     password?: string;
-    channelGroupId?: number | null;
     baseChannelId?: number | null;
     maxChannels?: number;
   }): ElasticGroup {
     const info = this.db
       .prepare(
-        `INSERT INTO elastic_groups (name, name_prefix, create_threshold, delete_threshold, password, channel_group_id, base_channel_id, max_channels, enabled, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+        `INSERT INTO elastic_groups (name, name_prefix, create_threshold, delete_threshold, password, base_channel_id, max_channels, enabled, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`
       )
       .run(
         data.name,
@@ -55,7 +53,6 @@ export class ElasticChannelService {
         data.createThreshold,
         data.deleteThreshold,
         data.password ? this.credentialCipher.encrypt(data.password) : null,
-        data.channelGroupId ?? null,
         data.baseChannelId ?? null,
         data.maxChannels ?? 8,
         Date.now()
@@ -79,7 +76,6 @@ export class ElasticChannelService {
       createThreshold: row.create_threshold as number,
       deleteThreshold: row.delete_threshold as number,
       password: row.password ? this.credentialCipher.decrypt(String(row.password)) : null,
-      channelGroupId: (row.channel_group_id as number | null) ?? null,
       baseChannelId: (row.base_channel_id as number | null) ?? null,
       maxChannels: row.max_channels as number,
       enabled: row.enabled as number,

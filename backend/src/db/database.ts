@@ -234,7 +234,33 @@ export function openDatabase(dbPath: string): AppDatabase {
   return db;
 }
 
-function migrateStatsSchema(db: AppDatabase): void {
+function tableExists(db: AppDatabase, table: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
+function recoverInterruptedStatsRebuilds(
+  db: AppDatabase,
+  rebuilds: Array<{ table: string }>
+): void {
+  for (const { table } of rebuilds) {
+    const oldTable = `${table}__old`;
+    const newTable = `${table}__new`;
+    const hasOldTable = tableExists(db, oldTable);
+    const hasNewTable = tableExists(db, newTable);
+    if (!hasOldTable && !hasNewTable) continue;
+
+    // __old 始终是完整的迁移前数据；只有它不存在时才使用已复制完成的 __new。
+    const source = hasOldTable ? oldTable : newTable;
+    const stale = hasOldTable ? newTable : oldTable;
+    db.transaction(() => {
+      if (tableExists(db, table)) db.exec(`DROP TABLE ${table}`);
+      db.exec(`ALTER TABLE ${source} RENAME TO ${table}`);
+      if (tableExists(db, stale)) db.exec(`DROP TABLE ${stale}`);
+    })();
+  }
+}
+
+export function migrateStatsSchema(db: AppDatabase): void {
   const tables = [
     'online_clients',
     'user_online_duration',
@@ -343,17 +369,27 @@ function migrateStatsSchema(db: AppDatabase): void {
     },
   ];
 
+  recoverInterruptedStatsRebuilds(db, rebuilds);
+  for (const table of tables) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'server_key')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN server_key TEXT NOT NULL DEFAULT 'legacy'`);
+    }
+  }
+
   for (const migration of rebuilds) {
     const pkColumns = (db.prepare(`PRAGMA table_info(${migration.table})`).all() as Array<{ name: string; pk: number }>)
       .filter((column) => column.pk > 0)
       .sort((a, b) => a.pk - b.pk)
       .map((column) => column.name);
     if (migration.primaryKey.every((column, index) => pkColumns[index] === column)) continue;
-    db.exec(`DROP TABLE IF EXISTS ${migration.table}__new`);
-    db.exec(`ALTER TABLE ${migration.table} RENAME TO ${migration.table}__old`);
-    db.exec(migration.create);
-    db.exec(`INSERT INTO ${migration.table}__new (${migration.columns}) SELECT ${migration.columns} FROM ${migration.table}__old`);
-    db.exec(`DROP TABLE ${migration.table}__old`);
-    db.exec(`ALTER TABLE ${migration.table}__new RENAME TO ${migration.table}`);
+    db.transaction(() => {
+      db.exec(`DROP TABLE IF EXISTS ${migration.table}__new`);
+      db.exec(`ALTER TABLE ${migration.table} RENAME TO ${migration.table}__old`);
+      db.exec(migration.create);
+      db.exec(`INSERT INTO ${migration.table}__new (${migration.columns}) SELECT ${migration.columns} FROM ${migration.table}__old`);
+      db.exec(`DROP TABLE ${migration.table}__old`);
+      db.exec(`ALTER TABLE ${migration.table}__new RENAME TO ${migration.table}`);
+    })();
   }
 }

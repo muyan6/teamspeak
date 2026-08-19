@@ -2,12 +2,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Ts3ConnectionConfig } from './ts3/client.js';
 
-const TS3_ENV_KEYS: Array<keyof Ts3ConnectionConfig> = ['host', 'queryPort', 'serverPort', 'username', 'password'];
+const TS3_ENV_KEYS: Array<keyof Ts3ConnectionConfig> = ['host', 'queryPort', 'serverPort', 'serverId', 'username', 'password'];
 
 const KEY_TO_ENV: Record<keyof Ts3ConnectionConfig, string> = {
   host: 'TS3_HOST',
   queryPort: 'TS3_QUERY_PORT',
   serverPort: 'TS3_SERVER_PORT',
+  serverId: 'TS3_SERVER_ID',
   username: 'TS3_QUERY_USERNAME',
   password: 'TS3_QUERY_PASSWORD',
 };
@@ -22,7 +23,7 @@ function formatEnvValue(v: string): string {
 export function syncTs3ConfigToEnv(config: Ts3ConnectionConfig, envPath = path.resolve(process.cwd(), '.env')): void {
   const values = new Map<string, string>();
   for (const key of TS3_ENV_KEYS) {
-    values.set(KEY_TO_ENV[key], String(config[key]));
+    values.set(KEY_TO_ENV[key], key === 'serverId' ? String(config.serverId ?? 0) : String(config[key]));
   }
 
   let baseLines: string[] = [];

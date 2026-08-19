@@ -30,6 +30,14 @@ describe('分站 Host 路由', () => {
     expect(legacy).toHaveBeenCalledOnce();
   });
 
+  it('将未注册子域名按总站处理，避免主站别名被误判为分站', () => {
+    const legacy = vi.fn();
+    const manager = { getRouterForHost: vi.fn(() => null), isManagedSubsiteHost: vi.fn(() => false) };
+    const handler = createHostSelectedApiRouter(legacy, manager as never);
+    handler({ hostname: 'www.example.com' } as never, {} as never, vi.fn());
+    expect(legacy).toHaveBeenCalledOnce();
+  });
+
   it('不向分站暴露统一分站平台路由', async () => {
     const manager = { isManagedSubsiteHost: vi.fn(() => true) };
     const router = createMultiSubsitePlatformRouter({} as never, manager as never);

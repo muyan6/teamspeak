@@ -28,7 +28,12 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
   }));
 
   router.post('/elastic/groups', admin, (req, res) => {
-    const { name, namePrefix, createThreshold, deleteThreshold, password, channelGroupId, baseChannelId, maxChannels } = req.body ?? {};
+    const data = req.body ?? {};
+    if (typeof data === 'object' && data !== null && 'channelGroupId' in data) {
+      res.status(400).json({ error: '弹性频道不支持频道组；频道组只能分配给特定用户' });
+      return;
+    }
+    const { name, namePrefix, createThreshold, deleteThreshold, password, baseChannelId, maxChannels } = data;
     if (!name || !namePrefix) {
       res.status(400).json({ error: '名称与前缀必填' });
       return;
@@ -39,7 +44,6 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
       createThreshold: Number.parseInt(String(createThreshold), 10) || 2,
       deleteThreshold: Number.parseInt(String(deleteThreshold), 10) || 0,
       password: password || undefined,
-      channelGroupId: channelGroupId ? Number.parseInt(String(channelGroupId), 10) : null,
       baseChannelId: baseChannelId ? Number.parseInt(String(baseChannelId), 10) : null,
       maxChannels: Number.parseInt(String(maxChannels), 10) || 8,
     });

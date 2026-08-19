@@ -10,7 +10,7 @@ const savingSettings = ref(false);
 const notice = ref('');
 const settings = ref<MultiSubsiteSettings>({ baseDomain: '' });
 const form = ref<CreateManagedSubsiteInput>({
-  displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '',
+  displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '',
 });
 
 const canCreate = computed(() => Boolean(settings.value.baseDomain.trim() && form.value.displayName.trim() && form.value.slug.trim() && form.value.ts3Host.trim() && form.value.adminPassword));
@@ -48,7 +48,7 @@ async function create(): Promise<void> {
   try {
     const created = await multiSubsiteApi.create({ ...form.value, slug: form.value.slug.trim().toLowerCase(), displayName: form.value.displayName.trim(), ts3Host: form.value.ts3Host.trim() });
     subsites.value.unshift(created);
-    form.value = { displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '' };
+    form.value = { displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '' };
     showNotice(`分站已创建：${created.domain}`);
   } catch (error) { showNotice((error as Error).message); }
   finally { creating.value = false; }
@@ -79,6 +79,7 @@ onMounted(() => { void load(); });
       <div class="field"><label>TS3 ServerQuery 地址</label><input v-model="form.ts3Host" class="input" placeholder="例如 127.0.0.1" /></div>
       <div class="field"><label>ServerQuery 端口</label><input v-model.number="form.queryPort" class="input" type="number" min="1" max="65535" /></div>
       <div class="field"><label>语音端口</label><input v-model.number="form.serverPort" class="input" type="number" min="1" max="65535" /></div>
+      <div class="field"><label>虚拟服务器 ID（可选）</label><input v-model.number="form.serverId" class="input" type="number" min="0" step="1" /></div>
       <div class="field"><label>ServerQuery 账号</label><input v-model="form.username" class="input" /></div>
       <div class="field"><label>ServerQuery 密码</label><input v-model="form.password" class="input" type="password" /></div>
       <div class="field"><label>分站后台密码</label><input v-model="form.adminPassword" class="input" type="password" placeholder="至少 8 个字符" /></div>

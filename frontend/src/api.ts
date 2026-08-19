@@ -16,10 +16,18 @@ import type {
   UserSuggestion,
 } from './types';
 import type { CreateManagedSubsiteInput, ManagedSubsite, MultiSubsiteSettings } from './features/multi-subsites/types';
+import { ref } from 'vue';
 
 const BASE = '/api';
 
 let authToken = localStorage.getItem('admin_token') || '';
+export const authState = ref(Boolean(authToken));
+
+function clearAuth(): void {
+  authToken = '';
+  authState.value = false;
+  localStorage.removeItem('admin_token');
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -31,8 +39,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...options, headers, cache: 'no-store' });
   if (!res.ok) {
     if (res.status === 401) {
-      authToken = '';
-      localStorage.removeItem('admin_token');
+      clearAuth();
     }
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string; message?: string }).error || (body as { message?: string }).message || `请求失败 (${res.status})`);
@@ -98,11 +105,11 @@ export const api = {
   login: async (password: string): Promise<void> => {
     const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });
     authToken = res.token;
+    authState.value = true;
     localStorage.setItem('admin_token', authToken);
   },
   logout: (): void => {
-    authToken = '';
-    localStorage.removeItem('admin_token');
+    clearAuth();
   },
   isAuthed: () => !!authToken,
 };

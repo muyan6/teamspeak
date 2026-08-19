@@ -7,9 +7,12 @@ describe('统一分站注册表', () => {
   it('创建分站时自动生成子域名并隔离敏感密码字段', () => {
     const db = openDatabase(':memory:');
     const registry = new MultiSubsiteRegistry(db, 'example.com');
-    const created = registry.create({ displayName: 'Alpha 语音', slug: 'alpha', ts3Host: '127.0.0.1', adminPassword: 'password-123' });
+    const created = registry.create({ displayName: 'Alpha 语音', slug: 'alpha', ts3Host: '127.0.0.1', serverId: 4, adminPassword: 'password-123' });
     expect(created.domain).toBe('alpha.example.com');
     expect(created.queryPort).toBe(10011);
+    expect(created.serverId).toBe(4);
+    registry.updateTs3Config(created.id, { host: '127.0.0.1', queryPort: 10011, serverPort: 9987, serverId: 5, username: 'serveradmin', password: '' });
+    expect(registry.get(created.id)?.serverId).toBe(5);
     expect(registry.getByHost('ALPHA.EXAMPLE.COM')?.id).toBe(created.id);
     db.close();
   });

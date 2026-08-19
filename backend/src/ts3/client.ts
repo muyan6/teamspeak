@@ -10,13 +10,16 @@ export interface Ts3ConnectionConfig {
   host: string;
   queryPort: number;
   serverPort: number;
+  serverId?: number;
   username: string;
   password: string;
 }
 
-export function getTs3ServerKey(config: Pick<Ts3ConnectionConfig, 'host' | 'queryPort' | 'serverPort'>): string {
+export function getTs3ServerKey(config: Pick<Ts3ConnectionConfig, 'host' | 'queryPort' | 'serverPort' | 'serverId'>): string {
   const host = config.host.trim().toLowerCase();
-  return `${host}:${config.queryPort}:${config.serverPort}`;
+  return Number.isInteger(config.serverId) && (config.serverId as number) > 0
+    ? `${host}:${config.queryPort}:sid:${config.serverId}`
+    : `${host}:${config.queryPort}:${config.serverPort}`;
 }
 
 export interface OnlineClientData {
@@ -119,18 +122,22 @@ export class Ts3ClientWrapper extends EventEmitter {
     if (!this.config.host) return;
     this.connectingVersion = version;
     const isCurrentConnection = (): boolean => !this.stopped && version === this.connectionVersion;
+    let connection: TeamSpeak | null = null;
     try {
       // TeamSpeak.connect() resolves only after ServerQuery has logged in and selected the virtual server.
       // Runtime event subscriptions must be registered afterwards, otherwise this library queues them before login.
-      const ts3 = await TeamSpeak.connect({
+      const useServerId = Number.isInteger(this.config.serverId) && (this.config.serverId as number) > 0;
+      connection = await TeamSpeak.connect({
         host: this.config.host,
         queryport: this.config.queryPort,
-        serverport: this.config.serverPort,
+        serverport: useServerId ? undefined : this.config.serverPort,
         username: this.config.username,
         password: this.config.password,
         protocol: QueryProtocol.RAW,
         readyTimeout: 10000,
       });
+      if (useServerId) await connection.useBySid(String(this.config.serverId));
+      const ts3 = connection;
 
       if (!isCurrentConnection()) {
         void ts3.quit();
@@ -162,6 +169,14 @@ export class Ts3ClientWrapper extends EventEmitter {
       this.reconnectAttempts = 0;
       this.emit('connected');
     } catch (err) {
+      if (connection) {
+        try {
+          connection.removeAllListeners();
+          void connection.quit();
+        } catch {
+          /* ignore */
+        }
+      }
       if (!isCurrentConnection()) return;
       this.lastError = (err as Error).message;
       if (this.listenerCount('error') > 0) this.emit('error', err as Error);

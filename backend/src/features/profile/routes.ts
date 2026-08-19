@@ -20,8 +20,7 @@ function formatTs3Date(timestamp: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-async function findClient(deps: ApiDeps, nickname: string, uid: string): Promise<ClientDatabaseData | null> {
-  const clients = await deps.ts3.getClientDbList();
+function findClient(clients: ClientDatabaseData[], nickname: string, uid: string): ClientDatabaseData | null {
   if (uid) return clients.find((client) => client.uniqueIdentifier === uid) ?? null;
   const exact = clients.filter((client) => client.nickname === nickname);
   return exact.length === 1 ? exact[0] : null;
@@ -52,9 +51,10 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       res.status(400).json({ error: '请提供昵称或 UID' });
       return;
     }
-    const client = await findClient(deps, nickname, uid);
+    const clients = await deps.ts3.getClientDbList();
+    const client = findClient(clients, nickname, uid);
     if (!client) {
-      const candidates = nickname ? (await deps.ts3.getClientDbList())
+      const candidates = nickname ? clients
         .filter((entry) => entry.nickname === nickname)
         .map((entry) => ({ nickname: entry.nickname, uid: entry.uniqueIdentifier })) : [];
       if (candidates.length > 1) {

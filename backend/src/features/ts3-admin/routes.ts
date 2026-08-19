@@ -18,6 +18,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
       host: config.host,
       queryPort: config.queryPort,
       serverPort: config.serverPort,
+      serverId: config.serverId ?? 0,
       username: config.username,
       hasPassword: !!config.password,
       connected: deps.ts3.connected,
@@ -26,19 +27,21 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
   });
 
   router.post('/admin/ts3-config', admin, (req, res) => {
-    const { host, queryPort, serverPort, username, password } = req.body ?? {};
+    const { host, queryPort, serverPort, serverId, username, password } = req.body ?? {};
     const current = deps.ts3.getConfig();
     const parsedQueryPort = Number(queryPort ?? current.queryPort);
     const parsedServerPort = Number(serverPort ?? current.serverPort);
+    const parsedServerId = Number(serverId ?? current.serverId ?? 0);
     const config = {
       host: host ? String(host).trim() : current.host,
       queryPort: parsedQueryPort,
       serverPort: parsedServerPort,
+      serverId: parsedServerId,
       username: username ? String(username).trim() : current.username,
       password: password !== undefined && password !== '' ? String(password) : current.password,
     };
-    if (!config.host || !Number.isInteger(config.queryPort) || config.queryPort < 1 || config.queryPort > 65535 || !Number.isInteger(config.serverPort) || config.serverPort < 1 || config.serverPort > 65535 || !config.username) {
-      res.status(400).json({ error: '服务器地址、端口和 ServerQuery 账号无效' });
+    if (!config.host || !Number.isInteger(config.queryPort) || config.queryPort < 1 || config.queryPort > 65535 || !Number.isInteger(config.serverPort) || config.serverPort < 1 || config.serverPort > 65535 || !Number.isInteger(config.serverId) || config.serverId < 0 || !config.username) {
+      res.status(400).json({ error: '服务器地址、端口、虚拟服务器 ID 和 ServerQuery 账号无效' });
       return;
     }
     deps.configStore.setJson('ts3Connection', {
@@ -54,6 +57,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
         host: config.host,
         queryPort: config.queryPort,
         serverPort: config.serverPort,
+        serverId: config.serverId,
         username: config.username,
         hasPassword: !!config.password,
         lastError: deps.ts3.lastError,
