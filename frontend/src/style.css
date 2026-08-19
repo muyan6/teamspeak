@@ -1056,6 +1056,7 @@ footer {
 .rank-item {
   position: relative;
   overflow: hidden;
+  height: 48px;
   border-radius: 12px;
   transition: background 0.2s;
 }
@@ -1083,10 +1084,11 @@ footer {
   position: relative;
   z-index: 1;
   display: flex;
+  height: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 11px 14px;
+  padding: 0 14px;
 }
 
 .rank-left {
@@ -1132,6 +1134,7 @@ footer {
 .rank-name {
   font-size: 13px;
   font-weight: 600;
+  line-height: 26px;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1142,6 +1145,7 @@ footer {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   font-weight: 700;
+  line-height: 26px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }

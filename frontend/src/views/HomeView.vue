@@ -99,7 +99,7 @@ onMounted(() => void loadHomeModules());
           <span style="color: var(--text); font-weight: 600">{{ data.site.adminName }}</span>
           <template v-if="data.site.adminSteam">
             <span>若不在请联系</span>
-            <a :href="data.site.adminSteam" target="_blank" rel="noopener">Steam</a>
+            <a :href="data.site.adminSteam" target="_blank" rel="noopener">QQ</a>
           </template>
         </div>
         <div class="connect-actions">
