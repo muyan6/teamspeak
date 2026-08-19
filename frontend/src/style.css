@@ -801,6 +801,10 @@ footer {
   .grid-2 {
     order: 5;
   }
+
+  .honor-card {
+    order: 6;
+  }
 }
 
 /* ===== Connect 区 ===== */
@@ -1162,6 +1166,341 @@ footer {
   color: var(--text-faint);
 }
 
+/* ===== 荣誉殿堂 ===== */
+.honor-card {
+  padding: 24px;
+  border-radius: 16px;
+  background: rgba(24, 24, 27, 0.7);
+  overflow: hidden;
+}
+
+.honor-title-row {
+  margin-bottom: 20px;
+}
+
+.honor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(220px, 5fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.honor-main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.honor-champion {
+  position: relative;
+  min-height: 116px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(39, 39, 42, 0.5);
+  overflow: hidden;
+}
+
+.honor-crown {
+  position: absolute;
+  right: -10px;
+  bottom: -26px;
+  color: var(--amber);
+  font-family: Georgia, serif;
+  font-size: 120px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.11;
+  pointer-events: none;
+  transform: rotate(-12deg);
+}
+
+.honor-champion-icon {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  color: var(--amber);
+  font-family: Georgia, serif;
+  font-size: 38px;
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.28);
+}
+
+.honor-champion-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.honor-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.honor-kicker i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.honor-champion-content strong {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.honor-featured-title {
+  align-self: flex-start;
+  margin-top: 7px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.honor-featured-hours {
+  margin-top: 5px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.honor-rankings,
+.honor-levels {
+  min-width: 0;
+}
+
+.honor-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.honor-rankings-head {
+  margin-bottom: 12px;
+}
+
+.honor-rankings-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.honor-rankings-head b {
+  color: var(--orange);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.honor-levels-head {
+  padding: 3px 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.honor-levels-head > span {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.honor-subhead small {
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.honor-ranking-list,
+.honor-level-list {
+  min-width: 0;
+}
+
+.honor-ranking-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.honor-ranking {
+  display: flex;
+  min-width: 0;
+  min-height: 122px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(24, 24, 27, 0.55);
+}
+
+.honor-ranking.is-first {
+  border-color: rgba(251, 146, 60, 0.48);
+}
+
+.honor-ranking-meta {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.honor-ranking strong {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.honor-ranking-hours {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.honor-ranking-hours b {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.honor-ranking-hours small {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.honor-ranking.is-first .honor-ranking-hours b {
+  color: var(--orange);
+}
+
+.honor-rank {
+  color: var(--text-faint);
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.honor-ranking.is-first .honor-rank {
+  color: var(--orange);
+}
+
+.honor-rank-icon {
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.honor-ranking.is-first .honor-rank-icon {
+  color: var(--orange);
+  text-shadow: 0 0 8px rgba(251, 146, 60, 0.4);
+}
+
+.honor-level {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.honor-level.is-top-level {
+  border-color: rgba(251, 191, 36, 0.22);
+}
+
+.honor-level-index {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.honor-level > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.honor-level strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.honor-level small {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.honor-level > span {
+  flex: 0 0 auto;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.honor-level-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.honor-level-toggle:hover {
+  color: var(--text-dim);
+}
+
+.honor-placeholder {
+  display: block;
+  padding: 14px 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ===== 弹性频道 ===== */
 .elastic-grid {
   display: grid;
@@ -1482,6 +1821,20 @@ footer {
   .elastic-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+  .honor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .honor-card {
+    padding: 20px;
+  }
+  .honor-champion {
+    min-height: 108px;
+    padding: 18px;
+  }
+  .honor-ranking {
+    min-height: 110px;
+  }
   .modal .tbl {
     min-width: 640px;
   }
@@ -1509,5 +1862,44 @@ footer {
     flex: 1;
     padding: 9px 12px;
     text-align: center;
+  }
+  .honor-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 16px;
+  }
+  .honor-card {
+    padding: 16px;
+  }
+  .honor-champion {
+    gap: 12px;
+    padding: 16px;
+  }
+  .honor-champion-icon {
+    font-size: 32px;
+  }
+  .honor-crown {
+    font-size: 104px;
+  }
+  .honor-ranking-list {
+    gap: 8px;
+  }
+  .honor-ranking {
+    min-height: 104px;
+    padding: 10px;
+    border-radius: 10px;
+  }
+  .honor-rank {
+    font-size: 18px;
+  }
+  .honor-ranking strong {
+    font-size: 12px;
+  }
+  .honor-ranking-hours b {
+    font-size: 15px;
+  }
+  .honor-level {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    gap: 8px;
   }
 }

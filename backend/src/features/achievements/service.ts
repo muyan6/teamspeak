@@ -10,6 +10,13 @@ export interface AchievementLevel {
   enabled: number;
 }
 
+export interface HallOfFameData {
+  featured: { nickname: string; title: string; hours: number } | null;
+  rankings: Array<{ nickname: string; days: number }>;
+  levels: Array<{ id: number; title: string; hours: number; unlockedCount: number }>;
+  unlockedCount: number;
+}
+
 export class AchievementService {
   private checksInFlight = new Map<string, Promise<Array<{ nickname: string; title: string; granted: boolean }>>>();
 
@@ -133,6 +140,37 @@ export class AchievementService {
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
       .all(this.stats.getServerKey()) as Array<{ nickname: string; title: string; hours: number }>;
+  }
+
+  /** 主页荣誉殿堂需要的公开汇总数据。 */
+  getHallOfFame(): HallOfFameData {
+    const serverKey = this.stats.getServerKey();
+    const featured = this.db
+      .prepare(
+        `SELECT u.nickname as nickname, l.title as title, l.hours as hours
+         FROM achievement_grants g
+         JOIN user_online_duration u
+           ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
+         JOIN achievement_levels l ON l.id = g.level_id
+         WHERE g.server_key = ?
+         ORDER BY l.hours DESC, g.granted_at ASC
+         LIMIT 1`
+      )
+      .get(serverKey) as HallOfFameData['featured'];
+    const rankings = this.stats.getCurrentStreakRankings(3);
+    const levels = this.db
+      .prepare(
+        `SELECT l.id as id, l.title as title, l.hours as hours,
+                COUNT(DISTINCT g.client_database_id) as unlockedCount
+         FROM achievement_levels l
+         LEFT JOIN achievement_grants g ON g.level_id = l.id AND g.server_key = ?
+         WHERE l.enabled = 1
+         GROUP BY l.id
+         ORDER BY l.hours DESC, l.id ASC`
+      )
+      .all(serverKey) as HallOfFameData['levels'];
+
+    return { featured: featured ?? null, rankings, levels, unlockedCount: this.getUnlockedCount() };
   }
 
   /** 用户个人成就查询 */

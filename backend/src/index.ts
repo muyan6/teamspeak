@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   const champion = new WeeklyChampionService(db, ts3, stats);
   const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
-  const dashboard = new DashboardService(config, ts3, stats, configStore, elastic);
+  const dashboard = new DashboardService(config, ts3, stats, configStore, elastic, achievement);
 
   const app = express();
   app.use(cors());

@@ -88,6 +88,13 @@ export interface UnlockedAchievement {
   hours: number;
 }
 
+export interface HallOfFameData {
+  featured: { nickname: string; title: string; hours: number } | null;
+  rankings: Array<{ nickname: string; days: number }>;
+  levels: Array<{ id: number; title: string; hours: number; unlockedCount: number }>;
+  unlockedCount: number;
+}
+
 export interface ServerGroup {
   sgid: number;
   name: string;
@@ -199,6 +206,7 @@ export interface DashboardData {
   channels: { week: RankEntry[]; month: RankEntry[] };
   trends: { week: TrendData; month: TrendData };
   elastic_channels: ElasticChannelData;
+  achievements: HallOfFameData;
   tutorial: Tutorial;
   cache_time: string;
 }

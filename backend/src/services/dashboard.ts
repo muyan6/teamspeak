@@ -4,6 +4,7 @@ import type { StatsService } from './stats.js';
 import type { Ts3ClientWrapper, OnlineClientData, ChannelData } from '../ts3/client.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
 import type { SiteConfigStore } from '../db/site-config.js';
+import type { AchievementService, HallOfFameData } from '../features/achievements/service.js';
 
 export interface RankEntry {
   name: string;
@@ -53,6 +54,7 @@ export interface DashboardData {
   channels: { week: RankEntry[]; month: RankEntry[] };
   trends: { week: TrendData; month: TrendData };
   elastic_channels: ElasticChannelData;
+  achievements: HallOfFameData;
   tutorial: TutorialData;
   cache_time: string;
 }
@@ -72,7 +74,8 @@ export class DashboardService {
     private ts3: Ts3ClientWrapper,
     private stats: StatsService,
     private configStore: SiteConfigStore,
-    private elastic: ElasticChannelService
+    private elastic: ElasticChannelService,
+    private achievement: AchievementService
   ) {}
 
   getSiteSlug(): string {
@@ -189,6 +192,7 @@ export class DashboardService {
         month: connected ? monthTrend : { ...monthTrend, data: monthTrend.data.map(() => 0) },
       },
       elastic_channels: this.buildElastic(channels),
+      achievements: this.achievement.getHallOfFame(),
       tutorial: buildTutorial(this.config, tutorial, tutorialUpdatedAt ?? legacyGuideUpdatedAt ?? undefined, legacyGuide),
       cache_time: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };

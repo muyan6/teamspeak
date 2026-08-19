@@ -14,6 +14,7 @@ const rankRange = ref<'week' | 'month'>('week');
 const channelRange = ref<'week' | 'month'>('week');
 const showTutorial = ref(false);
 const tutorialTab = ref('download');
+const showAllAchievementLevels = ref(false);
 
 const trend = computed<TrendData>(() => {
   if (!data.value) return { labels: [], data: [] };
@@ -22,6 +23,10 @@ const trend = computed<TrendData>(() => {
 
 const ranks = computed<RankEntry[]>(() => data.value?.ranks[rankRange.value] ?? []);
 const channels = computed<RankEntry[]>(() => data.value?.channels[channelRange.value] ?? []);
+const achievements = computed(() => data.value?.achievements ?? { featured: null, rankings: [], levels: [], unlockedCount: 0 });
+const visibleAchievementLevels = computed(() =>
+  showAllAchievementLevels.value ? achievements.value.levels : achievements.value.levels.slice(0, 3),
+);
 const tutorialSection = computed(() => {
   if (!data.value) return null;
   const sections = data.value.tutorial.sections;
@@ -58,6 +63,10 @@ function rankWidth(items: RankEntry[], item: RankEntry): string {
 
 function rankNumClass(i: number): string {
   return i === 0 ? 'n1' : i === 1 ? 'n2' : i === 2 ? 'n3' : '';
+}
+
+function formatAchievementHours(hours: number): string {
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
 onMounted(() => void loadHomeModules());
@@ -179,6 +188,87 @@ onMounted(() => void loadHomeModules());
           </ul>
         </section>
       </div>
+
+      <!-- 荣誉殿堂 -->
+      <section v-if="visibleModules.achievements" class="card honor-card">
+        <div class="section-title honor-title-row">
+          <span style="display: flex; align-items: center; gap: 10px">
+            <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">♛</span>
+            <span>荣誉殿堂 <span class="sub">Hall of Fame</span></span>
+          </span>
+        </div>
+        <div v-if="achievements.featured || achievements.rankings.length || achievements.levels.length" class="honor-layout">
+          <div class="honor-main-column">
+            <div class="honor-champion">
+              <span class="honor-crown" aria-hidden="true">♛</span>
+              <span class="honor-champion-icon" aria-hidden="true">♛</span>
+              <div class="honor-champion-content">
+                <span class="honor-kicker"><i></i>最高荣誉</span>
+                <template v-if="achievements.featured">
+                  <strong>{{ achievements.featured.nickname }}</strong>
+                  <span class="honor-featured-title">{{ achievements.featured.title }}</span>
+                  <span class="honor-featured-hours">累计 {{ formatAchievementHours(achievements.featured.hours) }} 小时达成</span>
+                </template>
+                <span v-else class="honor-placeholder">等待第一位成员点亮最高荣誉</span>
+              </div>
+            </div>
+
+            <div class="honor-rankings">
+              <div class="honor-subhead honor-rankings-head">
+                <span><b aria-hidden="true">♨</b>连续在线排行榜</span>
+                <small>{{ achievements.rankings.length }} 人</small>
+              </div>
+              <div v-if="achievements.rankings.length" class="honor-ranking-list">
+                <div
+                  v-for="(member, index) in achievements.rankings.slice(0, 3)"
+                  :key="member.nickname + index"
+                  class="honor-ranking"
+                  :class="{ 'is-first': index === 0 }"
+                >
+                  <div class="honor-ranking-meta">
+                    <span class="honor-rank">#{{ index + 1 }}</span>
+                    <span class="honor-rank-icon" aria-hidden="true">{{ index === 0 ? '♨' : '●' }}</span>
+                  </div>
+                  <strong>{{ member.nickname }}</strong>
+                  <span class="honor-ranking-hours"><b>{{ member.days }}</b><small>天</small></span>
+                </div>
+              </div>
+              <span v-else class="honor-placeholder">暂无累计时长记录</span>
+            </div>
+          </div>
+
+          <div class="honor-levels">
+            <div class="honor-subhead honor-levels-head"><span>时长成就</span><small>{{ achievements.levels.length }}级</small></div>
+            <div v-if="achievements.levels.length" class="honor-level-list">
+              <div
+                v-for="(level, index) in visibleAchievementLevels"
+                :key="level.id"
+                class="honor-level"
+                :class="{ 'is-top-level': index === 0 }"
+              >
+                <span class="honor-level-index">{{ index < 3 ? '' : index + 1 }}</span>
+                <div>
+                  <strong>{{ level.title }}</strong>
+                  <small>累计 {{ formatAchievementHours(level.hours) }} 小时</small>
+                </div>
+                <span>{{ level.unlockedCount }} 人</span>
+              </div>
+            </div>
+            <span v-else class="honor-placeholder">后台添加成就后将在此展示</span>
+            <button
+              v-if="achievements.levels.length > 3"
+              type="button"
+              class="honor-level-toggle"
+              :aria-expanded="showAllAchievementLevels"
+              @click="showAllAchievementLevels = !showAllAchievementLevels"
+            >
+              {{ showAllAchievementLevels ? '收起等级' : `还有 ${achievements.levels.length - 3} 个等级` }}
+              <span aria-hidden="true">{{ showAllAchievementLevels ? '⌃' : '⌄' }}</span>
+            </button>
+          </div>
+        </div>
+        <div v-else class="empty">暂无荣誉数据</div>
+      </section>
 
       <!-- 弹性频道 -->
       <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="card">

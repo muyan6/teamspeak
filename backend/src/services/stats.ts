@@ -503,6 +503,28 @@ export class StatsService {
       .all(this.serverKey, limit) as Array<{ nickname: string; seconds: number }>;
   }
 
+  getCurrentStreakRankings(limit = 3): Array<{ nickname: string; days: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, GROUP_CONCAT(day, ',') as days
+         FROM user_daily_activity
+         WHERE server_key = ? AND lower(nickname) != 'musicbot'
+         GROUP BY client_database_id`
+      )
+      .all(this.serverKey) as Array<{ clientDatabaseId: number; nickname: string; days: string }>;
+
+    return rows
+      .map((row) => ({
+        clientDatabaseId: row.clientDatabaseId,
+        nickname: row.nickname,
+        days: this.computeStreak(row.days.split(',')).current,
+      }))
+      .filter((row) => row.days > 0)
+      .sort((a, b) => b.days - a.days || a.clientDatabaseId - b.clientDatabaseId)
+      .slice(0, limit)
+      .map(({ nickname, days }) => ({ nickname, days }));
+  }
+
   getUserStats(nickname: string, uid?: string): ProfileData | null {
     const identity = this.db
       .prepare(

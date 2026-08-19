@@ -51,7 +51,7 @@ class ManagedSubsiteRuntime {
     this.champion = new WeeklyChampionService(this.db, this.ts3, stats);
     this.achievement = new AchievementService(this.db, this.ts3, stats);
     this.monitor = new MonitorService(this.ts3, stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
-    const dashboard = new DashboardService(config, this.ts3, stats, store, this.elastic);
+    const dashboard = new DashboardService(config, this.ts3, stats, store, this.elastic, this.achievement);
     const deps: ApiDeps = {
       auth, configStore: store, stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer, credentialCipher,
       persistTs3Config: (next) => registry.updateTs3Config(subsite.id, next),

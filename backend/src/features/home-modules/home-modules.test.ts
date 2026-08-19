@@ -12,9 +12,10 @@ import { createHomeModulesRouter } from './home-modules-router.js';
 describe('主页模块开关配置', () => {
   it('默认启用全部模块，并忽略未知或非法值', () => {
     expect(normalizeHomeModules()).toEqual(DEFAULT_HOME_MODULES);
-    expect(normalizeHomeModules({ trend: false, unknown: false, live: 'yes' })).toEqual({
+    expect(normalizeHomeModules({ trend: false, achievements: false, unknown: false, live: 'yes' })).toEqual({
       ...DEFAULT_HOME_MODULES,
       trend: false,
+      achievements: false,
     });
   });
 
