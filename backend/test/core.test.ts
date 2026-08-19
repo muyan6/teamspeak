@@ -382,6 +382,27 @@ describe('TS3 监控后端核心链路', () => {
     championDb.close();
   });
 
+  it('周冠军并发检查只授予一次奖励', async () => {
+    const championDb = openDatabase(':memory:');
+    const stats = { getTopUsers: () => [{ clientDatabaseId: 200, nickname: '并发冠军', seconds: 3600 }] } as never;
+    let grants = 0;
+    const champion = new WeeklyChampionService(championDb, {
+      addClientToServerGroup: async () => {
+        grants += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return true;
+      },
+      removeClientFromServerGroup: async () => true,
+    } as never, stats);
+    champion.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+
+    const [first, second] = await Promise.all([champion.check(), champion.check()]);
+
+    expect(grants).toBe(1);
+    expect(first).toEqual(second);
+    championDb.close();
+  });
+
   it('周期频道排行榜采用最新日期保存的频道名称', () => {
     const channelsDb = openDatabase(':memory:');
     const stats = new StatsService(channelsDb);
@@ -490,6 +511,10 @@ describe('TS3 监控后端核心链路', () => {
         channels = channels.filter((channel) => channel.cid !== cid);
         return true;
       },
+      getChannel: async (cid: number) => {
+        const channel = channels.find((item) => item.cid === cid);
+        return channel ? { name: channel.name, totalClients: channel.totalClients } : null;
+      },
     } as never);
     elastic.addGroup({ name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, maxChannels: 4 });
 
@@ -501,6 +526,72 @@ describe('TS3 监控后端核心链路', () => {
     expect((await elastic.tick()).map((action) => action.type)).toEqual(['delete']);
     expect(deleted).toEqual([2]);
     expect(channels.map((channel) => channel.cid)).toEqual([1]);
+    elasticDb.close();
+  });
+
+  it('弹性频道并发检查只创建一个频道', async () => {
+    const elasticDb = openDatabase(':memory:');
+    let channels = [
+      { cid: 1, parentId: 0, name: '#room-1', totalClients: 2, totalClientsFamily: 2, order: 1 },
+    ];
+    let createCount = 0;
+    const elastic = new ElasticChannelService(elasticDb, {
+      getChannels: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return channels;
+      },
+      createChannel: async ({ name }: { name: string }) => {
+        createCount += 1;
+        const cid = channels.length + 1;
+        channels = [...channels, { cid, parentId: 0, name, totalClients: 0, totalClientsFamily: 0, order: cid }];
+        return cid;
+      },
+      deleteChannel: async () => true,
+      getChannel: async (cid: number) => {
+        const channel = channels.find((item) => item.cid === cid);
+        return channel ? { name: channel.name, totalClients: channel.totalClients } : null;
+      },
+    } as never);
+    elastic.addGroup({ name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, maxChannels: 4 });
+
+    const results = await Promise.all([elastic.tick(), elastic.tick()]);
+
+    expect(createCount).toBe(1);
+    expect(results[0]).toHaveLength(1);
+    expect(results[0]).toEqual(results[1]);
+    elasticDb.close();
+  });
+
+  it('弹性频道删除前重新确认实时人数', async () => {
+    const elasticDb = openDatabase(':memory:');
+    let channels = [
+      { cid: 1, parentId: 0, name: '#room-1', totalClients: 2, totalClientsFamily: 2, order: 1 },
+    ];
+    const deleted: number[] = [];
+    const elastic = new ElasticChannelService(elasticDb, {
+      getChannels: async () => channels,
+      createChannel: async ({ name }: { name: string }) => {
+        const cid = channels.length + 1;
+        channels = [...channels, { cid, parentId: 0, name, totalClients: 0, totalClientsFamily: 0, order: cid }];
+        return cid;
+      },
+      deleteChannel: async (cid: number) => {
+        deleted.push(cid);
+        return true;
+      },
+      getChannel: async (cid: number) => {
+        const channel = channels.find((item) => item.cid === cid);
+        if (!channel) return null;
+        return { name: channel.name, totalClients: cid === 2 ? 1 : channel.totalClients };
+      },
+    } as never);
+    elastic.addGroup({ name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, maxChannels: 4 });
+
+    await elastic.tick();
+    channels[0].totalClients = 0;
+    await elastic.tick();
+
+    expect(deleted).toEqual([]);
     elasticDb.close();
   });
 
