@@ -29,7 +29,7 @@ function clearAuth(): void {
   localStorage.removeItem('admin_token');
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, clearSessionOnUnauthorized = true): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
@@ -38,7 +38,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers, cache: 'no-store' });
   if (!res.ok) {
-    if (res.status === 401) {
+    if (res.status === 401 && clearSessionOnUnauthorized) {
       clearAuth();
     }
     const body = await res.json().catch(() => ({}));
@@ -103,7 +103,7 @@ export const api = {
   saveMultiSubsiteSettings: (data: MultiSubsiteSettings) => request<MultiSubsiteSettings>('/platform/settings', { method: 'POST', body: JSON.stringify(data) }),
 
   login: async (password: string): Promise<void> => {
-    const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });
+    const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }, false);
     authToken = res.token;
     authState.value = true;
     localStorage.setItem('admin_token', authToken);

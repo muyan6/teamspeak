@@ -16,6 +16,8 @@ export interface ElasticGroup {
 }
 
 export class ElasticChannelService {
+  private tickInFlight: Promise<Array<{ type: string; group: string; channelName: string }>> | null = null;
+
   constructor(
     private db: AppDatabase,
     private ts3: Ts3ClientWrapper,
@@ -85,6 +87,15 @@ export class ElasticChannelService {
 
   /** 检测并执行弹性频道扩容/收缩 */
   async tick(): Promise<Array<{ type: string; group: string; channelName: string }>> {
+    if (!this.tickInFlight) {
+      this.tickInFlight = this.tickInternal().finally(() => {
+        this.tickInFlight = null;
+      });
+    }
+    return this.tickInFlight;
+  }
+
+  private async tickInternal(): Promise<Array<{ type: string; group: string; channelName: string }>> {
     const actions: Array<{ type: string; group: string; channelName: string }> = [];
     const groups = this.listGroups().filter((g) => g.enabled === 1);
     if (groups.length === 0) return actions;
@@ -134,6 +145,8 @@ export class ElasticChannelService {
         Math.max(0, managedEmptyChannels.length - standbyCount)
       );
       for (const ch of managedEmptyChannels.slice(0, deletionCount)) {
+        const currentChannel = await this.ts3.getChannel(ch.cid);
+        if (!currentChannel || currentChannel.totalClients > group.deleteThreshold) continue;
         const ok = await this.ts3.deleteChannel(ch.cid);
         if (ok) {
           this.forgetManagedChannel(group.id, ch.cid);

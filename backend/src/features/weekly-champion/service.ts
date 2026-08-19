@@ -13,6 +13,8 @@ export interface ChampionConfig {
 }
 
 export class WeeklyChampionService {
+  private checkInFlight: Promise<{ nickname: string; seconds: number; granted: boolean } | null> | null = null;
+
   constructor(
     private db: AppDatabase,
     private ts3: Ts3ClientWrapper,
@@ -88,6 +90,15 @@ export class WeeklyChampionService {
 
   /** 检测本周活跃榜第一名并授予奖励 */
   async check(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
+    if (!this.checkInFlight) {
+      this.checkInFlight = this.checkInternal().finally(() => {
+        this.checkInFlight = null;
+      });
+    }
+    return this.checkInFlight;
+  }
+
+  private async checkInternal(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
     const cfg = this.getConfig();
     if (!cfg.enabled || !cfg.serverGroupId) return null;
 
