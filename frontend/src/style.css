@@ -768,7 +768,38 @@ footer {
 
 @media (max-width: 980px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .col-left,
+  .col-right {
+    display: contents;
+  }
+
+  .connect-card {
+    order: 1;
+  }
+
+  .download-card-hero {
+    order: 2;
+  }
+
+  .col-right > .card {
+    order: 3;
+  }
+
+  .col-left > .chart-card {
+    order: 4;
+  }
+
+  .grid-2 {
+    order: 5;
+  }
+
+  .col-left > .card {
+    order: 6;
   }
 }
 
