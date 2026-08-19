@@ -51,7 +51,7 @@ onUnmounted(() => {
   </main>
 
   <footer>
-    <span v-if="data">{{ data.site.title }} · TeamSpeak3 语音服务器</span>
+    <span v-if="data">{{ data.site.title }} · {{ data.site.footerDescription }}</span>
     <span v-else>TS3 Monitor · TeamSpeak3 语音服务器</span>
   </footer>
 </template>

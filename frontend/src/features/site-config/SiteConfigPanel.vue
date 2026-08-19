@@ -2,8 +2,14 @@
 import { onMounted, ref } from 'vue';
 import { api } from '../../api';
 
-const guide = ref('');
-const download = ref({ version: '3.6.2', officialUrl: '', mirrorUrl: '', translationUrl: '' });
+const site = ref({
+  title: '',
+  footerDescription: '',
+  serverName: '',
+  serverAddress: '',
+  adminName: '',
+  adminSteam: '',
+});
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -16,12 +22,13 @@ function showNotice(message: string): void {
 async function load(): Promise<void> {
   try {
     const config = await api.getSiteConfig();
-    guide.value = config.guide ?? '';
-    download.value = {
-      version: config.clientDownload?.version ?? '3.6.2',
-      officialUrl: config.clientDownload?.officialUrl ?? '',
-      mirrorUrl: config.clientDownload?.mirrorUrl ?? '',
-      translationUrl: config.clientDownload?.translationUrl ?? '',
+    site.value = {
+      title: config.title ?? '',
+      footerDescription: config.footerDescription ?? '',
+      serverName: config.serverName ?? '',
+      serverAddress: config.serverAddress ?? '',
+      adminName: config.adminName ?? '',
+      adminSteam: config.adminSteam ?? '',
     };
   } catch (error) {
     showNotice((error as Error).message);
@@ -30,7 +37,7 @@ async function load(): Promise<void> {
 
 async function save(): Promise<void> {
   try {
-    await api.saveSiteConfig({ guide: guide.value, clientDownload: download.value });
+    await api.saveSiteConfig(site.value);
     showNotice('站点配置已保存');
   } catch (error) {
     showNotice((error as Error).message);
@@ -44,20 +51,28 @@ onMounted(() => { void load(); });
   <div>
     <div v-if="notice" class="notice">{{ notice }}</div>
     <div class="field">
-      <label>下载教程（Markdown，留空使用默认教程）</label>
-      <textarea v-model="guide" class="input" rows="8" placeholder="留空使用默认教程"></textarea>
+      <label>站点名称</label>
+      <input v-model="site.title" class="input" placeholder="例如：Voice" />
     </div>
     <div class="field">
-      <label>官方下载链接</label>
-      <input v-model="download.officialUrl" class="input" placeholder="留空使用默认" />
+      <label>页脚描述</label>
+      <input v-model="site.footerDescription" class="input" placeholder="例如：TeamSpeak3 语音服务器" />
     </div>
     <div class="field">
-      <label>备用下载链接</label>
-      <input v-model="download.mirrorUrl" class="input" placeholder="留空使用默认" />
+      <label>欢迎语服务器名称</label>
+      <input v-model="site.serverName" class="input" placeholder="例如：偏居一隅" />
     </div>
     <div class="field">
-      <label>汉化包链接</label>
-      <input v-model="download.translationUrl" class="input" placeholder="留空使用默认" />
+      <label>对外服务器地址</label>
+      <input v-model="site.serverAddress" class="input" placeholder="例如：996" />
+    </div>
+    <div class="field">
+      <label>管理员名称</label>
+      <input v-model="site.adminName" class="input" placeholder="可留空" />
+    </div>
+    <div class="field">
+      <label>管理员 Steam 链接</label>
+      <input v-model="site.adminSteam" class="input" placeholder="可留空" />
     </div>
     <div class="modal-actions"><button class="btn primary" @click="save">保存</button></div>
   </div>

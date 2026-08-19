@@ -20,6 +20,7 @@ describe('管理接口与配置回归', () => {
     savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }>;
   }> {
     const auth = new AuthService('test-password', 'test-secret');
+    const siteConfig = new Map<string, string>();
     const elasticGroups = [{
       id: 1,
       name: 'Private room',
@@ -37,7 +38,15 @@ describe('管理接口与配置回归', () => {
     const savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }> = [];
     const deps = {
       auth,
-      configStore: { get: () => null, getJson: () => ({}), set: () => undefined, setJson: () => undefined },
+      configStore: {
+        get: (key: string) => siteConfig.get(key) ?? null,
+        getJson: (key: string, fallback: unknown) => {
+          const value = siteConfig.get(key);
+          return value ? JSON.parse(value) : fallback;
+        },
+        set: (key: string, value: string) => siteConfig.set(key, value),
+        setJson: (key: string, value: unknown) => siteConfig.set(key, JSON.stringify(value)),
+      },
       stats: { getTopUsers: () => [], getTopChannels: () => [], getDailyTrends: () => ({ labels: [], data: [] }) },
       elastic: { listGroups: () => elasticGroups, addGroup: () => elasticGroups[0], removeGroup: () => false },
       champion: {
@@ -115,6 +124,65 @@ describe('管理接口与配置回归', () => {
     });
     expect(response.status).toBe(200);
     expect(savedChampionConfigs).toEqual([{ enabled: 0, serverGroupId: null, checkIntervalHours: 24 }]);
+  });
+
+  it('教程与站点信息配置需要管理员凭证并能完整读写', async () => {
+    const { baseUrl, token } = await startRouter();
+    const tutorialPayload = {
+      tutorial: {
+        download: '下载教程内容',
+        basic: '基础教程内容',
+        advanced: '进阶教程内容',
+      },
+      clientDownload: {
+        version: '3.6.2',
+        officialUrl: 'https://example.com/official.exe',
+        mirrorUrl: 'https://example.com/mirror.exe',
+        translationUrl: 'https://example.com/zh.ts3_translation',
+      },
+    };
+    const siteInfoPayload = {
+      title: 'Voice',
+      footerDescription: 'TeamSpeak3 语音服务器',
+      serverName: '偏居一隅',
+      serverAddress: '996',
+      adminName: '管理员',
+      adminSteam: 'https://steamcommunity.com/id/example',
+    };
+
+    expect((await fetch(`${baseUrl}/tutorial-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tutorialPayload),
+    })).status).toBe(401);
+
+    const saved = await fetch(`${baseUrl}/tutorial-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(tutorialPayload),
+    });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual(tutorialPayload);
+
+    const loaded = await fetch(`${baseUrl}/tutorial-config`);
+    expect(await loaded.json()).toEqual(tutorialPayload);
+
+    expect((await fetch(`${baseUrl}/site-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(siteInfoPayload),
+    })).status).toBe(401);
+
+    const savedSiteInfo = await fetch(`${baseUrl}/site-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(siteInfoPayload),
+    });
+    expect(savedSiteInfo.status).toBe(200);
+    expect(await savedSiteInfo.json()).toEqual(siteInfoPayload);
+
+    const loadedSiteInfo = await fetch(`${baseUrl}/site-config`);
+    expect(await loadedSiteInfo.json()).toEqual(siteInfoPayload);
   });
 
   it('成就管理接口需要管理员凭证并校验新增数据', async () => {

@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config.js';
-import { buildSiteData, buildTutorial, type DownloadConfig, type SiteData, type TutorialData } from '../site.js';
+import { buildSiteData, buildTutorial, type DownloadConfig, type SiteData, type SiteInfoConfig, type TutorialConfig, type TutorialData } from '../site.js';
 import type { StatsService } from './stats.js';
 import type { Ts3ClientWrapper, OnlineClientData, ChannelData } from '../ts3/client.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
@@ -161,20 +161,23 @@ export class DashboardService {
     const weekTrend = this.stats.getDailyTrends(7);
     const monthTrend = this.stats.getDailyTrends(30);
 
-    // 后台可配置的下载链接与教程内容
+    // 后台可配置的站点信息、下载链接与教程内容。
     const clientDownload = this.configStore.getJson<ClientDownloadConfig>('clientDownload', {});
     const download: DownloadConfig = {
       clientDownload: clientDownload.officialUrl,
       mirrorDownload: clientDownload.mirrorUrl,
       translationDownload: clientDownload.translationUrl,
     };
-    const guide = this.configStore.get('guide') ?? undefined;
-    const guideUpdatedAt = this.configStore.getUpdatedAt('guide');
+    const tutorial = this.configStore.getJson<TutorialConfig>('tutorial', {});
+    const tutorialUpdatedAt = this.configStore.getUpdatedAt('tutorial');
+    const legacyGuide = this.configStore.get('guide') ?? undefined;
+    const legacyGuideUpdatedAt = this.configStore.getUpdatedAt('guide');
+    const siteInfo = this.configStore.getJson<SiteInfoConfig>('siteInfo', {});
 
     return {
       status: 'success',
       connected,
-      site: buildSiteData(this.config, serverName, download),
+      site: buildSiteData(this.config, serverName, download, siteInfo),
       server_name: serverName,
       online_count: onlineCount,
       max_clients: maxClients,
@@ -186,7 +189,7 @@ export class DashboardService {
         month: connected ? monthTrend : { ...monthTrend, data: monthTrend.data.map(() => 0) },
       },
       elastic_channels: this.buildElastic(channels),
-      tutorial: buildTutorial(this.config, guide, guideUpdatedAt ?? undefined),
+      tutorial: buildTutorial(this.config, tutorial, tutorialUpdatedAt ?? legacyGuideUpdatedAt ?? undefined, legacyGuide),
       cache_time: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
   }

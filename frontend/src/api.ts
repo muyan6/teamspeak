@@ -12,6 +12,7 @@ import type {
   SiteConfig,
   SubsiteConfig,
   Ts3ConnectionInfo,
+  TutorialConfig,
   UnlockedAchievement,
   UserSuggestion,
 } from './types';
@@ -82,6 +83,8 @@ export const api = {
 
   getSiteConfig: () => request<SiteConfig>('/site-config'),
   saveSiteConfig: (data: SiteConfig) => request<SiteConfig>('/site-config', { method: 'POST', body: JSON.stringify(data) }),
+  getTutorialConfig: () => request<TutorialConfig>('/tutorial-config'),
+  saveTutorialConfig: (data: TutorialConfig) => request<TutorialConfig>('/tutorial-config', { method: 'POST', body: JSON.stringify(data) }),
 
   getTs3Config: () => request<Ts3ConnectionInfo>('/admin/ts3-config'),
   saveTs3Config: (data: Record<string, unknown>) => request<{ success: boolean; config: Ts3ConnectionInfo }>('/admin/ts3-config', { method: 'POST', body: JSON.stringify(data) }),

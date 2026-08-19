@@ -16,6 +16,7 @@ import { registerElasticChannelRoutes } from '../features/elastic-channels/route
 import { registerProfileRoutes } from '../features/profile/routes.js';
 import { registerSiteConfigRoutes } from '../features/site-config/routes.js';
 import { registerTs3AdminRoutes } from '../features/ts3-admin/routes.js';
+import { registerTutorialConfigRoutes } from '../features/tutorial-config/routes.js';
 import { registerWeeklyChampionRoutes } from '../features/weekly-champion/routes.js';
 import { registerSubsiteManagementRoutes } from '../features/subsite-management/routes.js';
 
@@ -39,6 +40,7 @@ export function createRouter(deps: ApiDeps): Router {
   registerDashboardRoutes(router, deps);
   registerProfileRoutes(router, deps);
   registerSiteConfigRoutes(router, deps, admin);
+  registerTutorialConfigRoutes(router, deps, admin);
   registerElasticChannelRoutes(router, deps, admin);
   registerWeeklyChampionRoutes(router, deps, admin);
   registerAchievementRoutes(router, deps, admin);

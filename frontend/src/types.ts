@@ -1,5 +1,6 @@
 export interface SiteInfo {
   title: string;
+  footerDescription: string;
   logo: string;
   serverName: string;
   serverAddress: string;
@@ -158,7 +159,20 @@ export interface ClientDownloadConfig {
 }
 
 export interface SiteConfig {
-  guide?: string;
+  title?: string;
+  footerDescription?: string;
+  serverName?: string;
+  serverAddress?: string;
+  adminName?: string;
+  adminSteam?: string;
+}
+
+export interface TutorialConfig {
+  tutorial?: {
+    download?: string;
+    basic?: string;
+    advanced?: string;
+  };
   clientDownload?: ClientDownloadConfig;
 }
 
