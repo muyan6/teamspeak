@@ -15,6 +15,8 @@ import { MonitorService } from './services/monitor.js';
 import { DashboardService } from './services/dashboard.js';
 import { Ts3ClientWrapper, getTs3ServerKey, type Ts3ConnectionConfig } from './ts3/client.js';
 import { createRouter } from './api/router.js';
+import { adminAuth } from './api/middleware.js';
+import { createHomeModulesRouter } from './features/home-modules/home-modules-router.js';
 import { WsHub } from './ws/hub.js';
 
 async function main(): Promise<void> {
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
   }
 
   app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer }));
+  app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, ts3Connected: ts3.connected, site: config.site.slug });

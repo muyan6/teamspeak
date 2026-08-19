@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useDashboard } from '../composables/dashboard';
 import type { RankEntry, TrendData } from '../types';
 import OnlineStatsChart from '../components/OnlineStatsChart.vue';
 import { renderMarkdown } from '../utils';
+import { useHomeModules } from '../features/home-modules/home-modules';
 
 const { data, error } = useDashboard();
+const { modules: visibleModules, load: loadHomeModules } = useHomeModules();
 const copied = ref(false);
 const trendRange = ref<'week' | 'month'>('week');
 const rankRange = ref<'week' | 'month'>('week');
@@ -57,6 +59,8 @@ function rankWidth(items: RankEntry[], item: RankEntry): string {
 function rankNumClass(i: number): string {
   return i === 0 ? 'n1' : i === 1 ? 'n2' : i === 2 ? 'n3' : '';
 }
+
+onMounted(() => void loadHomeModules());
 </script>
 
 <template>
@@ -79,7 +83,7 @@ function rankNumClass(i: number): string {
     <!-- 左列 -->
     <div class="col-left">
       <!-- Connect Card -->
-      <section class="connect-card">
+      <section v-if="visibleModules.connection" class="connect-card">
         <div class="connect-badge">Join Now</div>
         <h1 class="connect-title">
           欢迎来到 <span class="gradient-text">{{ data.site.serverName }}</span>
@@ -104,7 +108,7 @@ function rankNumClass(i: number): string {
       </section>
 
       <!-- 流量趋势 -->
-      <section class="card chart-card">
+      <section v-if="visibleModules.trend" class="card chart-card">
         <div class="section-head">
           <div class="chart-title-group">
             <div class="section-icon" style="background: linear-gradient(135deg, rgba(244,63,94,.25), rgba(236,72,153,.18)); color: var(--primary)">◔</div>
@@ -122,8 +126,8 @@ function rankNumClass(i: number): string {
       </section>
 
       <!-- 活跃榜 + 热门频道 -->
-      <div class="grid grid-2">
-        <section class="card">
+      <div v-if="visibleModules.userRanks || visibleModules.channelRanks" class="grid grid-2">
+        <section v-if="visibleModules.userRanks" class="card">
           <div class="section-title" style="justify-content: space-between">
             <span style="display: flex; align-items: center; gap: 10px">
               <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">★</span>
@@ -149,7 +153,7 @@ function rankNumClass(i: number): string {
           </ul>
         </section>
 
-        <section class="card">
+        <section v-if="visibleModules.channelRanks" class="card">
           <div class="section-title" style="justify-content: space-between">
             <span style="display: flex; align-items: center; gap: 10px">
               <span class="section-icon" style="background: rgba(56,189,248,.15); color: var(--sky)">#</span>
@@ -177,7 +181,7 @@ function rankNumClass(i: number): string {
       </div>
 
       <!-- 弹性频道 -->
-      <section class="card" v-if="data.elastic_channels.groups.length > 0">
+      <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="card">
         <div class="section-title">
           <span class="section-icon" style="background: rgba(34,211,238,.15); color: var(--cyan)">◈</span>
           <span>弹性频道 <span class="sub">Elastic Channels</span></span>
@@ -202,7 +206,7 @@ function rankNumClass(i: number): string {
     <!-- 右列 -->
     <div class="col-right">
       <!-- 客户端下载 -->
-      <section class="download-card-hero">
+      <section v-if="visibleModules.downloads" class="download-card-hero">
         <h3>需要客户端？</h3>
         <p class="dl-sub">推荐使用 v3.6.2 稳定版</p>
         <a class="download-main" :href="data.site.clientDownload" target="_blank" rel="noopener">
@@ -224,7 +228,7 @@ function rankNumClass(i: number): string {
       </section>
 
       <!-- 实时在线 -->
-      <section class="card">
+      <section v-if="visibleModules.realtime" class="card">
         <div class="section-title" style="justify-content: space-between">
           <span style="display: flex; align-items: center; gap: 10px">
             <span class="section-icon" style="background: rgba(16,185,129,.15); color: var(--green)">●</span>

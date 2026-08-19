@@ -3,11 +3,12 @@ import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import type { AchievementLevel, ChampionConfig, ElasticGroup, ServerGroup, Ts3ConnectionInfo, UnlockedAchievement } from '../types';
 import Ts3Admin from './Ts3Admin.vue';
+import HomeModulesPanel from '../features/home-modules/HomeModulesPanel.vue';
 
 const password = ref('');
 const authed = ref(api.isAuthed());
 const loginError = ref('');
-const activeTab = ref<'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'ts3'>('elastic');
+const activeTab = ref<'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'ts3' | 'modules'>('elastic');
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 const savingTs3 = ref(false);
@@ -228,6 +229,7 @@ onMounted(() => {
           <button class="btn sm" :class="{ primary: activeTab === 'server' }" @click="activeTab = 'server'">服务器配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'ts3' }" @click="activeTab = 'ts3'">TS3 管理</button>
           <button class="btn sm" :class="{ primary: activeTab === 'site' }" @click="activeTab = 'site'">站点配置</button>
+          <button class="btn sm" :class="{ primary: activeTab === 'modules' }" @click="activeTab = 'modules'">主页模块</button>
         </div>
 
         <div v-if="notice" class="notice">{{ notice }}</div>
@@ -326,6 +328,11 @@ onMounted(() => {
         <!-- TS3 管理 -->
         <div v-if="activeTab === 'ts3'" class="tab-panel">
           <Ts3Admin />
+        </div>
+
+        <!-- 主页模块 -->
+        <div v-if="activeTab === 'modules'" class="tab-panel">
+          <HomeModulesPanel />
         </div>
 
         <!-- 服务器配置 -->
@@ -429,6 +436,8 @@ onMounted(() => {
 
 .admin-surface {
   min-width: 0;
+  padding: 24px;
+  background: linear-gradient(145deg, rgba(30, 30, 34, 0.86), rgba(18, 18, 21, 0.7));
 }
 
 .achievement-history {
@@ -479,11 +488,31 @@ onMounted(() => {
   overflow-x: auto;
 }
 
+:deep(.tabs) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(9, 9, 11, 0.4);
+}
+
+:deep(.tabs .btn) {
+  width: 100%;
+  min-height: 38px;
+}
+
 :deep(.tbl) {
   width: 100%;
 }
 
 @media (max-width: 640px) {
+  .admin-surface {
+    padding: 16px;
+  }
+
   .admin-page-heading {
     align-items: flex-start;
   }
