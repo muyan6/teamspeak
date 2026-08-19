@@ -1,0 +1,279 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { MockTs3Server } from './mock-ts3-server.js';
+import { openDatabase } from '../src/db/database.js';
+import { Ts3ClientWrapper } from '../src/ts3/client.js';
+import { StatsService } from '../src/services/stats.js';
+import { ElasticChannelService } from '../src/services/elastic.js';
+import { AchievementService } from '../src/services/achievement.js';
+import { WeeklyChampionService } from '../src/services/champion.js';
+
+describe('TS3 监控后端核心链路', () => {
+  const mock = new MockTs3Server(10012);
+  const db = openDatabase(':memory:');
+  let ts3: Ts3ClientWrapper;
+
+  beforeAll(async () => {
+    await mock.start();
+    mock.addChannel('Lobby', 0, 0);
+    mock.addChannel('#开黑-1', 0, 1);
+    mock.addClient('Alice', 1, '1');
+    mock.addClient('Bob', 2, '1');
+
+    ts3 = new Ts3ClientWrapper({
+      host: '127.0.0.1',
+      queryPort: 10012,
+      username: 'serveradmin',
+      password: '',
+    });
+    await ts3.start();
+  }, 20000);
+
+  afterAll(() => {
+    ts3.stop();
+    mock.stop();
+    db.close();
+  });
+
+  it('连接模拟服务器并读取状态', async () => {
+    const state = await ts3.getServerState();
+    expect(state).not.toBeNull();
+    expect(state!.clientsOnline).toBe(2);
+    expect(state!.maxClients).toBe(32);
+  });
+
+  it('读取客户端列表', async () => {
+    const clients = await ts3.getClients();
+    expect(clients.length).toBe(2);
+    expect(clients.map((c) => c.nickname)).toEqual(expect.arrayContaining(['Alice', 'Bob']));
+  });
+
+  it('通过 ServerQuery 读取客户端数据库中的 UID', async () => {
+    const clients = await ts3.getClientDbList();
+    expect(clients).toEqual(expect.arrayContaining([
+      expect.objectContaining({ nickname: 'Alice', uniqueIdentifier: 'uid_1000' }),
+      expect.objectContaining({ nickname: 'Bob', uniqueIdentifier: 'uid_1001' }),
+    ]));
+  });
+
+  it('读取频道列表', async () => {
+    const channels = await ts3.getChannels();
+    expect(channels.some((c) => c.name === 'Lobby')).toBe(true);
+    expect(channels.some((c) => c.name === '#开黑-1')).toBe(true);
+  });
+
+  it('统计服务记录快照并累计时长', async () => {
+    const stats = new StatsService(db);
+    const clients = await ts3.getClients();
+    const channels = await ts3.getChannels();
+    stats.recordSnapshot(clients, channels, Date.now());
+    stats.recordSnapshot(clients, channels, Date.now() + 5000);
+
+    const top = stats.getTopUsers('all');
+    expect(top.length).toBe(2);
+    expect(top[0].seconds).toBeGreaterThanOrEqual(4);
+  });
+
+  it('断线清理不会保留在线用户或继续累计时长', async () => {
+    const stats = new StatsService(db);
+    const clients = await ts3.getClients();
+    const channels = await ts3.getChannels();
+    stats.recordSnapshot(clients, channels, Date.now());
+    expect(stats.getCurrentOnline().length).toBeGreaterThan(0);
+
+    stats.clearOnlineState();
+    expect(stats.getCurrentOnline()).toHaveLength(0);
+  });
+
+  it('查询连接短暂中断后恢复时会补算同一连接的缺失时段', () => {
+    const gapDb = openDatabase(':memory:');
+    const stats = new StatsService(gapDb);
+    const now = Date.now();
+    const client = {
+      clid: 900,
+      clientDatabaseId: 900,
+      uniqueIdentifier: 'uid-gap',
+      nickname: 'GapUser',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: Math.floor(now / 1000) - 100,
+      clientType: 0,
+    };
+    const channel = { cid: 1, parentId: 0, name: 'Lobby', totalClients: 1, totalClientsFamily: 1, order: 0 };
+
+    stats.recordSnapshot([client], [channel], now);
+    stats.recordSnapshot([client], [channel], now + 10_000);
+    stats.clearOnlineState();
+    stats.recordSnapshot([client], [channel], now + 70_000);
+
+    const top = stats.getTopUsers('all').find((row) => row.nickname === 'GapUser');
+    expect(top?.seconds).toBe(170);
+    gapDb.close();
+  });
+
+  it('用户重新连接时不会把离线间隔计入在线时长', () => {
+    const reconnectDb = openDatabase(':memory:');
+    const stats = new StatsService(reconnectDb);
+    const now = Date.now();
+    const channel = { cid: 1, parentId: 0, name: 'Lobby', totalClients: 1, totalClientsFamily: 1, order: 0 };
+    const base = {
+      clid: 901,
+      clientDatabaseId: 901,
+      uniqueIdentifier: 'uid-reconnect',
+      nickname: 'ReconnectUser',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      clientType: 0,
+    };
+
+    stats.recordSnapshot([{ ...base, connectedTime: Math.floor(now / 1000) - 100 }], [channel], now);
+    stats.recordSnapshot([{ ...base, connectedTime: Math.floor(now / 1000) - 100 }], [channel], now + 10_000);
+    stats.recordSnapshot([{ ...base, connectedTime: Math.floor(now / 1000) + 20 }], [channel], now + 70_000);
+
+    const top = stats.getTopUsers('all').find((row) => row.nickname === 'ReconnectUser');
+    expect(top?.seconds).toBe(160);
+    reconnectDb.close();
+  });
+
+  it('首次采集跨天时会按日期拆分活动时长', async () => {
+    const splitDb = openDatabase(':memory:');
+    const stats = new StatsService(splitDb);
+    const clients = await ts3.getClients();
+    const channels = await ts3.getChannels();
+    const now = Date.now();
+    const longSessionClient = { ...clients[0], connectedTime: Math.floor(now / 1000) - 86400 - 10 };
+
+    stats.recordSnapshot([longSessionClient], channels, now);
+    const dailyRows = splitDb
+      .prepare('SELECT day, active_seconds as seconds FROM user_daily_activity WHERE client_database_id = ? ORDER BY day')
+      .all(longSessionClient.clientDatabaseId) as Array<{ day: string; seconds: number }>;
+
+    expect(dailyRows.length).toBeGreaterThanOrEqual(2);
+    expect(dailyRows.reduce((sum, row) => sum + row.seconds, 0)).toBeGreaterThanOrEqual(86400);
+    splitDb.close();
+  });
+
+  it('同名用户按 TeamSpeak UID 查询时不会混合统计数据', async () => {
+    const profileDb = openDatabase(':memory:');
+    const stats = new StatsService(profileDb);
+    const clients = await ts3.getClients();
+    const channels = await ts3.getChannels();
+    const now = Date.now();
+    const first = {
+      ...clients[0],
+      clientDatabaseId: 101,
+      nickname: 'TeamSpeakUser',
+      uniqueIdentifier: 'uid-first',
+      connectedTime: Math.floor(now / 1000) - 120,
+    };
+    const second = {
+      ...clients[1],
+      clientDatabaseId: 202,
+      nickname: 'TeamSpeakUser',
+      uniqueIdentifier: 'uid-second',
+      connectedTime: Math.floor(now / 1000) - 60,
+    };
+
+    stats.recordSnapshot([first, second], channels, now);
+    const profile = stats.getUserStats('TeamSpeakUser', 'uid-second');
+
+    expect(profile?.uid).toBe('uid-second');
+    expect(profile?.dbid).toBe(202);
+    expect(stats.suggestNicknames('TeamSpeakUser')).toEqual(
+      expect.arrayContaining([
+        { nickname: 'TeamSpeakUser', uid: 'uid-first' },
+        { nickname: 'TeamSpeakUser', uid: 'uid-second' },
+      ])
+    );
+    profileDb.close();
+  });
+
+  it('同步 ServerQuery 身份资料会回填 UID，且不修改本地统计时长', () => {
+    const syncDb = openDatabase(':memory:');
+    const stats = new StatsService(syncDb, 'server-a');
+    const now = Date.now();
+    const client = {
+      clid: 888,
+      clientDatabaseId: 888,
+      uniqueIdentifier: '',
+      nickname: '旧昵称',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: Math.floor(now / 1000) - 120,
+      clientType: 0,
+    };
+    stats.recordSnapshot([client], [], now);
+    const before = stats.getTopUsers('all').find((row) => row.nickname === '旧昵称')?.seconds;
+
+    stats.syncClientIdentities([{ clientDatabaseId: 888, uniqueIdentifier: 'serverquery-uid', nickname: '新昵称' }]);
+
+    const profile = stats.getUserStatsByIdentity({ clientDatabaseId: 888, uniqueIdentifier: 'serverquery-uid', nickname: '新昵称' });
+    expect(profile.uid).toBe('serverquery-uid');
+    expect(profile.nickname).toBe('新昵称');
+    expect(profile.total_time.minutes).toBe(Math.round((before || 0) / 60));
+    syncDb.close();
+  });
+
+  it('统计数据按服务器标识隔离', async () => {
+    const scopedDb = openDatabase(':memory:');
+    const firstServer = new StatsService(scopedDb, 'server-a');
+    const secondServer = new StatsService(scopedDb, 'server-b');
+    const clients = await ts3.getClients();
+    const channels = await ts3.getChannels();
+    const now = Date.now();
+
+    firstServer.recordSnapshot([{ ...clients[0], clientDatabaseId: 7, nickname: 'ServerAUser' }], channels, now);
+    secondServer.recordSnapshot([{ ...clients[0], clientDatabaseId: 7, nickname: 'ServerBUser' }], channels, now);
+
+    expect(firstServer.getTopUsers('all')).toEqual(expect.arrayContaining([expect.objectContaining({ nickname: 'ServerAUser' })]));
+    expect(firstServer.getTopUsers('all')).not.toEqual(expect.arrayContaining([expect.objectContaining({ nickname: 'ServerBUser' })]));
+    expect(secondServer.getTopUsers('all')).toEqual(expect.arrayContaining([expect.objectContaining({ nickname: 'ServerBUser' })]));
+    expect(secondServer.getTopUsers('all')).not.toEqual(expect.arrayContaining([expect.objectContaining({ nickname: 'ServerAUser' })]));
+    scopedDb.close();
+  });
+
+  it('弹性频道服务能识别满员并扩容', async () => {
+    const channels = await ts3.getChannels();
+    const lobby = channels.find((c) => c.name === 'Lobby')!;
+    const room1 = channels.find((c) => c.name === '#开黑-1')!;
+
+    mock.clearClients();
+    mock.addClient('Eve', room1.cid, '1');
+    mock.addClient('Frank', room1.cid, '1');
+    mock.addClient('Grace', lobby.cid, '1');
+    mock.addClient('Henry', lobby.cid, '1');
+
+    const elastic = new ElasticChannelService(db, ts3);
+    elastic.addGroup({
+      name: '开黑',
+      namePrefix: '#开黑-',
+      createThreshold: 2,
+      deleteThreshold: 0,
+      maxChannels: 4,
+    });
+
+    const actions = await elastic.tick();
+    expect(actions.some((a) => a.type === 'create')).toBe(true);
+  });
+
+  it('成就服务能授予达标用户', async () => {
+    const ach = new AchievementService(db, ts3);
+    ach.addLevel({ hours: 0, serverGroupId: 3, title: '测试成就' });
+
+    const results = await ach.check();
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].title).toBe('测试成就');
+  });
+
+  it('周冠军服务读取本周榜首', async () => {
+    const stats = new StatsService(db);
+    const champion = new WeeklyChampionService(db, ts3, stats);
+    const current = champion.getCurrentChampion();
+    expect(current).not.toBeNull();
+  });
+});

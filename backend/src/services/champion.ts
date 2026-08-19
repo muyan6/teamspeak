@@ -1,0 +1,141 @@
+import type { AppDatabase } from '../db/database.js';
+import { Ts3ClientWrapper } from '../ts3/client.js';
+import { StatsService } from './stats.js';
+
+export interface ChampionConfig {
+  id: number;
+  enabled: number;
+  serverGroupId: number | null;
+  checkIntervalHours: number;
+  lastCheckTime: number | null;
+  lastWinnerClientDbId: number | null;
+  lastWinnerNickname: string | null;
+}
+
+export class WeeklyChampionService {
+  constructor(
+    private db: AppDatabase,
+    private ts3: Ts3ClientWrapper,
+    private stats: StatsService
+  ) {}
+
+  private defaults(): ChampionConfig {
+    return {
+      id: 1,
+      enabled: 0,
+      serverGroupId: null,
+      checkIntervalHours: 24,
+      lastCheckTime: null,
+      lastWinnerClientDbId: null,
+      lastWinnerNickname: null,
+    };
+  }
+
+  getConfig(): ChampionConfig {
+    const row = this.db.prepare(
+      `SELECT
+         id,
+         enabled,
+         server_group_id AS serverGroupId,
+         check_interval_hours AS checkIntervalHours,
+         last_check_time AS lastCheckTime,
+         last_winner_client_db_id AS lastWinnerClientDbId,
+         last_winner_nickname AS lastWinnerNickname
+       FROM champion_config
+       WHERE id = 1`
+    ).get() as
+      | ChampionConfig
+      | undefined;
+    if (!row) return this.defaults();
+    return {
+      id: 1,
+      enabled: row.enabled,
+      serverGroupId: row.serverGroupId,
+      checkIntervalHours: row.checkIntervalHours,
+      lastCheckTime: row.lastCheckTime,
+      lastWinnerClientDbId: row.lastWinnerClientDbId,
+      lastWinnerNickname: row.lastWinnerNickname,
+    };
+  }
+
+  saveConfig(data: {
+    enabled: number;
+    serverGroupId: number | null;
+    checkIntervalHours: number;
+  }): ChampionConfig {
+    const cfg = this.getConfig();
+    this.db
+      .prepare(
+        `INSERT INTO champion_config (id, enabled, server_group_id, check_interval_hours, last_check_time, last_winner_client_db_id, last_winner_nickname, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           enabled = excluded.enabled,
+           server_group_id = excluded.server_group_id,
+           check_interval_hours = excluded.check_interval_hours,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        data.enabled,
+        data.serverGroupId,
+        data.checkIntervalHours,
+        cfg.lastCheckTime,
+        cfg.lastWinnerClientDbId,
+        cfg.lastWinnerNickname,
+        Date.now()
+      );
+    return this.getConfig();
+  }
+
+  /** 根据昵称从历史数据中查找 client_database_id（不依赖当前是否在线） */
+  private findClientDbIdByNickname(nickname: string): number | null {
+    const row = this.db
+      .prepare(
+        'SELECT client_database_id as dbid FROM user_online_duration WHERE server_key = ? AND nickname = ? ORDER BY total_seconds DESC LIMIT 1'
+      )
+      .get(this.stats.getServerKey(), nickname) as { dbid: number } | undefined;
+    return row ? row.dbid : null;
+  }
+
+  /** 检测本周活跃榜第一名并授予奖励 */
+  async check(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
+    const cfg = this.getConfig();
+    if (!cfg.enabled || !cfg.serverGroupId) return null;
+
+    const top = this.stats.getTopUsers('week', 1)[0];
+    if (!top) return null;
+
+    const clientDbId = this.findClientDbIdByNickname(top.nickname);
+
+    // 找不到用户数据库ID时，仅更新检测时间，保留上一任冠军记录，避免权限残留
+    if (!clientDbId) {
+      this.db
+        .prepare(`UPDATE champion_config SET last_check_time = ? WHERE id = 1`)
+        .run(Date.now());
+      return { nickname: top.nickname, seconds: top.seconds, granted: false };
+    }
+
+    let granted = false;
+    const alreadyWinner = cfg.lastWinnerClientDbId === clientDbId;
+    if (!alreadyWinner) {
+      // 先移除上一任冠军的服务器组，避免多人同时持有
+      if (cfg.lastWinnerClientDbId) {
+        await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
+      }
+      granted = await this.ts3.addClientToServerGroup(cfg.serverGroupId, clientDbId);
+    }
+
+    this.db
+      .prepare(
+        `UPDATE champion_config SET last_check_time = ?, last_winner_client_db_id = ?, last_winner_nickname = ? WHERE id = 1`
+      )
+      .run(Date.now(), clientDbId, top.nickname);
+
+    return { nickname: top.nickname, seconds: top.seconds, granted };
+  }
+
+  /** 周冠军荣誉展示 */
+  getCurrentChampion(): { nickname: string; seconds: number } | null {
+    const top = this.stats.getTopUsers('week', 1)[0];
+    return top ? { nickname: top.nickname, seconds: top.seconds } : null;
+  }
+}
