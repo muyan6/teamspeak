@@ -1,0 +1,8 @@
+STATUS:
+fatal: detected dubious ownership in repository at 'F:/下载/ts3(3)' 'F:/下载/ts3(3)' is owned by: 	'S-1-5-21-3264856430-1344428615-1441015219-1001' but the current user is: 	'S-1-5-21-3264856430-1344428615-1441015219-1018' To add an exception for this directory, call:  	git config --global --add safe.directory 'F:/下载/ts3(3)'
+
+REMOTE:
+fatal: detected dubious ownership in repository at 'F:/下载/ts3(3)' 'F:/下载/ts3(3)' is owned by: 	'S-1-5-21-3264856430-1344428615-1441015219-1001' but the current user is: 	'S-1-5-21-3264856430-1344428615-1441015219-1018' To add an exception for this directory, call:  	git config --global --add safe.directory 'F:/下载/ts3(3)'
+
+BRANCH:
+fatal: detected dubious ownership in repository at 'F:/下载/ts3(3)' 'F:/下载/ts3(3)' is owned by: 	'S-1-5-21-3264856430-1344428615-1441015219-1001' but the current user is: 	'S-1-5-21-3264856430-1344428615-1441015219-1018' To add an exception for this directory, call:  	git config --global --add safe.directory 'F:/下载/ts3(3)'
