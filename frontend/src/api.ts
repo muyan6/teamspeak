@@ -10,6 +10,7 @@ import type {
   ProfileData,
   ServerGroup,
   SiteConfig,
+  SubsiteConfig,
   Ts3ConnectionInfo,
   UnlockedAchievement,
   UserSuggestion,
@@ -84,6 +85,8 @@ export const api = {
 
   getTs3Config: () => request<Ts3ConnectionInfo>('/admin/ts3-config'),
   saveTs3Config: (data: Record<string, unknown>) => request<{ success: boolean; config: Ts3ConnectionInfo }>('/admin/ts3-config', { method: 'POST', body: JSON.stringify(data) }),
+  getSubsiteConfig: () => request<SubsiteConfig>('/admin/subsite'),
+  saveSubsiteConfig: (data: SubsiteConfig) => request<SubsiteConfig>('/admin/subsite', { method: 'POST', body: JSON.stringify(data) }),
 
   login: async (password: string): Promise<void> => {
     const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });

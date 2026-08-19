@@ -18,6 +18,7 @@ import { createRouter } from './api/router.js';
 import { adminAuth } from './api/middleware.js';
 import { createHomeModulesRouter } from './features/home-modules/home-modules-router.js';
 import { WsHub } from './ws/hub.js';
+import { SubsiteManagementService } from './features/subsite-management/service.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic);
+  const subsite = new SubsiteManagementService(config);
 
   const app = express();
   app.use(cors());
@@ -57,7 +59,7 @@ async function main(): Promise<void> {
     });
   }
 
-  app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer }));
+  app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer, subsite }));
   app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
   app.get('/api/health', (_req, res) => {

@@ -2,7 +2,7 @@
 import { defineAsyncComponent, ref } from 'vue';
 import { api } from '../api';
 
-type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'ts3' | 'modules';
+type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'ts3' | 'modules' | 'subsite';
 
 const password = ref('');
 const authed = ref(api.isAuthed());
@@ -15,6 +15,7 @@ const ServerConnectionPanel = defineAsyncComponent(() => import('../features/ser
 const SiteConfigPanel = defineAsyncComponent(() => import('../features/site-config/SiteConfigPanel.vue'));
 const Ts3AdminPanel = defineAsyncComponent(() => import('../features/ts3-admin/Ts3AdminPanel.vue'));
 const WeeklyChampionPanel = defineAsyncComponent(() => import('../features/weekly-champion/WeeklyChampionPanel.vue'));
+const SubsiteManagementPanel = defineAsyncComponent(() => import('../features/subsite-management/SubsiteManagementPanel.vue'));
 
 async function login(): Promise<void> {
   loginError.value = '';
@@ -67,6 +68,7 @@ function logout(): void {
           <button class="btn sm" :class="{ primary: activeTab === 'ts3' }" @click="activeTab = 'ts3'">TS3 管理</button>
           <button class="btn sm" :class="{ primary: activeTab === 'site' }" @click="activeTab = 'site'">站点配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'modules' }" @click="activeTab = 'modules'">主页模块</button>
+          <button class="btn sm" :class="{ primary: activeTab === 'subsite' }" @click="activeTab = 'subsite'">分站管理</button>
         </div>
 
         <div class="tab-panel">
@@ -76,7 +78,8 @@ function logout(): void {
           <ServerConnectionPanel v-else-if="activeTab === 'server'" />
           <Ts3AdminPanel v-else-if="activeTab === 'ts3'" />
           <SiteConfigPanel v-else-if="activeTab === 'site'" />
-          <HomeModulesPanel v-else />
+          <HomeModulesPanel v-else-if="activeTab === 'modules'" />
+          <SubsiteManagementPanel v-else />
         </div>
       </div>
     </div>

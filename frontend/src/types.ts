@@ -162,6 +162,11 @@ export interface SiteConfig {
   clientDownload?: ClientDownloadConfig;
 }
 
+export interface SubsiteConfig {
+  slug: string;
+  domain: string;
+}
+
 export interface Ts3ConnectionInfo {
   host: string;
   queryPort: number;
