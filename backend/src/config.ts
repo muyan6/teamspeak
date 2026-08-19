@@ -32,6 +32,9 @@ export interface AppConfig {
     adminSteam: string;
     globalServer: string;
   };
+  platform: {
+    baseDomain: string;
+  };
   adminPassword: string;
   jwtSecret: string;
   dbPath: string;
@@ -66,6 +69,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       adminName: env.SITE_ADMIN_NAME || '',
       adminSteam: env.SITE_ADMIN_STEAM || '',
       globalServer: env.SITE_GLOBAL_SERVER || '',
+    },
+    platform: {
+      baseDomain: (env.SITE_BASE_DOMAIN || '').trim().toLowerCase().replace(/\.$/, ''),
     },
     adminPassword: env.ADMIN_PASSWORD || '',
     // 未配置时使用进程级随机密钥，避免公开默认值被用于伪造管理员令牌。

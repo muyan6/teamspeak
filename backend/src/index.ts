@@ -18,7 +18,9 @@ import { createRouter } from './api/router.js';
 import { adminAuth } from './api/middleware.js';
 import { createHomeModulesRouter } from './features/home-modules/home-modules-router.js';
 import { WsHub } from './ws/hub.js';
-import { SubsiteManagementService } from './features/subsite-management/service.js';
+import { MultiSubsiteRegistry } from './features/multi-subsites/service.js';
+import { MultiSubsiteRuntimeManager } from './features/multi-subsites/runtime.js';
+import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter } from './features/multi-subsites/host-router.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -36,30 +38,19 @@ async function main(): Promise<void> {
   const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic);
-  const subsite = new SubsiteManagementService(config);
 
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
+  const server = http.createServer(app);
+  const wsHub = new WsHub(server, '/ws');
+  const legacyRouter = createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer });
+  const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain);
+  const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub);
+  subsiteManager.startExisting();
 
-  // 分站实例只接受绑定的域名，避免同一进程被错误域名访问。
-  if (config.site.domain) {
-    const allowedHosts = config.site.domain
-      .split(',')
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean);
-    app.use((req, res, next) => {
-      const host = req.hostname.toLowerCase();
-      const localDev = process.env.NODE_ENV !== 'production' && (host === 'localhost' || host === '127.0.0.1');
-      if (localDev || allowedHosts.includes(host)) {
-        next();
-        return;
-      }
-      res.status(421).json({ error: '当前域名未绑定到此分站' });
-    });
-  }
-
-  app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer, subsite }));
+  app.use('/api/platform', createMultiSubsitePlatformRouter(auth, subsiteManager));
+  app.use('/api', createHostSelectedApiRouter(legacyRouter, subsiteManager));
   app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
   app.get('/api/health', (_req, res) => {
@@ -78,9 +69,6 @@ async function main(): Promise<void> {
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
   }
-
-  const server = http.createServer(app);
-  const wsHub = new WsHub(server, '/ws');
 
   // 实时事件推送
   monitor.on('onlineUpdated', (data) => wsHub.broadcast('online-update', data));

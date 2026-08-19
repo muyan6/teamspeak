@@ -68,7 +68,6 @@ describe('管理接口与配置回归', () => {
       dashboard: { getSiteSlug: () => 'test', getSiteDomain: () => '', getData: async () => ({}) },
       ts3: { connected: true, getChannels: async () => [] },
       publicServer: { host: 'localhost', port: 9987 },
-      subsite: { getConfig: () => ({ slug: 'test', domain: '' }), saveConfig: () => ({ slug: 'test', domain: '' }) },
     } as unknown as ApiDeps;
 
     const app = express();
@@ -198,17 +197,5 @@ describe('管理接口与配置回归', () => {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: '十小时在线', hours: 10, serverGroupId: 3 }),
     })).status).toBe(201);
-  });
-
-  it('分站配置接口要求管理员凭证并能读写当前实例配置', async () => {
-    const { baseUrl, token } = await startRouter();
-    expect((await fetch(`${baseUrl}/admin/subsite`)).status).toBe(401);
-    const response = await fetch(`${baseUrl}/admin/subsite`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: 'server-a', domain: 'a.example.com' }),
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ slug: 'test', domain: '' });
   });
 });

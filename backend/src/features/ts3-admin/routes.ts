@@ -45,7 +45,8 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     deps.configStore.setJson('ts3Connection', config);
     deps.stats.setServerKey(getTs3ServerKey(config), true);
     deps.ts3.updateConfig(config);
-    syncTs3ConfigToEnv(config);
+    if (deps.persistTs3Config) deps.persistTs3Config(config);
+    else syncTs3ConfigToEnv(config);
     res.json({
       success: true,
       config: {

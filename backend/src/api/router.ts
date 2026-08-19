@@ -6,7 +6,6 @@ import type { StatsService } from '../services/stats.js';
 import type { AchievementService } from '../features/achievements/service.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
 import type { WeeklyChampionService } from '../features/weekly-champion/service.js';
-import type { SubsiteManagementService } from '../features/subsite-management/service.js';
 import type { Ts3ClientWrapper } from '../ts3/client.js';
 import { adminAuth } from './middleware.js';
 import { registerAchievementRoutes } from '../features/achievements/routes.js';
@@ -18,7 +17,6 @@ import { registerSiteConfigRoutes } from '../features/site-config/routes.js';
 import { registerTs3AdminRoutes } from '../features/ts3-admin/routes.js';
 import { registerTutorialConfigRoutes } from '../features/tutorial-config/routes.js';
 import { registerWeeklyChampionRoutes } from '../features/weekly-champion/routes.js';
-import { registerSubsiteManagementRoutes } from '../features/subsite-management/routes.js';
 
 export interface ApiDeps {
   auth: AuthService;
@@ -30,7 +28,7 @@ export interface ApiDeps {
   dashboard: DashboardService;
   ts3: Ts3ClientWrapper;
   publicServer: { host: string; port: number };
-  subsite: SubsiteManagementService;
+  persistTs3Config?: (config: { host: string; queryPort: number; serverPort: number; username: string; password: string }) => void;
 }
 
 export function createRouter(deps: ApiDeps): Router {
@@ -46,7 +44,6 @@ export function createRouter(deps: ApiDeps): Router {
   registerAchievementRoutes(router, deps, admin);
   registerTs3AdminRoutes(router, deps, admin);
   registerAuthRoutes(router, deps, admin);
-  registerSubsiteManagementRoutes(router, deps.subsite, admin);
 
   router.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(503).json({

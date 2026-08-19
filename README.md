@@ -73,6 +73,7 @@ npm run dev
 | `SITE_SERVER_NAME` | 站点展示的服务器名（留空则读取真实服务器名） | 否 |
 | `SITE_SLUG` | 当前分站唯一标识，例如 `server-a` | 否 |
 | `SITE_DOMAIN` | 当前分站允许访问的域名，可用逗号分隔多个域名 | 否 |
+| `SITE_BASE_DOMAIN` | 统一分站的默认根域名；也可在总站后台「统一分站」中保存 | 否 |
 | `ADMIN_PASSWORD` | 后台管理密码 | 是 |
 | `JWT_SECRET` | JWT 签名密钥，生产环境请改成随机串 | 否 |
 | `DB_PATH` | SQLite 数据库路径，默认 `data/ts3monitor.db` | 否 |
@@ -124,18 +125,23 @@ cd ../backend
 npm start
 ```
 
-## 子域名分站部署
+## 统一后台分站
 
-当不同 TeamSpeak 服务器不属于同一个管理员时，推荐为每个服务器运行一个独立实例，而不是在一个后台集中展示所有服务器。每个实例使用独立的 `.env`、SQLite 数据库和管理员密码，再通过不同子域名对外提供服务：
+总站后台的「统一分站」可集中创建和启停多个分站。先保存分站根域名，例如 `example.com`，再填写分站昵称、子域名 `alpha`、TS3 ServerQuery 参数和该分站自己的后台密码，系统会立即创建：
 
 ```text
-a.example.com -> 服务器 A
-b.example.com -> 服务器 B
+alpha.example.com -> Alpha 语音分站
 ```
 
-每个实例配置不同的 `DB_PATH`、`TS3_HOST`、`ADMIN_PASSWORD`、`SITE_SLUG` 和 `SITE_DOMAIN`。设置 `SITE_DOMAIN` 后，实例会拒绝未绑定域名的访问请求；本地开发时仍允许 `localhost` 和 `127.0.0.1`。
+每个分站都有独立的 SQLite 数据库（`backend/data/subsites/<slug>.db`）、TS3 连接参数、统计数据、后台密码、配置和自动化任务。分站的 API、WebSocket 推送和后台令牌均按 Host 隔离；停用后访问该分站域名会返回 404，但历史数据库会保留。
 
-这种部署方式可以保证服务器管理员只看到自己的实时数据、统计数据、站点配置和管理入口。DNS 侧需要将各子域名解析到同一台应用服务器，再由反向代理按子域名转发到对应端口。
+应用可以立即创建分站记录和 Host 路由，但无法在没有 DNS 服务商权限时自行创建公网 DNS 记录或签发 HTTPS 证书。生产环境还需要：
+
+1. 在 DNS 服务商配置 `*.example.com` 泛解析到运行本服务的服务器。
+2. 让反向代理将所有子域名转发到 `127.0.0.1:3001`，并保留原始 `Host` 请求头。
+3. 为根域名与通配符子域名配置 HTTPS 证书，例如 `example.com` 和 `*.example.com`。
+
+本地验证时可以通过请求的 `Host` 头模拟子域名；仅访问 `127.0.0.1:3001` 不会自动获得真实公网域名解析。
 
 ## 测试
 

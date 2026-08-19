@@ -10,12 +10,12 @@ import type {
   ProfileData,
   ServerGroup,
   SiteConfig,
-  SubsiteConfig,
   Ts3ConnectionInfo,
   TutorialConfig,
   UnlockedAchievement,
   UserSuggestion,
 } from './types';
+import type { CreateManagedSubsiteInput, ManagedSubsite, MultiSubsiteSettings } from './features/multi-subsites/types';
 
 const BASE = '/api';
 
@@ -88,8 +88,11 @@ export const api = {
 
   getTs3Config: () => request<Ts3ConnectionInfo>('/admin/ts3-config'),
   saveTs3Config: (data: Record<string, unknown>) => request<{ success: boolean; config: Ts3ConnectionInfo }>('/admin/ts3-config', { method: 'POST', body: JSON.stringify(data) }),
-  getSubsiteConfig: () => request<SubsiteConfig>('/admin/subsite'),
-  saveSubsiteConfig: (data: SubsiteConfig) => request<SubsiteConfig>('/admin/subsite', { method: 'POST', body: JSON.stringify(data) }),
+  listManagedSubsites: () => request<{ subsites: ManagedSubsite[] }>('/platform/subsites').then((result) => result.subsites),
+  createManagedSubsite: (data: CreateManagedSubsiteInput) => request<ManagedSubsite>('/platform/subsites', { method: 'POST', body: JSON.stringify(data) }),
+  setManagedSubsiteEnabled: (id: number, enabled: boolean) => request<ManagedSubsite>(`/platform/subsites/${id}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  getMultiSubsiteSettings: () => request<MultiSubsiteSettings>('/platform/settings'),
+  saveMultiSubsiteSettings: (data: MultiSubsiteSettings) => request<MultiSubsiteSettings>('/platform/settings', { method: 'POST', body: JSON.stringify(data) }),
 
   login: async (password: string): Promise<void> => {
     const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });

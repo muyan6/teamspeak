@@ -2,7 +2,7 @@
 import { defineAsyncComponent, ref } from 'vue';
 import { api } from '../api';
 
-type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tutorial' | 'ts3' | 'modules' | 'subsite';
+type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tutorial' | 'ts3' | 'modules' | 'subsites';
 
 const password = ref('');
 const authed = ref(api.isAuthed());
@@ -16,7 +16,7 @@ const SiteConfigPanel = defineAsyncComponent(() => import('../features/site-conf
 const TutorialConfigPanel = defineAsyncComponent(() => import('../features/tutorial-config/TutorialConfigPanel.vue'));
 const Ts3AdminPanel = defineAsyncComponent(() => import('../features/ts3-admin/Ts3AdminPanel.vue'));
 const WeeklyChampionPanel = defineAsyncComponent(() => import('../features/weekly-champion/WeeklyChampionPanel.vue'));
-const SubsiteManagementPanel = defineAsyncComponent(() => import('../features/subsite-management/SubsiteManagementPanel.vue'));
+const MultiSubsitesPanel = defineAsyncComponent(() => import('../features/multi-subsites/MultiSubsitesPanel.vue'));
 
 async function login(): Promise<void> {
   loginError.value = '';
@@ -70,7 +70,7 @@ function logout(): void {
           <button class="btn sm" :class="{ primary: activeTab === 'site' }" @click="activeTab = 'site'">站点配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'tutorial' }" @click="activeTab = 'tutorial'">教程配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'modules' }" @click="activeTab = 'modules'">主页模块</button>
-          <button class="btn sm" :class="{ primary: activeTab === 'subsite' }" @click="activeTab = 'subsite'">分站管理</button>
+          <button class="btn sm" :class="{ primary: activeTab === 'subsites' }" @click="activeTab = 'subsites'">统一分站</button>
         </div>
 
         <div class="tab-panel">
@@ -82,7 +82,7 @@ function logout(): void {
           <SiteConfigPanel v-else-if="activeTab === 'site'" />
           <TutorialConfigPanel v-else-if="activeTab === 'tutorial'" />
           <HomeModulesPanel v-else-if="activeTab === 'modules'" />
-          <SubsiteManagementPanel v-else />
+          <MultiSubsitesPanel v-else-if="activeTab === 'subsites'" />
         </div>
       </div>
     </div>
