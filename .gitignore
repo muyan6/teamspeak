@@ -3,6 +3,9 @@
 .gemini
 .opencode
 
+# Linked Git worktrees used for isolated feature tasks
+/.worktrees/
+
 # IDE and Editors
 **/.idea/
 **/.vscode/
