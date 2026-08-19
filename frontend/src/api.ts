@@ -108,6 +108,12 @@ export const api = {
     authState.value = true;
     localStorage.setItem('admin_token', authToken);
   },
+  changeAdminPassword: async (data: { currentPassword: string; newPassword: string }): Promise<void> => {
+    const res = await request<{ token: string }>('/auth/password', { method: 'POST', body: JSON.stringify(data) });
+    authToken = res.token;
+    authState.value = true;
+    localStorage.setItem('admin_token', authToken);
+  },
   logout: (): void => {
     clearAuth();
   },

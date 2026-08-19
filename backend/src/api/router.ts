@@ -31,6 +31,7 @@ export interface ApiDeps {
   publicServer: { host: string; port: number };
   credentialCipher: CredentialCipher;
   persistTs3Config?: (config: { host: string; queryPort: number; serverPort: number; serverId: number; username: string; password: string }) => void;
+  persistAdminPasswordHash?: (passwordHash: string) => void;
 }
 
 export function createRouter(deps: ApiDeps): Router {

@@ -248,6 +248,13 @@ export class MultiSubsiteRegistry {
     if (!result.changes) throw new Error('分站不存在');
   }
 
+  updateAdminPasswordHash(id: number, passwordHash: string): void {
+    if (!isAdminPasswordHash(passwordHash)) throw new Error('管理员密码哈希格式无效');
+    const result = this.db.prepare('UPDATE managed_subsites SET admin_password = ?, updated_at = ? WHERE id = ?')
+      .run(passwordHash, Date.now(), id);
+    if (!result.changes) throw new Error('分站不存在');
+  }
+
   private migrateCredentials(): void {
     const rows = this.db.prepare(
       'SELECT id, query_password, admin_password FROM managed_subsites'

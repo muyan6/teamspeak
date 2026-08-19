@@ -65,6 +65,7 @@ describe('管理接口与配置回归', () => {
   async function startRouter(): Promise<{
     baseUrl: string;
     token: string;
+    auth: AuthService;
     savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }>;
     siteConfig: Map<string, string>;
     clientDbListCalls: () => number;
@@ -139,6 +140,7 @@ describe('管理接口与配置回归', () => {
       },
       publicServer: { host: 'localhost', port: 9987 },
       credentialCipher,
+      persistAdminPasswordHash: (passwordHash: string) => siteConfig.set('adminPassword', passwordHash),
     } as unknown as ApiDeps;
 
     const app = express();
@@ -149,8 +151,42 @@ describe('管理接口与配置回归', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
-    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs, siteConfig, clientDbListCalls: () => clientDbListCalls };
+    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), auth, savedChampionConfigs, siteConfig, clientDbListCalls: () => clientDbListCalls };
   }
+
+  it('已登录管理员改密后持久化哈希、旧令牌失效且新令牌可用', async () => {
+    const { baseUrl, token, auth, siteConfig } = await startRouter();
+
+    const invalid = await fetch(`${baseUrl}/auth/password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'test-password', newPassword: 'short' }),
+    });
+    expect(invalid.status).toBe(400);
+
+    const wrongCurrentPassword = await fetch(`${baseUrl}/auth/password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'wrong-password', newPassword: 'new-password-123' }),
+    });
+    expect(wrongCurrentPassword.status).toBe(400);
+
+    const changed = await fetch(`${baseUrl}/auth/password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'test-password', newPassword: 'new-password-123' }),
+    });
+    expect(changed.status).toBe(200);
+    const { token: replacementToken } = await changed.json() as { token: string };
+
+    expect(replacementToken).not.toBe(token);
+    expect(siteConfig.get('adminPassword')).toMatch(/^scrypt\$/);
+    expect(siteConfig.get('adminPassword')).not.toContain('new-password-123');
+    expect(auth.verifyAdminPassword('test-password')).toBe(false);
+    expect(auth.verifyAdminPassword('new-password-123')).toBe(true);
+    expect((await fetch(`${baseUrl}/auth/check`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401);
+    expect((await fetch(`${baseUrl}/auth/check`, { headers: { Authorization: `Bearer ${replacementToken}` } })).status).toBe(200);
+  });
 
   it('弹性频道接口要求管理员凭证，避免泄露频道密码', async () => {
     const { baseUrl, token } = await startRouter();

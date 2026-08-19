@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from '../../db/database.js';
 import { MultiSubsiteRegistry } from './service.js';
-import { CredentialCipher } from '../../services/auth.js';
+import { AuthService, CredentialCipher, hashAdminPassword } from '../../services/auth.js';
 
 describe('统一分站注册表', () => {
   it('创建分站时自动生成子域名并隔离敏感密码字段', () => {
@@ -64,6 +64,28 @@ describe('统一分站注册表', () => {
     expect(stored?.admin_password).not.toContain('admin-password');
     expect(stored?.admin_password).toMatch(/^scrypt\$/);
     expect(registry.get(created.id)?.password).toBe('query-password');
+    db.close();
+  });
+
+  it('修改一个分站的后台密码时不会影响其他分站', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com');
+    const alpha = registry.create({ displayName: 'Alpha', slug: 'alpha', ts3Host: '127.0.0.1', adminPassword: 'alpha-password' });
+    const beta = registry.create({ displayName: 'Beta', slug: 'beta', ts3Host: '127.0.0.2', adminPassword: 'beta-password' });
+    const betaPasswordHash = beta.adminPassword;
+
+    registry.updateAdminPasswordHash(alpha.id, hashAdminPassword('new-alpha-password'));
+
+    const updatedAlpha = registry.get(alpha.id);
+    const unchangedBeta = registry.get(beta.id);
+    expect(updatedAlpha?.adminPassword).not.toBe(alpha.adminPassword);
+    expect(unchangedBeta?.adminPassword).toBe(betaPasswordHash);
+    const alphaAuth = new AuthService(updatedAlpha?.adminPassword || '', 'alpha-secret');
+    const betaAuth = new AuthService(unchangedBeta?.adminPassword || '', 'beta-secret');
+    expect(alphaAuth.verifyAdminPassword('new-alpha-password')).toBe(true);
+    expect(betaAuth.verifyAdminPassword('beta-password')).toBe(true);
+    expect(betaAuth.verifyAdminPassword('new-alpha-password')).toBe(false);
+    expect(betaAuth.verifyToken(alphaAuth.signToken())).toBeNull();
     db.close();
   });
 });

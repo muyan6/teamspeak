@@ -5,8 +5,10 @@ import type { Ts3ConnectionInfo } from '../../types';
 
 const connection = ref<Ts3ConnectionInfo | null>(null);
 const form = ref({ host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: '', password: '' });
+const adminPasswordForm = ref({ currentPassword: '', newPassword: '', confirmPassword: '' });
 const saving = ref(false);
 const reconnecting = ref(false);
+const changingAdminPassword = ref(false);
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let connectionCheckId = 0;
@@ -93,6 +95,33 @@ async function save(): Promise<void> {
   }
 }
 
+async function changeAdminPassword(): Promise<void> {
+  const { currentPassword, newPassword, confirmPassword } = adminPasswordForm.value;
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    showNotice('请填写当前密码、新密码和确认密码');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showNotice('两次输入的新密码不一致');
+    return;
+  }
+  if (newPassword.length < 8) {
+    showNotice('新密码至少需要 8 个字符');
+    return;
+  }
+  if (changingAdminPassword.value) return;
+  changingAdminPassword.value = true;
+  try {
+    await api.changeAdminPassword({ currentPassword, newPassword });
+    adminPasswordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' };
+    showNotice('后台管理密码已修改，当前站点的其他登录会话已失效');
+  } catch (error) {
+    showNotice(`后台管理密码修改失败：${(error as Error).message || '请求失败'}`);
+  } finally {
+    changingAdminPassword.value = false;
+  }
+}
+
 onMounted(() => { void load(); });
 onBeforeUnmount(() => {
   connectionCheckId += 1;
@@ -135,5 +164,38 @@ onBeforeUnmount(() => {
     <div class="modal-actions">
       <button class="btn primary" :disabled="saving" @click="save">{{ saving ? (reconnecting ? '连接检测中...' : '保存中...') : '保存并重连' }}</button>
     </div>
+
+    <section class="admin-password-section">
+      <h3>后台管理密码</h3>
+      <div class="field">
+        <label>当前密码</label>
+        <input v-model="adminPasswordForm.currentPassword" class="input" type="password" autocomplete="current-password" />
+      </div>
+      <div class="field">
+        <label>新密码</label>
+        <input v-model="adminPasswordForm.newPassword" class="input" type="password" minlength="8" maxlength="256" autocomplete="new-password" />
+      </div>
+      <div class="field">
+        <label>确认新密码</label>
+        <input v-model="adminPasswordForm.confirmPassword" class="input" type="password" minlength="8" maxlength="256" autocomplete="new-password" @keyup.enter="changeAdminPassword" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" :disabled="changingAdminPassword" @click="changeAdminPassword">{{ changingAdminPassword ? '修改中...' : '修改后台密码' }}</button>
+      </div>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.admin-password-section {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-password-section h3 {
+  margin: 0 0 16px;
+  color: var(--text);
+  font-size: 16px;
+}
+</style>

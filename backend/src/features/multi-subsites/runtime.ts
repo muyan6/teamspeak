@@ -55,6 +55,7 @@ class ManagedSubsiteRuntime {
     const deps: ApiDeps = {
       auth, configStore: store, stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer, credentialCipher,
       persistTs3Config: (next) => registry.updateTs3Config(subsite.id, next),
+      persistAdminPasswordHash: (passwordHash) => registry.updateAdminPasswordHash(subsite.id, passwordHash),
     };
     this.router = createRouter(deps);
     this.router.use(createHomeModulesRouter({ configStore: store, requireAdmin: adminAuth(auth) }));

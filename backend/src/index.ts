@@ -55,7 +55,19 @@ async function main(): Promise<void> {
   app.use(express.json({ limit: '1mb' }));
   const server = http.createServer(app);
   const wsHub = new WsHub(server, '/ws');
-  const legacyRouter = createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer, credentialCipher });
+  const legacyRouter = createRouter({
+    auth,
+    configStore,
+    stats,
+    elastic,
+    champion,
+    achievement,
+    dashboard,
+    ts3,
+    publicServer: config.publicServer,
+    credentialCipher,
+    persistAdminPasswordHash: (passwordHash) => configStore.set('adminPassword', passwordHash),
+  });
   const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain, credentialCipher);
   const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub, credentialCipher);
   subsiteManager.startExisting();

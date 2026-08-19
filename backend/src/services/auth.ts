@@ -8,6 +8,7 @@ const CREDENTIAL_PREFIX = 'enc:v1';
 
 export interface AdminTokenPayload {
   role: 'admin';
+  passwordVersion: string;
 }
 
 export interface AdminPasswordStore {
@@ -34,7 +35,7 @@ export function initializeAdminPassword(store: AdminPasswordStore, bootstrapPass
 }
 
 export class AuthService {
-  private readonly adminPasswordHash: string;
+  private adminPasswordHash: string;
 
   constructor(
     adminPassword: string,
@@ -50,18 +51,36 @@ export class AuthService {
     return Boolean(this.adminPasswordHash) && verifyAdminPasswordHash(this.adminPasswordHash, password);
   }
 
+  setAdminPasswordHash(passwordHash: string): void {
+    if (!isAdminPasswordHash(passwordHash)) throw new Error('管理员密码哈希格式无效');
+    this.adminPasswordHash = passwordHash;
+  }
+
   signToken(): string {
-    const payload: AdminTokenPayload = { role: 'admin' };
+    const payload: AdminTokenPayload = { role: 'admin', passwordVersion: this.getPasswordVersion() };
     return jwt.sign(payload, this.jwtSecret, { expiresIn: this.tokenTtlSeconds });
   }
 
   verifyToken(token: string): AdminTokenPayload | null {
     try {
-      const decoded = jwt.verify(token, this.jwtSecret) as AdminTokenPayload;
-      return decoded.role === 'admin' ? decoded : null;
+      const decoded = jwt.verify(token, this.jwtSecret) as Partial<AdminTokenPayload>;
+      if (decoded.role !== 'admin' || typeof decoded.passwordVersion !== 'string') return null;
+      return this.passwordVersionMatches(decoded.passwordVersion)
+        ? { role: 'admin', passwordVersion: decoded.passwordVersion }
+        : null;
     } catch {
       return null;
     }
+  }
+
+  private getPasswordVersion(): string {
+    return createHash('sha256').update(this.adminPasswordHash).digest('base64url');
+  }
+
+  private passwordVersionMatches(value: string): boolean {
+    const expected = Buffer.from(this.getPasswordVersion());
+    const actual = Buffer.from(value);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 }
 
