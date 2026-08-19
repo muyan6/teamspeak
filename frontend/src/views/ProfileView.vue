@@ -257,7 +257,7 @@ onMounted(() => {
             </div>
           </div>
           <ul v-if="profile.bond_friends.length" class="bond-list">
-            <li v-for="(f, i) in profile.bond_friends" :key="f.name" class="bond-item">
+            <li v-for="(f, i) in profile.bond_friends" :key="f.dbid" class="bond-item">
               <div class="bond-left">
                 <div class="bond-icon" :class="{ top: i < 3 }">♥</div>
                 <div>

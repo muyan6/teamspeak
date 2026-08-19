@@ -33,10 +33,19 @@ export class WeeklyChampionService {
     };
   }
 
-  getConfig(): ChampionConfig {
+  private claimLegacyConfig(serverKey: string): void {
+    if (serverKey === 'legacy') return;
+    const existing = this.db.prepare('SELECT 1 FROM champion_config WHERE server_key = ?').get(serverKey);
+    if (existing) return;
+    const legacy = this.db.prepare('SELECT 1 FROM champion_config WHERE server_key = ?').get('legacy');
+    if (!legacy) return;
+    this.db.prepare('UPDATE champion_config SET server_key = ? WHERE server_key = ?').run(serverKey, 'legacy');
+  }
+
+  private getConfigForServer(serverKey: string): ChampionConfig {
+    this.claimLegacyConfig(serverKey);
     const row = this.db.prepare(
       `SELECT
-         id,
          enabled,
          server_group_id AS serverGroupId,
          check_interval_hours AS checkIntervalHours,
@@ -44,8 +53,8 @@ export class WeeklyChampionService {
          last_winner_client_db_id AS lastWinnerClientDbId,
          last_winner_nickname AS lastWinnerNickname
        FROM champion_config
-       WHERE id = 1`
-    ).get() as
+       WHERE server_key = ?`
+    ).get(serverKey) as
       | ChampionConfig
       | undefined;
     if (!row) return this.defaults();
@@ -60,23 +69,29 @@ export class WeeklyChampionService {
     };
   }
 
+  getConfig(): ChampionConfig {
+    return this.getConfigForServer(this.stats.getServerKey());
+  }
+
   saveConfig(data: {
     enabled: number;
     serverGroupId: number | null;
     checkIntervalHours: number;
   }): ChampionConfig {
-    const cfg = this.getConfig();
+    const serverKey = this.stats.getServerKey();
+    const cfg = this.getConfigForServer(serverKey);
     this.db
       .prepare(
-        `INSERT INTO champion_config (id, enabled, server_group_id, check_interval_hours, last_check_time, last_winner_client_db_id, last_winner_nickname, updated_at)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
+        `INSERT INTO champion_config (server_key, enabled, server_group_id, check_interval_hours, last_check_time, last_winner_client_db_id, last_winner_nickname, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(server_key) DO UPDATE SET
            enabled = excluded.enabled,
            server_group_id = excluded.server_group_id,
            check_interval_hours = excluded.check_interval_hours,
            updated_at = excluded.updated_at`
       )
       .run(
+        serverKey,
         data.enabled,
         data.serverGroupId,
         data.checkIntervalHours,
@@ -85,7 +100,7 @@ export class WeeklyChampionService {
         cfg.lastWinnerNickname,
         Date.now()
       );
-    return this.getConfig();
+    return this.getConfigForServer(serverKey);
   }
 
   /** 检测本周活跃榜第一名并授予奖励 */
@@ -99,7 +114,8 @@ export class WeeklyChampionService {
   }
 
   private async checkInternal(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
-    const cfg = this.getConfig();
+    const serverKey = this.stats.getServerKey();
+    const cfg = this.getConfigForServer(serverKey);
     if (!cfg.enabled || !cfg.serverGroupId) return null;
 
     const top = this.stats.getTopUsers('week', 1)[0];
@@ -112,7 +128,7 @@ export class WeeklyChampionService {
     if (!alreadyWinner) {
       granted = await this.ts3.addClientToServerGroup(cfg.serverGroupId, clientDbId);
       if (!granted) {
-        this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE id = 1').run(Date.now());
+        this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
         return { nickname: top.nickname, seconds: top.seconds, granted: false };
       }
 
@@ -121,7 +137,7 @@ export class WeeklyChampionService {
         const removed = await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
         if (!removed) {
           await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, clientDbId);
-          this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE id = 1').run(Date.now());
+          this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
           return { nickname: top.nickname, seconds: top.seconds, granted: false };
         }
       }
@@ -129,9 +145,11 @@ export class WeeklyChampionService {
 
     this.db
       .prepare(
-        `UPDATE champion_config SET last_check_time = ?, last_winner_client_db_id = ?, last_winner_nickname = ? WHERE id = 1`
+        `UPDATE champion_config
+         SET last_check_time = ?, last_winner_client_db_id = ?, last_winner_nickname = ?
+         WHERE server_key = ?`
       )
-      .run(Date.now(), clientDbId, top.nickname);
+      .run(Date.now(), clientDbId, top.nickname, serverKey);
 
     return { nickname: top.nickname, seconds: top.seconds, granted };
   }

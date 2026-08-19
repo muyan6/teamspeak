@@ -102,10 +102,11 @@ CREATE TABLE IF NOT EXISTS elastic_groups (
 );
 
 CREATE TABLE IF NOT EXISTS elastic_managed_channels (
+  server_key TEXT NOT NULL DEFAULT 'legacy',
   group_id INTEGER NOT NULL,
   channel_id INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
-  PRIMARY KEY (group_id, channel_id),
+  PRIMARY KEY (server_key, group_id, channel_id),
   FOREIGN KEY (group_id) REFERENCES elastic_groups(id) ON DELETE CASCADE
 );
 
@@ -127,7 +128,7 @@ CREATE TABLE IF NOT EXISTS achievement_grants (
 );
 
 CREATE TABLE IF NOT EXISTS champion_config (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
+  server_key TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 0,
   server_group_id INTEGER,
   check_interval_hours INTEGER NOT NULL DEFAULT 24,
@@ -260,6 +261,18 @@ function recoverInterruptedStatsRebuilds(
   }
 }
 
+function hasUniqueColumns(db: AppDatabase, table: string, expectedColumns: string[]): boolean {
+  const indexes = db.prepare(`PRAGMA index_list(${table})`).all() as Array<{ name: string; unique: number }>;
+  return indexes.some((index) => {
+    if (!index.unique) return false;
+    const columns = (db.prepare(`PRAGMA index_info(${index.name})`).all() as Array<{ name: string; seqno: number }>)
+      .sort((left, right) => left.seqno - right.seqno)
+      .map((column) => column.name);
+    return columns.length === expectedColumns.length
+      && expectedColumns.every((column, index) => columns[index] === column);
+  });
+}
+
 export function migrateStatsSchema(db: AppDatabase): void {
   const tables = [
     'online_clients',
@@ -270,7 +283,9 @@ export function migrateStatsSchema(db: AppDatabase): void {
     'channel_daily_activity',
     'user_daily_activity',
     'user_channel_activity',
+    'elastic_managed_channels',
     'achievement_grants',
+    'champion_config',
   ];
   for (const table of tables) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -279,7 +294,13 @@ export function migrateStatsSchema(db: AppDatabase): void {
     }
   }
 
-  const rebuilds: Array<{ table: string; columns: string; create: string; primaryKey: string[] }> = [
+  const rebuilds: Array<{
+    table: string;
+    columns: string;
+    create: string;
+    primaryKey: string[];
+    uniqueColumns?: string[];
+  }> = [
     {
       table: 'online_clients',
       columns: 'server_key, client_database_id, unique_identifier, nickname, servergroup_ids, channel_id, channel_name, connected_time, last_seen',
@@ -367,6 +388,48 @@ export function migrateStatsSchema(db: AppDatabase): void {
         PRIMARY KEY (server_key, client_database_id, channel_id)
       )`,
     },
+    {
+      table: 'elastic_managed_channels',
+      columns: 'server_key, group_id, channel_id, created_at',
+      primaryKey: ['server_key', 'group_id', 'channel_id'],
+      create: `CREATE TABLE elastic_managed_channels__new (
+        server_key TEXT NOT NULL DEFAULT 'legacy',
+        group_id INTEGER NOT NULL,
+        channel_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (server_key, group_id, channel_id),
+        FOREIGN KEY (group_id) REFERENCES elastic_groups(id) ON DELETE CASCADE
+      )`,
+    },
+    {
+      table: 'achievement_grants',
+      columns: 'server_key, id, client_database_id, level_id, granted_at',
+      primaryKey: ['id'],
+      uniqueColumns: ['server_key', 'client_database_id', 'level_id'],
+      create: `CREATE TABLE achievement_grants__new (
+        server_key TEXT NOT NULL DEFAULT 'legacy',
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_database_id INTEGER NOT NULL,
+        level_id INTEGER NOT NULL,
+        granted_at INTEGER NOT NULL,
+        UNIQUE(server_key, client_database_id, level_id)
+      )`,
+    },
+    {
+      table: 'champion_config',
+      columns: 'server_key, enabled, server_group_id, check_interval_hours, last_check_time, last_winner_client_db_id, last_winner_nickname, updated_at',
+      primaryKey: ['server_key'],
+      create: `CREATE TABLE champion_config__new (
+        server_key TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        server_group_id INTEGER,
+        check_interval_hours INTEGER NOT NULL DEFAULT 24,
+        last_check_time INTEGER,
+        last_winner_client_db_id INTEGER,
+        last_winner_nickname TEXT,
+        updated_at INTEGER
+      )`,
+    },
   ];
 
   recoverInterruptedStatsRebuilds(db, rebuilds);
@@ -382,7 +445,11 @@ export function migrateStatsSchema(db: AppDatabase): void {
       .filter((column) => column.pk > 0)
       .sort((a, b) => a.pk - b.pk)
       .map((column) => column.name);
-    if (migration.primaryKey.every((column, index) => pkColumns[index] === column)) continue;
+    const primaryKeyMatches = pkColumns.length === migration.primaryKey.length
+      && migration.primaryKey.every((column, index) => pkColumns[index] === column);
+    const uniqueColumnsMatch = !migration.uniqueColumns
+      || hasUniqueColumns(db, migration.table, migration.uniqueColumns);
+    if (primaryKeyMatches && uniqueColumnsMatch) continue;
     db.transaction(() => {
       db.exec(`DROP TABLE IF EXISTS ${migration.table}__new`);
       db.exec(`ALTER TABLE ${migration.table} RENAME TO ${migration.table}__old`);

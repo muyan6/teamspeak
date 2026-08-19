@@ -11,6 +11,7 @@ import { StatsService } from '../src/services/stats.js';
 import { ElasticChannelService } from '../src/features/elastic-channels/service.js';
 import { AchievementService } from '../src/features/achievements/service.js';
 import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
+import { MonitorService } from '../src/services/monitor.js';
 import { WsHub } from '../src/ws/hub.js';
 
 describe('TS3 监控后端核心链路', () => {
@@ -94,6 +95,60 @@ describe('TS3 监控后端核心链路', () => {
       recoveredDb.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('旧数据库迁移后按服务器隔离弹性映射、成就授权和周冠军配置', () => {
+    const legacyDb = new AppDatabase(':memory:');
+    try {
+      legacyDb.exec(`CREATE TABLE elastic_managed_channels (
+        group_id INTEGER NOT NULL,
+        channel_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, channel_id)
+      )`);
+      legacyDb.exec("INSERT INTO elastic_managed_channels VALUES (1, 10, 1)");
+      legacyDb.exec(`CREATE TABLE achievement_grants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_database_id INTEGER NOT NULL,
+        level_id INTEGER NOT NULL,
+        granted_at INTEGER NOT NULL,
+        UNIQUE(client_database_id, level_id)
+      )`);
+      legacyDb.exec('INSERT INTO achievement_grants (client_database_id, level_id, granted_at) VALUES (7, 2, 1)');
+      legacyDb.exec(`CREATE TABLE champion_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        enabled INTEGER NOT NULL DEFAULT 0,
+        server_group_id INTEGER,
+        check_interval_hours INTEGER NOT NULL DEFAULT 24,
+        last_check_time INTEGER,
+        last_winner_client_db_id INTEGER,
+        last_winner_nickname TEXT,
+        updated_at INTEGER
+      )`);
+      legacyDb.exec("INSERT INTO champion_config (id, enabled, server_group_id, check_interval_hours) VALUES (1, 1, 8, 12)");
+      legacyDb.exec(SCHEMA);
+      legacyDb.prepare(
+        `INSERT INTO elastic_groups (
+          id, name, name_prefix, create_threshold, delete_threshold,
+          max_channels, enabled, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(1, '旧频道组', '#legacy-', 2, 0, 8, 1, 1);
+      migrateStatsSchema(legacyDb);
+
+      expect(legacyDb.prepare('SELECT server_key FROM elastic_managed_channels').get()).toEqual({ server_key: 'legacy' });
+      expect(
+        legacyDb.prepare(
+          'INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)'
+        ).run('server-b', 7, 2, 2).changes
+      ).toBe(1);
+
+      const stats = new StatsService(legacyDb, 'server-a');
+      const champion = new WeeklyChampionService(legacyDb, {} as never, stats);
+      expect(champion.getConfig()).toMatchObject({ enabled: 1, serverGroupId: 8, checkIntervalHours: 12 });
+      expect(legacyDb.prepare('SELECT server_key FROM champion_config').get()).toEqual({ server_key: 'server-a' });
+    } finally {
+      legacyDb.close();
     }
   });
 
@@ -344,7 +399,10 @@ describe('TS3 监控后端核心链路', () => {
 
   it('周冠军授予或旧冠军移除失败时保留原获奖者并允许下轮重试', async () => {
     const championDb = openDatabase(':memory:');
-    const stats = { getTopUsers: () => [{ clientDatabaseId: 200, nickname: '新冠军', seconds: 3600 }] } as never;
+    const stats = {
+      getServerKey: () => 'legacy',
+      getTopUsers: () => [{ clientDatabaseId: 200, nickname: '新冠军', seconds: 3600 }],
+    } as never;
     const calls: string[] = [];
     const champion = new WeeklyChampionService(championDb, {
       addClientToServerGroup: async () => {
@@ -357,7 +415,9 @@ describe('TS3 监控后端核心链路', () => {
       },
     } as never, stats);
     champion.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
-    championDb.prepare('UPDATE champion_config SET last_winner_client_db_id = 100, last_winner_nickname = ? WHERE id = 1').run('旧冠军');
+    championDb.prepare(
+      "UPDATE champion_config SET last_winner_client_db_id = 100, last_winner_nickname = ? WHERE server_key = 'legacy'"
+    ).run('旧冠军');
 
     await champion.check();
     await champion.check();
@@ -384,7 +444,10 @@ describe('TS3 监控后端核心链路', () => {
 
   it('周冠军并发检查只授予一次奖励', async () => {
     const championDb = openDatabase(':memory:');
-    const stats = { getTopUsers: () => [{ clientDatabaseId: 200, nickname: '并发冠军', seconds: 3600 }] } as never;
+    const stats = {
+      getServerKey: () => 'legacy',
+      getTopUsers: () => [{ clientDatabaseId: 200, nickname: '并发冠军', seconds: 3600 }],
+    } as never;
     let grants = 0;
     const champion = new WeeklyChampionService(championDb, {
       addClientToServerGroup: async () => {
@@ -400,6 +463,35 @@ describe('TS3 监控后端核心链路', () => {
 
     expect(grants).toBe(1);
     expect(first).toEqual(second);
+    championDb.close();
+  });
+
+  it('周冠军配置和获奖记录按服务器隔离', async () => {
+    const championDb = openDatabase(':memory:');
+    const grants: Array<[number, number]> = [];
+    const ts3 = {
+      addClientToServerGroup: async (groupId: number, clientDbId: number) => {
+        grants.push([groupId, clientDbId]);
+        return true;
+      },
+      removeClientFromServerGroup: async () => true,
+    } as never;
+    const top = [{ clientDatabaseId: 200, nickname: '同一数据库 ID 的冠军', seconds: 3600 }];
+    const first = new WeeklyChampionService(championDb, ts3, {
+      getServerKey: () => 'server-a',
+      getTopUsers: () => top,
+    } as never);
+    const second = new WeeklyChampionService(championDb, ts3, {
+      getServerKey: () => 'server-b',
+      getTopUsers: () => top,
+    } as never);
+
+    first.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+    await first.check();
+    second.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+    await second.check();
+
+    expect(grants).toEqual([[7, 200], [7, 200]]);
     championDb.close();
   });
 
@@ -595,6 +687,39 @@ describe('TS3 监控后端核心链路', () => {
     elasticDb.close();
   });
 
+  it('切换 TS3 服务器后不会删除旧服务器映射的同 ID 频道', async () => {
+    const elasticDb = openDatabase(':memory:');
+    let serverKey = 'server-a';
+    const deleted: number[] = [];
+    const elastic = new ElasticChannelService(elasticDb, {
+      getChannels: async () => [
+        { cid: 10, parentId: 0, name: '#room-1', totalClients: 0, totalClientsFamily: 0, order: 1 },
+      ],
+      createChannel: async () => 0,
+      deleteChannel: async (cid: number) => {
+        deleted.push(cid);
+        return true;
+      },
+      getChannel: async () => ({ name: '#room-1', totalClients: 0 }),
+    } as never, undefined, () => serverKey);
+    const group = elastic.addGroup({
+      name: '房间',
+      namePrefix: '#room-',
+      createThreshold: 2,
+      deleteThreshold: 0,
+      maxChannels: 4,
+    });
+    elasticDb.prepare(
+      'INSERT INTO elastic_managed_channels (server_key, group_id, channel_id, created_at) VALUES (?, ?, ?, ?)'
+    ).run('server-a', group.id, 10, Date.now());
+
+    serverKey = 'server-b';
+    await elastic.tick();
+
+    expect(deleted).toEqual([]);
+    elasticDb.close();
+  });
+
   it('成就服务能授予达标用户', async () => {
     const ach = new AchievementService(db, ts3, new StatsService(db));
     ach.addLevel({ hours: 0, serverGroupId: 3, title: '测试成就' });
@@ -609,6 +734,81 @@ describe('TS3 监控后端核心链路', () => {
     const champion = new WeeklyChampionService(db, ts3, stats);
     const current = champion.getCurrentChampion();
     expect(current).not.toBeNull();
+  });
+
+  it('同名羁绊好友按数据库 ID 独立统计', () => {
+    const bondDb = openDatabase(':memory:');
+    try {
+      const stats = new StatsService(bondDb);
+      const now = Math.floor(Date.now() / 1000);
+      const duration = bondDb.prepare(
+        `INSERT INTO user_online_duration (
+          server_key, client_database_id, unique_identifier, nickname,
+          total_seconds, week_seconds, longest_session_seconds, last_updated
+        ) VALUES ('legacy', ?, ?, ?, ?, 0, 0, ?)`
+      );
+      duration.run(1, 'uid-self', '发起人', 7200, now);
+      duration.run(2, 'uid-friend-1', '同名好友', 7200, now);
+      duration.run(3, 'uid-friend-2', '同名好友', 7200, now);
+      const session = bondDb.prepare(
+        `INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds)
+         VALUES ('legacy', ?, ?, ?, ?, ?)`
+      );
+      session.run(1, '发起人', now - 7200, now, 7200);
+      session.run(2, '同名好友', now - 7200, now, 7200);
+      session.run(3, '同名好友', now - 7200, now, 7200);
+
+      const profile = stats.getUserStats('发起人');
+      expect(profile?.bond_friends).toHaveLength(2);
+      expect(profile?.bond_friends.map((friend) => friend.dbid)).toEqual(expect.arrayContaining([2, 3]));
+      expect(profile?.bond_friends.every((friend) => friend.hours === 2)).toBe(true);
+    } finally {
+      bondDb.close();
+    }
+  });
+
+  it('监控采集重入时复用进行中的请求', async () => {
+    const monitorDb = openDatabase(':memory:');
+    try {
+      const stats = new StatsService(monitorDb);
+      let stateCalls = 0;
+      let clientCalls = 0;
+      let channelCalls = 0;
+      const monitor = new MonitorService({
+        getServerState: async () => {
+          stateCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { name: 'Test Server', clientsOnline: 1, maxClients: 32, uptime: 1 };
+        },
+        getClients: async () => {
+          clientCalls += 1;
+          return [{
+            clid: 1,
+            clientDatabaseId: 1,
+            uniqueIdentifier: 'uid-monitor',
+            nickname: 'MonitorUser',
+            serverGroupIds: [1],
+            channelId: 1,
+            channelName: 'Lobby',
+            channelGroupId: 0,
+            connectedTime: Math.floor(Date.now() / 1000) - 60,
+            clientType: 0,
+          }];
+        },
+        getChannels: async () => {
+          channelCalls += 1;
+          return [{ cid: 1, parentId: 0, name: 'Lobby', totalClients: 1, totalClientsFamily: 1, order: 0 }];
+        },
+      } as never, stats, monitorDb, 1000, 1000);
+
+      await Promise.all([monitor.collect(), monitor.collect()]);
+
+      expect(stateCalls).toBe(1);
+      expect(clientCalls).toBe(1);
+      expect(channelCalls).toBe(1);
+    } finally {
+      monitorDb.close();
+    }
   });
 
   it('首次连接失败后会自动重试并恢复连接', async () => {

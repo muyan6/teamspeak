@@ -120,7 +120,7 @@ export interface ProfileData {
     max_streak: number;
     last_online: string;
   };
-  bond_friends: Array<{ name: string; hours: number; last_meet: number }>;
+  bond_friends: Array<{ dbid: number; name: string; hours: number; last_meet: number }>;
   frequent_channels: Array<{ name: string; minutes: number }>;
 }
 

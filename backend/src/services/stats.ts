@@ -33,7 +33,7 @@ export interface ProfileData {
     max_streak: number;
     last_online: string;
   };
-  bond_friends: Array<{ name: string; hours: number; last_meet: number }>;
+  bond_friends: Array<{ dbid: number; name: string; hours: number; last_meet: number }>;
   frequent_channels: Array<{ name: string; minutes: number }>;
 }
 
@@ -694,7 +694,7 @@ export class StatsService {
     return rows.map((r) => ({ name: r.name, minutes: Math.round(r.seconds / 60) }));
   }
 
-  private getBondFriends(clientDatabaseId: number): Array<{ name: string; hours: number; last_meet: number }> {
+  private getBondFriends(clientDatabaseId: number): Array<{ dbid: number; name: string; hours: number; last_meet: number }> {
     const selfDbids = [clientDatabaseId];
 
     const now = Math.floor(Date.now() / 1000);
@@ -708,12 +708,12 @@ export class StatsService {
 
     const otherRows = this.db
       .prepare(
-        `SELECT nickname, start_time, end_time FROM sessions
+        `SELECT client_database_id AS dbid, nickname, start_time, end_time FROM sessions
          WHERE server_key = ? AND client_database_id NOT IN (${placeholders}) AND lower(nickname) != 'musicbot'`
       )
-      .all(this.serverKey, ...selfDbids) as Array<{ nickname: string; start_time: number; end_time: number | null }>;
+      .all(this.serverKey, ...selfDbids) as Array<{ dbid: number; nickname: string; start_time: number; end_time: number | null }>;
 
-    const map = new Map<string, { seconds: number; lastMeet: number }>();
+    const map = new Map<number, { name: string; seconds: number; lastMeet: number }>();
     for (const o of otherRows) {
       const oe = o.end_time ?? now;
       let overlap = 0;
@@ -727,14 +727,15 @@ export class StatsService {
         }
       }
       if (overlap <= 0) continue;
-      const cur = map.get(o.nickname) ?? { seconds: 0, lastMeet: 0 };
+      const cur = map.get(o.dbid) ?? { name: o.nickname, seconds: 0, lastMeet: 0 };
+      cur.name = o.nickname;
       cur.seconds += overlap;
       cur.lastMeet = Math.max(cur.lastMeet, lastMeet);
-      map.set(o.nickname, cur);
+      map.set(o.dbid, cur);
     }
 
     return [...map.entries()]
-      .map(([name, v]) => ({ name, hours: Math.round(v.seconds / 3600), last_meet: v.lastMeet }))
+      .map(([dbid, v]) => ({ dbid, name: v.name, hours: Math.round(v.seconds / 3600), last_meet: v.lastMeet }))
       .filter((x) => x.hours > 0)
       .sort((a, b) => b.hours - a.hours)
       .slice(0, 10);

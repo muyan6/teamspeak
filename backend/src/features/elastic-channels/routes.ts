@@ -2,6 +2,13 @@ import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
 
+function parseInteger(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
   router.get('/elastic/groups', admin, (_req, res) => {
     res.json(deps.elastic.listGroups());
@@ -29,23 +36,48 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
 
   router.post('/elastic/groups', admin, (req, res) => {
     const data = req.body ?? {};
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+      res.status(400).json({ error: '请求数据无效' });
+      return;
+    }
     if (typeof data === 'object' && data !== null && 'channelGroupId' in data) {
       res.status(400).json({ error: '弹性频道不支持频道组；频道组只能分配给特定用户' });
       return;
     }
     const { name, namePrefix, createThreshold, deleteThreshold, password, baseChannelId, maxChannels } = data;
-    if (!name || !namePrefix) {
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    const normalizedPrefix = typeof namePrefix === 'string' ? namePrefix.trim() : '';
+    if (!normalizedName || !normalizedPrefix) {
       res.status(400).json({ error: '名称与前缀必填' });
       return;
     }
+
+    const normalizedCreateThreshold = createThreshold === undefined ? 2 : parseInteger(createThreshold);
+    const normalizedDeleteThreshold = deleteThreshold === undefined ? 0 : parseInteger(deleteThreshold);
+    const normalizedMaxChannels = maxChannels === undefined ? 8 : parseInteger(maxChannels);
+    const normalizedBaseChannelId = baseChannelId === undefined || baseChannelId === null
+      ? null
+      : parseInteger(baseChannelId);
+    if (
+      normalizedCreateThreshold === null || normalizedCreateThreshold < 1
+      || normalizedDeleteThreshold === null || normalizedDeleteThreshold < 0
+      || normalizedDeleteThreshold >= normalizedCreateThreshold
+      || normalizedMaxChannels === null || normalizedMaxChannels < 1
+      || (baseChannelId !== undefined && baseChannelId !== null
+        && (normalizedBaseChannelId === null || normalizedBaseChannelId < 1))
+    ) {
+      res.status(400).json({ error: '弹性频道参数无效' });
+      return;
+    }
+
     const group = deps.elastic.addGroup({
-      name: String(name).trim(),
-      namePrefix: String(namePrefix).trim(),
-      createThreshold: Number.parseInt(String(createThreshold), 10) || 2,
-      deleteThreshold: Number.parseInt(String(deleteThreshold), 10) || 0,
-      password: password || undefined,
-      baseChannelId: baseChannelId ? Number.parseInt(String(baseChannelId), 10) : null,
-      maxChannels: Number.parseInt(String(maxChannels), 10) || 8,
+      name: normalizedName,
+      namePrefix: normalizedPrefix,
+      createThreshold: normalizedCreateThreshold,
+      deleteThreshold: normalizedDeleteThreshold,
+      password: typeof password === 'string' && password ? password : undefined,
+      baseChannelId: normalizedBaseChannelId,
+      maxChannels: normalizedMaxChannels,
     });
     res.status(201).json(group);
   });

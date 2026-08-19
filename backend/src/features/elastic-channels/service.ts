@@ -21,7 +21,8 @@ export class ElasticChannelService {
   constructor(
     private db: AppDatabase,
     private ts3: Ts3ClientWrapper,
-    private credentialCipher = CredentialCipher.forDatabase(':memory:')
+    private credentialCipher = CredentialCipher.forDatabase(':memory:'),
+    private getServerKey: () => string = () => 'legacy'
   ) {
     this.migratePasswords();
   }
@@ -169,19 +170,23 @@ export class ElasticChannelService {
   }
 
   private getManagedChannelIds(groupId: number): Set<number> {
-    const rows = this.db.prepare('SELECT channel_id FROM elastic_managed_channels WHERE group_id = ?')
-      .all<{ channel_id: number }>(groupId);
+    const rows = this.db.prepare(
+      'SELECT channel_id FROM elastic_managed_channels WHERE server_key = ? AND group_id = ?'
+    ).all<{ channel_id: number }>(this.getServerKey(), groupId);
     return new Set(rows.map((row) => row.channel_id));
   }
 
   private rememberManagedChannel(groupId: number, channelId: number): void {
     this.db.prepare(
-      'INSERT OR IGNORE INTO elastic_managed_channels (group_id, channel_id, created_at) VALUES (?, ?, ?)'
-    ).run(groupId, channelId, Date.now());
+      `INSERT OR IGNORE INTO elastic_managed_channels
+       (server_key, group_id, channel_id, created_at) VALUES (?, ?, ?, ?)`
+    ).run(this.getServerKey(), groupId, channelId, Date.now());
   }
 
   private forgetManagedChannel(groupId: number, channelId: number): void {
-    this.db.prepare('DELETE FROM elastic_managed_channels WHERE group_id = ? AND channel_id = ?').run(groupId, channelId);
+    this.db.prepare(
+      'DELETE FROM elastic_managed_channels WHERE server_key = ? AND group_id = ? AND channel_id = ?'
+    ).run(this.getServerKey(), groupId, channelId);
   }
 
   private migratePasswords(): void {

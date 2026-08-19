@@ -202,6 +202,26 @@ describe('管理接口与配置回归', () => {
     expect(adminGroups.status).toBe(200);
   });
 
+  it('弹性频道接口拒绝空白前缀和非法阈值、频道 ID、最大数量', async () => {
+    const { baseUrl, token } = await startRouter();
+    const invalidPayloads = [
+      { name: '房间', namePrefix: '   ', createThreshold: 2, deleteThreshold: 0, maxChannels: 8 },
+      { name: '房间', namePrefix: '#room-', createThreshold: -1, deleteThreshold: 0, maxChannels: 8 },
+      { name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 2, maxChannels: 8 },
+      { name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, baseChannelId: -1, maxChannels: 8 },
+      { name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, maxChannels: -1 },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const response = await fetch(`${baseUrl}/elastic/groups`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
   it('周冠军配置保存后能完整读回数据库字段', () => {
     const db = openDatabase(':memory:');
     const stats = new StatsService(db);

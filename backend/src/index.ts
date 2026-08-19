@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   const ts3Config = loadTs3Config(config, configStore, credentialCipher);
   stats.setServerKey(getTs3ServerKey(ts3Config), Boolean(ts3Config.host));
   const ts3 = new Ts3ClientWrapper(ts3Config);
-  const elastic = new ElasticChannelService(db, ts3, credentialCipher);
+  const elastic = new ElasticChannelService(db, ts3, credentialCipher, () => stats.getServerKey());
   const champion = new WeeklyChampionService(db, ts3, stats);
   const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);

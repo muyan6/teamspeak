@@ -11,6 +11,8 @@ export interface AchievementLevel {
 }
 
 export class AchievementService {
+  private checksInFlight = new Map<string, Promise<Array<{ nickname: string; title: string; granted: boolean }>>>();
+
   constructor(
     private db: AppDatabase,
     private ts3: Ts3ClientWrapper,
@@ -53,10 +55,21 @@ export class AchievementService {
 
   /** 检测所有用户是否达成成就并授予服务器组 */
   async check(): Promise<Array<{ nickname: string; title: string; granted: boolean }>> {
+    const serverKey = this.stats.getServerKey();
+    const existingCheck = this.checksInFlight.get(serverKey);
+    if (existingCheck) return existingCheck;
+
+    const check = this.checkInternal(serverKey).finally(() => {
+      this.checksInFlight.delete(serverKey);
+    });
+    this.checksInFlight.set(serverKey, check);
+    return check;
+  }
+
+  private async checkInternal(serverKey: string): Promise<Array<{ nickname: string; title: string; granted: boolean }>> {
     const results: Array<{ nickname: string; title: string; granted: boolean }> = [];
     const levels = this.listLevels().filter((l) => l.enabled === 1);
     if (levels.length === 0) return results;
-    const serverKey = this.stats.getServerKey();
 
     const users = this.db
       .prepare(

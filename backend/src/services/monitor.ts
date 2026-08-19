@@ -11,6 +11,7 @@ export interface MonitorEvents {
 export class MonitorService extends EventEmitter {
   private running = false;
   private timer: NodeJS.Timeout | null = null;
+  private collectInFlight: Promise<void> | null = null;
   serverState: { name: string; clientsOnline: number; maxClients: number; uptime: number } | null =
     null;
 
@@ -47,6 +48,15 @@ export class MonitorService extends EventEmitter {
   }
 
   async collect(): Promise<void> {
+    if (!this.collectInFlight) {
+      this.collectInFlight = this.collectInternal().finally(() => {
+        this.collectInFlight = null;
+      });
+    }
+    return this.collectInFlight;
+  }
+
+  private async collectInternal(): Promise<void> {
     try {
       const state = await this.ts3.getServerState();
       if (!state) {

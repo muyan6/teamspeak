@@ -47,7 +47,7 @@ class ManagedSubsiteRuntime {
     stats.setServerKey(getTs3ServerKey(config.ts3), true);
     this.ts3 = new Ts3ClientWrapper(config.ts3);
     const auth = new AuthService(subsite.adminPassword, createHmac('sha256', rootConfig.jwtSecret).update(`subsite:${subsite.id}`).digest('hex'));
-    this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher);
+    this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher, () => stats.getServerKey());
     this.champion = new WeeklyChampionService(this.db, this.ts3, stats);
     this.achievement = new AchievementService(this.db, this.ts3, stats);
     this.monitor = new MonitorService(this.ts3, stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
