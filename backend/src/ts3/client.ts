@@ -187,6 +187,12 @@ export class Ts3ClientWrapper extends EventEmitter {
     return this.ts3;
   }
 
+  private reportError(error: unknown): void {
+    const normalized = error instanceof Error ? error : new Error(String(error));
+    this.lastError = normalized.message;
+    if (this.listenerCount('error') > 0) this.emit('error', normalized);
+  }
+
   private async executeQuery<T>(operation: () => Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout | null = null;
     try {
@@ -370,7 +376,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().setClientChannelGroup(String(cgid), String(cid), String(clientDatabaseId));
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -380,7 +386,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().serverGroupAddClient(String(clientDatabaseId), String(sgid));
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -418,7 +424,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       });
       return parseInt(channel.cid, 10);
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return null;
     }
   }
@@ -428,7 +434,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().channelDelete(String(cid), true);
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -457,7 +463,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       });
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -467,7 +473,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().channelMove(String(cid), String(cpid));
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -477,7 +483,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().clientKick(String(clid), ReasonIdentifier.KICK_SERVER, reason || 'Kicked by admin');
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -487,7 +493,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().clientMove(String(clid), String(cid), password);
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -497,7 +503,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().ban({ uid, banreason: reason || 'Banned by admin', time: timeSec });
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }
@@ -507,7 +513,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().serverGroupDelClient(String(clientDatabaseId), String(sgid));
       return true;
     } catch (err) {
-      this.emit('error', err as Error);
+      this.reportError(err);
       return false;
     }
   }

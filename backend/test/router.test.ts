@@ -2,10 +2,12 @@ import http from 'node:http';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRouter, type ApiDeps } from '../src/api/router.js';
-import { AuthService, initializeAdminPassword } from '../src/services/auth.js';
+import { AuthService, CredentialCipher, initializeAdminPassword } from '../src/services/auth.js';
 import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
 import { openDatabase } from '../src/db/database.js';
 import { StatsService } from '../src/services/stats.js';
+import { loadConfig } from '../src/config.js';
+import { buildTutorial } from '../src/site.js';
 
 describe('管理接口与配置回归', () => {
   const servers: http.Server[] = [];
@@ -21,18 +23,54 @@ describe('管理接口与配置回归', () => {
       set: (key: string, value: string) => values.set(key, value),
     };
 
-    expect(initializeAdminPassword(store, 'initial-password')).toEqual({ password: 'initial-password', initialized: true });
-    expect(initializeAdminPassword(store, 'changed-in-env')).toEqual({ password: 'initial-password', initialized: false });
-    expect(new AuthService('initial-password', 'test-secret').verifyAdminPassword('initial-password')).toBe(true);
+    const initialized = initializeAdminPassword(store, 'initial-password');
+    expect(initialized).toMatchObject({ initialized: true, migrated: false });
+    expect(initialized.password).not.toBe('initial-password');
+    expect(store.get('adminPassword')).toBe(initialized.password);
+    expect(initializeAdminPassword(store, 'changed-in-env')).toMatchObject({
+      password: initialized.password,
+      initialized: false,
+      migrated: false,
+    });
+
+    const legacyValues = new Map<string, string>([['adminPassword', 'legacy-password']]);
+    const migrated = initializeAdminPassword({
+      get: (key) => legacyValues.get(key) ?? null,
+      set: (key, value) => legacyValues.set(key, value),
+    }, '');
+    expect(migrated).toMatchObject({ initialized: false, migrated: true });
+    expect(legacyValues.get('adminPassword')).not.toBe('legacy-password');
+    expect(new AuthService(migrated.password, 'test-secret').verifyAdminPassword('legacy-password')).toBe(true);
+  });
+
+  it('loadConfig 只读取传入的环境变量对象', () => {
+    const config = loadConfig({
+      PORT: '4100',
+      TS3_QUERY_PORT: '12000',
+      TS3_SERVER_PORT: '9988',
+      TS3_SERVER_ID: '3',
+      TS3_PUBLIC_PORT: '9989',
+      COLLECT_INTERVAL_MS: '1500',
+      SAMPLE_INTERVAL_MS: '2500',
+    });
+    expect(config).toMatchObject({
+      port: 4100,
+      ts3: { queryPort: 12000, serverPort: 9988, serverId: 3 },
+      publicServer: { port: 9989 },
+      collectIntervalMs: 1500,
+      sampleIntervalMs: 2500,
+    });
   });
 
   async function startRouter(): Promise<{
     baseUrl: string;
     token: string;
     savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }>;
+    siteConfig: Map<string, string>;
   }> {
     const auth = new AuthService('test-password', 'test-secret');
     const siteConfig = new Map<string, string>();
+    const credentialCipher = new CredentialCipher('router-test-credential-key');
     const elasticGroups = [{
       id: 1,
       name: 'Private room',
@@ -59,7 +97,12 @@ describe('管理接口与配置回归', () => {
         set: (key: string, value: string) => siteConfig.set(key, value),
         setJson: (key: string, value: unknown) => siteConfig.set(key, JSON.stringify(value)),
       },
-      stats: { getTopUsers: () => [], getTopChannels: () => [], getDailyTrends: () => ({ labels: [], data: [] }) },
+      stats: {
+        getTopUsers: () => [],
+        getTopChannels: () => [],
+        getDailyTrends: () => ({ labels: [], data: [] }),
+        setServerKey: () => undefined,
+      },
       elastic: { listGroups: () => elasticGroups, addGroup: () => elasticGroups[0], removeGroup: () => false },
       champion: {
         getConfig: () => ({}),
@@ -78,8 +121,15 @@ describe('管理接口与配置回归', () => {
         check: async () => [],
       },
       dashboard: { getSiteSlug: () => 'test', getSiteDomain: () => '', getData: async () => ({}) },
-      ts3: { connected: true, getChannels: async () => [] },
+      ts3: {
+        connected: true,
+        lastError: '',
+        getChannels: async () => [],
+        getConfig: () => ({ host: 'localhost', queryPort: 10011, serverPort: 9987, username: 'serveradmin', password: '' }),
+        updateConfig: () => undefined,
+      },
       publicServer: { host: 'localhost', port: 9987 },
+      credentialCipher,
     } as unknown as ApiDeps;
 
     const app = express();
@@ -90,7 +140,7 @@ describe('管理接口与配置回归', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
-    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs };
+    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs, siteConfig };
   }
 
   it('弹性频道接口要求管理员凭证，避免泄露频道密码', async () => {
@@ -137,6 +187,25 @@ describe('管理接口与配置回归', () => {
     expect(savedChampionConfigs).toEqual([{ enabled: 0, serverGroupId: null, checkIntervalHours: 24 }]);
   });
 
+  it('TS3 连接密码以密文写入配置存储', async () => {
+    const { baseUrl, token, siteConfig } = await startRouter();
+    const response = await fetch(`${baseUrl}/admin/ts3-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: 'ts3.example.com',
+        queryPort: 10011,
+        serverPort: 9987,
+        username: 'serveradmin',
+        password: 'query-password',
+      }),
+    });
+    expect(response.status).toBe(200);
+    const stored = siteConfig.get('ts3Connection') || '';
+    expect(stored).not.toContain('query-password');
+    expect(JSON.parse(stored).password).toMatch(/^enc:v1:/);
+  });
+
   it('教程与站点信息配置需要管理员凭证并能完整读写', async () => {
     const { baseUrl, token } = await startRouter();
     const tutorialPayload = {
@@ -177,6 +246,19 @@ describe('管理接口与配置回归', () => {
 
     const loaded = await fetch(`${baseUrl}/tutorial-config`);
     expect(await loaded.json()).toEqual(tutorialPayload);
+
+    const invalidTutorial = await fetch(`${baseUrl}/tutorial-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tutorial: { basic: 123 } }),
+    });
+    expect(invalidTutorial.status).toBe(400);
+
+    const fallbackTutorial = buildTutorial(
+      loadConfig({ TS3_PUBLIC_HOST: 'localhost' }),
+      { basic: 123 } as never
+    );
+    expect(fallbackTutorial.sections.find((section) => section.key === 'basic')?.content).toContain('打开设置');
 
     expect((await fetch(`${baseUrl}/site-config`, {
       method: 'POST',

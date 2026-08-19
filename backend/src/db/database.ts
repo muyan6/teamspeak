@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS elastic_groups (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS elastic_managed_channels (
+  group_id INTEGER NOT NULL,
+  channel_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (group_id, channel_id),
+  FOREIGN KEY (group_id) REFERENCES elastic_groups(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS achievement_levels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   hours INTEGER NOT NULL,

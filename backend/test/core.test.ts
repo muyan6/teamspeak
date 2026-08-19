@@ -1,3 +1,5 @@
+import http from 'node:http';
+import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockTs3Server } from './mock-ts3-server.js';
 import { openDatabase } from '../src/db/database.js';
@@ -6,6 +8,7 @@ import { StatsService } from '../src/services/stats.js';
 import { ElasticChannelService } from '../src/features/elastic-channels/service.js';
 import { AchievementService } from '../src/features/achievements/service.js';
 import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
+import { WsHub } from '../src/ws/hub.js';
 
 describe('TS3 监控后端核心链路', () => {
   const mock = new MockTs3Server(10012);
@@ -138,6 +141,40 @@ describe('TS3 监控后端核心链路', () => {
     reconnectDb.close();
   });
 
+  it('用户离线时将最后一个采样间隔补记到频道统计', () => {
+    const offlineDb = openDatabase(':memory:');
+    const stats = new StatsService(offlineDb);
+    const now = Date.now();
+    const channel = { cid: 9, parentId: 0, name: '离线测试', totalClients: 1, totalClientsFamily: 1, order: 0 };
+    const client = {
+      clid: 902,
+      clientDatabaseId: 902,
+      uniqueIdentifier: 'uid-offline',
+      nickname: 'OfflineUser',
+      serverGroupIds: [1],
+      channelId: 9,
+      channelName: '离线测试',
+      channelGroupId: 1,
+      connectedTime: Math.floor(now / 1000) - 100,
+      clientType: 0,
+    };
+
+    stats.recordSnapshot([client], [channel], now);
+    stats.recordSnapshot([], [channel], now + 30_000);
+
+    const total = stats.getTopUsers('all').find((row) => row.clientDatabaseId === 902);
+    const channelSeconds = offlineDb.prepare(
+      'SELECT total_member_minutes as seconds FROM channel_activity WHERE channel_id = ?'
+    ).get<{ seconds: number }>(9);
+    const userChannelSeconds = offlineDb.prepare(
+      'SELECT seconds FROM user_channel_activity WHERE client_database_id = ? AND channel_id = ?'
+    ).get<{ seconds: number }>(902, 9);
+    expect(total?.seconds).toBe(130);
+    expect(channelSeconds?.seconds).toBe(130);
+    expect(userChannelSeconds?.seconds).toBe(130);
+    offlineDb.close();
+  });
+
   it('首次采集跨天时会按日期拆分活动时长', async () => {
     const splitDb = openDatabase(':memory:');
     const stats = new StatsService(splitDb);
@@ -189,6 +226,46 @@ describe('TS3 监控后端核心链路', () => {
       ])
     );
     profileDb.close();
+  });
+
+  it('同名用户在榜单中保持独立，周冠军使用榜首的数据库 ID', async () => {
+    const championDb = openDatabase(':memory:');
+    const stats = new StatsService(championDb);
+    const nowDate = new Date();
+    nowDate.setDate(nowDate.getDate() + ((3 - nowDate.getDay() + 7) % 7));
+    nowDate.setHours(12, 0, 0, 0);
+    const now = nowDate.getTime();
+    const channel = { cid: 1, parentId: 0, name: 'Lobby', totalClients: 3, totalClientsFamily: 3, order: 0 };
+    const base = {
+      clid: 1,
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      clientType: 0,
+    };
+    stats.recordSnapshot([
+      { ...base, clientDatabaseId: 111, uniqueIdentifier: 'uid-same-1', nickname: 'SameName', connectedTime: Math.floor(now / 1000) - 21_600 },
+      { ...base, clientDatabaseId: 222, uniqueIdentifier: 'uid-same-2', nickname: 'SameName', connectedTime: Math.floor(now / 1000) - 21_600 },
+      { ...base, clientDatabaseId: 333, uniqueIdentifier: 'uid-winner', nickname: 'Winner', connectedTime: Math.floor(now / 1000) - 36_000 },
+    ], [channel], now);
+
+    const sameNameRows = stats.getTopUsers('week', 10).filter((row) => row.nickname === 'SameName');
+    expect(sameNameRows).toHaveLength(2);
+    expect(sameNameRows.every((row) => row.seconds === 21_600)).toBe(true);
+
+    const grants: Array<[number, number]> = [];
+    const champion = new WeeklyChampionService(championDb, {
+      addClientToServerGroup: async (groupId: number, clientDbId: number) => {
+        grants.push([groupId, clientDbId]);
+        return true;
+      },
+      removeClientFromServerGroup: async () => true,
+    } as never, stats);
+    champion.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+    await champion.check();
+    expect(grants).toEqual([[7, 333]]);
+    championDb.close();
   });
 
   it('同步 ServerQuery 身份资料会回填 UID，且不修改本地统计时长', () => {
@@ -261,6 +338,38 @@ describe('TS3 监控后端核心链路', () => {
     expect(actions.some((a) => a.type === 'create')).toBe(true);
   });
 
+  it('弹性频道保留备用频道且只删除自身创建的频道', async () => {
+    const elasticDb = openDatabase(':memory:');
+    let channels = [
+      { cid: 1, parentId: 0, name: '#room-1', totalClients: 2, totalClientsFamily: 2, order: 1 },
+    ];
+    const deleted: number[] = [];
+    const elastic = new ElasticChannelService(elasticDb, {
+      getChannels: async () => channels,
+      createChannel: async ({ name }: { name: string }) => {
+        const cid = channels.length + 1;
+        channels = [...channels, { cid, parentId: 0, name, totalClients: 0, totalClientsFamily: 0, order: cid }];
+        return cid;
+      },
+      deleteChannel: async (cid: number) => {
+        deleted.push(cid);
+        channels = channels.filter((channel) => channel.cid !== cid);
+        return true;
+      },
+    } as never);
+    elastic.addGroup({ name: '房间', namePrefix: '#room-', createThreshold: 2, deleteThreshold: 0, maxChannels: 4 });
+
+    expect((await elastic.tick()).map((action) => action.type)).toEqual(['create']);
+    expect((await elastic.tick())).toEqual([]);
+    expect(channels).toHaveLength(2);
+
+    channels[0].totalClients = 0;
+    expect((await elastic.tick()).map((action) => action.type)).toEqual(['delete']);
+    expect(deleted).toEqual([2]);
+    expect(channels.map((channel) => channel.cid)).toEqual([1]);
+    elasticDb.close();
+  });
+
   it('成就服务能授予达标用户', async () => {
     const ach = new AchievementService(db, ts3, new StatsService(db));
     ach.addLevel({ hours: 0, serverGroupId: 3, title: '测试成就' });
@@ -308,4 +417,44 @@ describe('TS3 监控后端核心链路', () => {
       retryServer.stop();
     }
   }, 10000);
+
+  it('没有 error 监听器时，TS3 管理操作仍返回 false', async () => {
+    const disconnected = new Ts3ClientWrapper({
+      host: '127.0.0.1',
+      queryPort: 65534,
+      username: 'serveradmin',
+      password: '',
+    });
+    await expect(disconnected.deleteChannel(1)).resolves.toBe(false);
+    await expect(disconnected.removeClientFromServerGroup(1, 1)).resolves.toBe(false);
+  });
+
+  it('WebSocket 广播按 Host 过滤连接', async () => {
+    const server = http.createServer();
+    const hub = new WsHub(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
+
+    const connect = (host: string): Promise<WebSocket> => new Promise((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, { headers: { Host: host } });
+      socket.once('open', () => resolve(socket));
+      socket.once('error', reject);
+    });
+    const root = await connect('root.example.com');
+    const subsite = await connect('alpha.example.com');
+    try {
+      const rootMessage = new Promise<string>((resolve) => root.once('message', (message) => resolve(message.toString())));
+      let subsiteReceived = false;
+      subsite.once('message', () => { subsiteReceived = true; });
+      hub.broadcastWhere((host) => host === 'root.example.com', 'online-update', { online: 1 });
+      expect(await rootMessage).toContain('online-update');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(subsiteReceived).toBe(false);
+    } finally {
+      root.close();
+      subsite.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });

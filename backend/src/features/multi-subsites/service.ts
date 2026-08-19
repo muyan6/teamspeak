@@ -1,4 +1,5 @@
 import type { AppDatabase } from '../../db/database.js';
+import { CredentialCipher, hashAdminPassword, isAdminPasswordHash } from '../../services/auth.js';
 
 export interface ManagedSubsite {
   id: number;
@@ -74,7 +75,7 @@ function validateBaseDomain(value: unknown): string {
   return domain;
 }
 
-function fromRow(row: Record<string, unknown>): ManagedSubsite {
+function fromRow(row: Record<string, unknown>, credentialCipher: CredentialCipher): ManagedSubsite {
   return {
     id: Number(row.id),
     slug: String(row.slug),
@@ -84,7 +85,7 @@ function fromRow(row: Record<string, unknown>): ManagedSubsite {
     queryPort: Number(row.query_port),
     serverPort: Number(row.server_port),
     username: String(row.query_username),
-    password: String(row.query_password),
+    password: credentialCipher.decrypt(String(row.query_password)),
     publicHost: String(row.public_host),
     publicPort: Number(row.public_port),
     adminPassword: String(row.admin_password),
@@ -97,7 +98,11 @@ function fromRow(row: Record<string, unknown>): ManagedSubsite {
 export class MultiSubsiteRegistry {
   private currentBaseDomain: string;
 
-  constructor(private readonly db: AppDatabase, fallbackBaseDomain: string) {
+  constructor(
+    private readonly db: AppDatabase,
+    fallbackBaseDomain: string,
+    private readonly credentialCipher = CredentialCipher.forDatabase(':memory:')
+  ) {
     db.exec(`CREATE TABLE IF NOT EXISTS managed_subsites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       slug TEXT NOT NULL UNIQUE,
@@ -120,6 +125,7 @@ export class MultiSubsiteRegistry {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     )`);
+    this.migrateCredentials();
     const saved = db.prepare("SELECT value FROM multi_subsite_settings WHERE key = 'base_domain'").get<{ value: string }>();
     this.currentBaseDomain = saved ? validateBaseDomain(saved.value) : (fallbackBaseDomain ? validateBaseDomain(fallbackBaseDomain) : '');
   }
@@ -143,17 +149,18 @@ export class MultiSubsiteRegistry {
   }
 
   list(): ManagedSubsite[] {
-    return this.db.prepare('SELECT * FROM managed_subsites ORDER BY created_at DESC').all<Record<string, unknown>>().map(fromRow);
+    return this.db.prepare('SELECT * FROM managed_subsites ORDER BY created_at DESC').all<Record<string, unknown>>()
+      .map((row) => fromRow(row, this.credentialCipher));
   }
 
   get(id: number): ManagedSubsite | null {
     const row = this.db.prepare('SELECT * FROM managed_subsites WHERE id = ?').get<Record<string, unknown>>(id);
-    return row ? fromRow(row) : null;
+    return row ? fromRow(row, this.credentialCipher) : null;
   }
 
   getByHost(host: string): ManagedSubsite | null {
     const row = this.db.prepare('SELECT * FROM managed_subsites WHERE domain = ? AND enabled = 1').get<Record<string, unknown>>(normalizeHost(host));
-    return row ? fromRow(row) : null;
+    return row ? fromRow(row, this.credentialCipher) : null;
   }
 
   hasHost(host: string): boolean {
@@ -182,7 +189,21 @@ export class MultiSubsiteRegistry {
       const result = this.db.prepare(`INSERT INTO managed_subsites
         (slug, display_name, domain, ts3_host, query_port, server_port, query_username, query_password, public_host, public_port, admin_password, enabled, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
-        .run(slug, displayName, domain, ts3Host, queryPort, serverPort, username, password, publicHost, publicPort, adminPassword, now, now);
+        .run(
+          slug,
+          displayName,
+          domain,
+          ts3Host,
+          queryPort,
+          serverPort,
+          username,
+          this.credentialCipher.encrypt(password),
+          publicHost,
+          publicPort,
+          hashAdminPassword(adminPassword),
+          now,
+          now
+        );
       return this.get(result.lastInsertRowid) as ManagedSubsite;
     } catch (error) {
       if ((error as Error).message.includes('UNIQUE')) throw new Error('子域名或访问域名已被占用');
@@ -198,7 +219,36 @@ export class MultiSubsiteRegistry {
 
   updateTs3Config(id: number, config: { host: string; queryPort: number; serverPort: number; username: string; password: string }): void {
     const result = this.db.prepare(`UPDATE managed_subsites SET ts3_host = ?, query_port = ?, server_port = ?, query_username = ?, query_password = ?, updated_at = ? WHERE id = ?`)
-      .run(config.host, config.queryPort, config.serverPort, config.username, config.password, Date.now(), id);
+      .run(
+        config.host,
+        config.queryPort,
+        config.serverPort,
+        config.username,
+        this.credentialCipher.encrypt(config.password),
+        Date.now(),
+        id
+      );
     if (!result.changes) throw new Error('分站不存在');
+  }
+
+  private migrateCredentials(): void {
+    const rows = this.db.prepare(
+      'SELECT id, query_password, admin_password FROM managed_subsites'
+    ).all<{ id: number; query_password: string; admin_password: string }>();
+    for (const row of rows) {
+      const queryPassword = String(row.query_password ?? '');
+      const adminPassword = String(row.admin_password ?? '');
+      const nextQueryPassword = this.credentialCipher.isEncrypted(queryPassword)
+        ? queryPassword
+        : this.credentialCipher.encrypt(queryPassword);
+      const nextAdminPassword = isAdminPasswordHash(adminPassword)
+        ? adminPassword
+        : hashAdminPassword(adminPassword);
+      if (nextQueryPassword !== queryPassword || nextAdminPassword !== adminPassword) {
+        this.db.prepare(
+          'UPDATE managed_subsites SET query_password = ?, admin_password = ?, updated_at = ? WHERE id = ?'
+        ).run(nextQueryPassword, nextAdminPassword, Date.now(), row.id);
+      }
+    }
   }
 }

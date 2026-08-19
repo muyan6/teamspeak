@@ -43,6 +43,12 @@ export interface ClientIdentityData {
   nickname: string;
 }
 
+export interface TopUser {
+  clientDatabaseId: number;
+  nickname: string;
+  seconds: number;
+}
+
 export class StatsService {
   private suspendedOnline = new Map<number, {
     uniqueIdentifier: string;
@@ -383,8 +389,21 @@ export class StatsService {
             if (deltaSec > 0) {
               addDurationStmt.run(deltaSec, deltaSec, deltaSec, r.nickname, r.unique_identifier, now, this.serverKey, r.client_database_id);
               addUserDaily(r.client_database_id, r.nickname, Math.floor(r.last_seen / 1000), nowSec);
-              closeSessionStmt.run(nowSec, nowSec, this.serverKey, r.client_database_id);
+              if (r.channel_id > 0) {
+                channelStmt.run(this.serverKey, r.channel_id, r.channel_name, null, now);
+                channelAddStmt.run(deltaSec, now, this.serverKey, r.channel_id);
+                addChannelDaily(r.channel_id, r.channel_name, Math.floor(r.last_seen / 1000), nowSec);
+                userChannelStmt.run(
+                  this.serverKey,
+                  r.client_database_id,
+                  r.nickname,
+                  r.channel_id,
+                  r.channel_name,
+                  deltaSec
+                );
+              }
             }
+            closeSessionStmt.run(nowSec, nowSec, this.serverKey, r.client_database_id);
           }
           removeStmt.run(this.serverKey, r.client_database_id);
         }
@@ -453,26 +472,27 @@ export class StatsService {
       .all(this.serverKey, since) as Array<{ time: number; count: number }>;
   }
 
-  getTopUsers(range: 'week' | 'month' | 'all', limit = 10): Array<{ nickname: string; seconds: number }> {
+  getTopUsers(range: 'week' | 'month' | 'all', limit = 10): TopUser[] {
     if (range === 'week' || range === 'month') {
       const startKey = range === 'week' ? this.weekStartKey() : this.monthStartKey();
       return this.db
         .prepare(
-          `SELECT nickname, SUM(active_seconds) as seconds
+          `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
            FROM user_daily_activity
            WHERE server_key = ? AND day >= ? AND lower(nickname) != 'musicbot'
-           GROUP BY nickname ORDER BY seconds DESC LIMIT ?`
+           GROUP BY client_database_id
+           ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
         )
-        .all(this.serverKey, startKey, limit) as Array<{ nickname: string; seconds: number }>;
+        .all(this.serverKey, startKey, limit) as TopUser[];
     }
     return this.db
       .prepare(
-        `SELECT nickname, SUM(total_seconds) as seconds
+        `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
          FROM user_online_duration
          WHERE server_key = ? AND lower(nickname) != 'musicbot'
-         GROUP BY nickname ORDER BY seconds DESC LIMIT ?`
+         ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
-      .all(this.serverKey, limit) as Array<{ nickname: string; seconds: number }>;
+      .all(this.serverKey, limit) as TopUser[];
   }
 
   getLongestSessions(limit = 5): Array<{ nickname: string; seconds: number }> {
@@ -525,8 +545,8 @@ export class StatsService {
     // 排名（本周 vs 上周）
     const weekTop = this.getTopUsers('week', 500);
     const lastWeekTop = this.getTopUsersByRange(this.prevWeekStartKey(), this.weekStartKey(), 500);
-    const weekIdx = weekTop.findIndex((u) => u.nickname === nickname);
-    const lastWeekIdx = lastWeekTop.findIndex((u) => u.nickname === nickname);
+    const weekIdx = weekTop.findIndex((u) => u.clientDatabaseId === dbid);
+    const lastWeekIdx = lastWeekTop.findIndex((u) => u.clientDatabaseId === dbid);
     const weekTimeRow = this.db
       .prepare('SELECT COALESCE(SUM(active_seconds),0) as s FROM user_daily_activity WHERE server_key = ? AND client_database_id = ? AND day >= ?')
       .get(this.serverKey, dbid, this.weekStartKey()) as { s: number };
@@ -612,15 +632,16 @@ export class StatsService {
     startKey: string,
     endKey: string,
     limit = 500
-  ): Array<{ nickname: string; seconds: number }> {
+  ): TopUser[] {
     return this.db
       .prepare(
-        `SELECT nickname, SUM(active_seconds) as seconds
+        `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
          FROM user_daily_activity
          WHERE server_key = ? AND day >= ? AND day < ? AND lower(nickname) != 'musicbot'
-         GROUP BY nickname ORDER BY seconds DESC LIMIT ?`
+         GROUP BY client_database_id
+         ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
-      .all(this.serverKey, startKey, endKey, limit) as Array<{ nickname: string; seconds: number }>;
+      .all(this.serverKey, startKey, endKey, limit) as TopUser[];
   }
 
   private computeStreak(daySet: string[]): { current: number; max: number } {

@@ -9,7 +9,7 @@ import { AchievementService } from '../achievements/service.js';
 import { ElasticChannelService } from '../elastic-channels/service.js';
 import { WeeklyChampionService } from '../weekly-champion/service.js';
 import { adminAuth } from '../../api/middleware.js';
-import { AuthService } from '../../services/auth.js';
+import { AuthService, type CredentialCipher } from '../../services/auth.js';
 import { DashboardService } from '../../services/dashboard.js';
 import { MonitorService } from '../../services/monitor.js';
 import { StatsService } from '../../services/stats.js';
@@ -32,7 +32,8 @@ class ManagedSubsiteRuntime {
     readonly subsite: ManagedSubsite,
     rootConfig: AppConfig,
     registry: MultiSubsiteRegistry,
-    wsHub: WsHub
+    wsHub: WsHub,
+    credentialCipher: CredentialCipher
   ) {
     this.db = openDatabase(path.resolve(path.dirname(rootConfig.dbPath), 'subsites', `${subsite.slug}.db`));
     const config: AppConfig = {
@@ -46,13 +47,13 @@ class ManagedSubsiteRuntime {
     stats.setServerKey(getTs3ServerKey(config.ts3), true);
     this.ts3 = new Ts3ClientWrapper(config.ts3);
     const auth = new AuthService(subsite.adminPassword, createHmac('sha256', rootConfig.jwtSecret).update(`subsite:${subsite.id}`).digest('hex'));
-    this.elastic = new ElasticChannelService(this.db, this.ts3);
+    this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher);
     this.champion = new WeeklyChampionService(this.db, this.ts3, stats);
     this.achievement = new AchievementService(this.db, this.ts3, stats);
     this.monitor = new MonitorService(this.ts3, stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
     const dashboard = new DashboardService(config, this.ts3, stats, store, this.elastic);
     const deps: ApiDeps = {
-      auth, configStore: store, stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer,
+      auth, configStore: store, stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer, credentialCipher,
       persistTs3Config: (next) => registry.updateTs3Config(subsite.id, next),
     };
     this.router = createRouter(deps);
@@ -108,7 +109,8 @@ export class MultiSubsiteRuntimeManager {
   constructor(
     private readonly config: AppConfig,
     private readonly registry: MultiSubsiteRegistry,
-    private readonly wsHub: WsHub
+    private readonly wsHub: WsHub,
+    private readonly credentialCipher: CredentialCipher
   ) {}
 
   startExisting(): void {
@@ -157,7 +159,7 @@ export class MultiSubsiteRuntimeManager {
 
   private start(subsite: ManagedSubsite): void {
     this.stop(subsite.id);
-    const runtime = new ManagedSubsiteRuntime(subsite, this.config, this.registry, this.wsHub);
+    const runtime = new ManagedSubsiteRuntime(subsite, this.config, this.registry, this.wsHub, this.credentialCipher);
     this.runtimes.set(subsite.id, runtime);
     runtime.start();
   }

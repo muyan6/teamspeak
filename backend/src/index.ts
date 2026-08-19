@@ -6,7 +6,7 @@ import cors from 'cors';
 import { loadConfig, type AppConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { SiteConfigStore } from './db/site-config.js';
-import { AuthService, initializeAdminPassword } from './services/auth.js';
+import { AuthService, CredentialCipher, initializeAdminPassword } from './services/auth.js';
 import { StatsService } from './services/stats.js';
 import { ElasticChannelService } from './features/elastic-channels/service.js';
 import { WeeklyChampionService } from './features/weekly-champion/service.js';
@@ -27,9 +27,13 @@ async function main(): Promise<void> {
 
   const db = openDatabase(config.dbPath);
   const configStore = new SiteConfigStore(db);
+  const credentialCipher = CredentialCipher.forDatabase(config.dbPath);
   const adminPasswordConfig = initializeAdminPassword(configStore, config.adminPassword);
   if (adminPasswordConfig.initialized) {
     console.log('[auth] 已将 ADMIN_PASSWORD 初始化到数据库，后续认证不再依赖 .env');
+  }
+  if (adminPasswordConfig.migrated) {
+    console.log('[auth] 已将旧版明文管理员密码升级为 scrypt 哈希');
   }
   if (!adminPasswordConfig.password) {
     console.warn('[auth] 尚未初始化后台密码；请在首次启动前设置 ADMIN_PASSWORD');
@@ -37,10 +41,10 @@ async function main(): Promise<void> {
   const auth = new AuthService(adminPasswordConfig.password, config.jwtSecret);
   const stats = new StatsService(db);
 
-  const ts3Config = loadTs3Config(config, configStore);
+  const ts3Config = loadTs3Config(config, configStore, credentialCipher);
   stats.setServerKey(getTs3ServerKey(ts3Config), Boolean(ts3Config.host));
   const ts3 = new Ts3ClientWrapper(ts3Config);
-  const elastic = new ElasticChannelService(db, ts3);
+  const elastic = new ElasticChannelService(db, ts3, credentialCipher);
   const champion = new WeeklyChampionService(db, ts3, stats);
   const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
@@ -51,9 +55,9 @@ async function main(): Promise<void> {
   app.use(express.json({ limit: '1mb' }));
   const server = http.createServer(app);
   const wsHub = new WsHub(server, '/ws');
-  const legacyRouter = createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer });
-  const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain);
-  const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub);
+  const legacyRouter = createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer, credentialCipher });
+  const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain, credentialCipher);
+  const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub, credentialCipher);
   subsiteManager.startExisting();
 
   app.use('/api/platform', createMultiSubsitePlatformRouter(auth, subsiteManager));
@@ -83,10 +87,11 @@ async function main(): Promise<void> {
   }
 
   // 实时事件推送
-  monitor.on('onlineUpdated', (data) => wsHub.broadcast('online-update', data));
-  monitor.on('clientsChanged', async (data) => {
-    wsHub.broadcast('clients-changed', data);
-    wsHub.broadcast('online-clients', stats.getCurrentOnline());
+  monitor.on('onlineUpdated', (data) => {
+    wsHub.broadcastWhere((host) => !subsiteManager.isManagedSubsiteHost(host), 'online-update', data);
+  });
+  monitor.on('clientsChanged', (data) => {
+    wsHub.broadcastWhere((host) => !subsiteManager.isManagedSubsiteHost(host), 'clients-changed', data);
   });
   elasticTimer(elastic);
   achievementTimer(achievement);
@@ -145,14 +150,22 @@ function clientDirectoryTimer(ts3: Ts3ClientWrapper, stats: StatsService): void 
   timer.unref();
 }
 
-function loadTs3Config(config: AppConfig, configStore: SiteConfigStore): Ts3ConnectionConfig {
-  const saved = configStore.getJson<Partial<Ts3ConnectionConfig>>('ts3Connection', {});
+function loadTs3Config(config: AppConfig, configStore: SiteConfigStore, credentialCipher: CredentialCipher): Ts3ConnectionConfig {
+  const savedValue = configStore.getJson<unknown>('ts3Connection', {});
+  const saved = savedValue && typeof savedValue === 'object' && !Array.isArray(savedValue)
+    ? savedValue as Partial<Ts3ConnectionConfig>
+    : {};
+  const savedPassword = typeof saved.password === 'string' ? saved.password : undefined;
+  const password = savedPassword === undefined ? config.ts3.password : credentialCipher.decrypt(savedPassword);
+  if (savedPassword !== undefined && !credentialCipher.isEncrypted(savedPassword)) {
+    configStore.setJson('ts3Connection', { ...saved, password: credentialCipher.encrypt(password) });
+  }
   return {
     host: saved.host || config.ts3.host,
     queryPort: saved.queryPort ?? config.ts3.queryPort,
     serverPort: saved.serverPort ?? config.ts3.serverPort,
     username: saved.username || config.ts3.username,
-    password: saved.password ?? config.ts3.password,
+    password,
   };
 }
 

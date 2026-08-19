@@ -41,7 +41,10 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
       res.status(400).json({ error: '服务器地址、端口和 ServerQuery 账号无效' });
       return;
     }
-    deps.configStore.setJson('ts3Connection', config);
+    deps.configStore.setJson('ts3Connection', {
+      ...config,
+      password: deps.credentialCipher.encrypt(config.password),
+    });
     deps.stats.setServerKey(getTs3ServerKey(config), true);
     deps.ts3.updateConfig(config);
     if (deps.persistTs3Config) deps.persistTs3Config(config);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from '../../db/database.js';
 import { MultiSubsiteRegistry } from './service.js';
+import { CredentialCipher } from '../../services/auth.js';
 
 describe('统一分站注册表', () => {
   it('创建分站时自动生成子域名并隔离敏感密码字段', () => {
@@ -39,6 +40,27 @@ describe('统一分站注册表', () => {
     const db = openDatabase(':memory:');
     new MultiSubsiteRegistry(db, '').saveBaseDomain('voice.example.com');
     expect(new MultiSubsiteRegistry(db, 'other.example.com').getSettings()).toEqual({ baseDomain: 'voice.example.com' });
+    db.close();
+  });
+
+  it('分站凭据使用可恢复的密文，后台密码使用不可逆哈希', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com', new CredentialCipher('test-credential-key'));
+    const created = registry.create({
+      displayName: 'Alpha',
+      slug: 'alpha',
+      ts3Host: '127.0.0.1',
+      password: 'query-password',
+      adminPassword: 'admin-password',
+    });
+    const stored = db.prepare(
+      'SELECT query_password, admin_password FROM managed_subsites WHERE id = ?'
+    ).get<{ query_password: string; admin_password: string }>(created.id);
+    expect(stored?.query_password).not.toContain('query-password');
+    expect(stored?.query_password).toMatch(/^enc:v1:/);
+    expect(stored?.admin_password).not.toContain('admin-password');
+    expect(stored?.admin_password).toMatch(/^scrypt\$/);
+    expect(registry.get(created.id)?.password).toBe('query-password');
     db.close();
   });
 });

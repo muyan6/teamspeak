@@ -28,6 +28,13 @@ export class WsHub {
     this.sendToClients(matching, event, data);
   }
 
+  broadcastWhere(shouldReceive: (host: string) => boolean, event: string, data: unknown): void {
+    const matching = Array.from(this.clients.entries())
+      .filter(([, clientHost]) => shouldReceive(clientHost))
+      .map(([client]) => client);
+    this.sendToClients(matching, event, data);
+  }
+
   private sendToClients(clients: Iterable<WebSocket>, event: string, data: unknown): void {
     const msg = JSON.stringify({ event, data });
     for (const ws of clients) {

@@ -7,6 +7,7 @@ import type { AchievementService } from '../features/achievements/service.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
 import type { WeeklyChampionService } from '../features/weekly-champion/service.js';
 import type { Ts3ClientWrapper } from '../ts3/client.js';
+import type { CredentialCipher } from '../services/auth.js';
 import { adminAuth } from './middleware.js';
 import { registerAchievementRoutes } from '../features/achievements/routes.js';
 import { registerAuthRoutes } from '../features/auth/routes.js';
@@ -28,6 +29,7 @@ export interface ApiDeps {
   dashboard: DashboardService;
   ts3: Ts3ClientWrapper;
   publicServer: { host: string; port: number };
+  credentialCipher: CredentialCipher;
   persistTs3Config?: (config: { host: string; queryPort: number; serverPort: number; username: string; password: string }) => void;
 }
 

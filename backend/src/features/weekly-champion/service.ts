@@ -86,16 +86,6 @@ export class WeeklyChampionService {
     return this.getConfig();
   }
 
-  /** 根据昵称从历史数据中查找 client_database_id（不依赖当前是否在线） */
-  private findClientDbIdByNickname(nickname: string): number | null {
-    const row = this.db
-      .prepare(
-        'SELECT client_database_id as dbid FROM user_online_duration WHERE server_key = ? AND nickname = ? ORDER BY total_seconds DESC LIMIT 1'
-      )
-      .get(this.stats.getServerKey(), nickname) as { dbid: number } | undefined;
-    return row ? row.dbid : null;
-  }
-
   /** 检测本周活跃榜第一名并授予奖励 */
   async check(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
     const cfg = this.getConfig();
@@ -104,15 +94,7 @@ export class WeeklyChampionService {
     const top = this.stats.getTopUsers('week', 1)[0];
     if (!top) return null;
 
-    const clientDbId = this.findClientDbIdByNickname(top.nickname);
-
-    // 找不到用户数据库ID时，仅更新检测时间，保留上一任冠军记录，避免权限残留
-    if (!clientDbId) {
-      this.db
-        .prepare(`UPDATE champion_config SET last_check_time = ? WHERE id = 1`)
-        .run(Date.now());
-      return { nickname: top.nickname, seconds: top.seconds, granted: false };
-    }
+    const clientDbId = top.clientDatabaseId;
 
     let granted = false;
     const alreadyWinner = cfg.lastWinnerClientDbId === clientDbId;

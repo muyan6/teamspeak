@@ -49,6 +49,10 @@ export interface TutorialConfig {
   advanced?: string;
 }
 
+function safeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export const DOWNLOAD_LINKS = {
   clientDownload: 'https://files.teamspeak-services.com/releases/client/3.6.2/TeamSpeak3-Client-win64-3.6.2.exe',
   mirrorDownload: 'https://cloud.nanodesu.net/d/teamspeak/TeamSpeak3-Client-win64-3.6.2.exe',
@@ -60,19 +64,19 @@ export function buildSiteData(config: AppConfig, serverName: string, download?: 
   const host = config.publicServer.host;
   const port = config.publicServer.port;
   const defaultAddress = port === 9987 ? host : `${host}:${port}`;
-  const address = siteInfo?.serverAddress?.trim() || defaultAddress;
+  const address = safeText(siteInfo?.serverAddress) || defaultAddress;
   return {
-    title: siteInfo?.title?.trim() || config.site.title,
-    footerDescription: siteInfo?.footerDescription?.trim() || 'TeamSpeak3 语音服务器',
+    title: safeText(siteInfo?.title) || config.site.title,
+    footerDescription: safeText(siteInfo?.footerDescription) || 'TeamSpeak3 语音服务器',
     logo: config.site.logo,
-    serverName: siteInfo?.serverName?.trim() || config.site.serverName || serverName || 'TS3 语音服务器',
+    serverName: safeText(siteInfo?.serverName) || config.site.serverName || serverName || 'TS3 语音服务器',
     serverAddress: address,
     connectUrl: `ts3server://${address}`,
     clientDownload: download?.clientDownload || DOWNLOAD_LINKS.clientDownload,
     mirrorDownload: download?.mirrorDownload || DOWNLOAD_LINKS.mirrorDownload,
     translationDownload: download?.translationDownload || DOWNLOAD_LINKS.translationDownload,
-    adminName: siteInfo?.adminName?.trim() || config.site.adminName,
-    adminSteam: siteInfo?.adminSteam?.trim() || config.site.adminSteam,
+    adminName: safeText(siteInfo?.adminName) || config.site.adminName,
+    adminSteam: safeText(siteInfo?.adminSteam) || config.site.adminSteam,
     globalServer: config.site.globalServer,
   };
 }
@@ -122,8 +126,10 @@ export function buildTutorial(config: AppConfig, tutorialOverride?: TutorialConf
   const port = config.publicServer.port;
   const address = port === 9987 ? host : `${host}:${port}`;
 
-  const downloadContent = tutorialOverride?.download?.trim() || legacyGuide?.trim()
-    ? (tutorialOverride?.download?.trim() || legacyGuide!.trim())
+  const overrideDownload = safeText(tutorialOverride?.download);
+  const legacyDownload = safeText(legacyGuide);
+  const downloadContent = overrideDownload || legacyDownload
+    ? (overrideDownload || legacyDownload)
     : `### 1. 下载安装包
 首先下载安装程序：
 [点击下载 TeamSpeak3-Client-win64-3.6.2.exe](${DOWNLOAD_LINKS.mirrorDownload})
@@ -154,8 +160,8 @@ export function buildTutorial(config: AppConfig, tutorialOverride?: TutorialConf
     title: 'TeamSpeak 使用教程',
     sections: [
       { key: 'download', title: '下载教程', content: downloadContent },
-      { key: 'basic', title: '基础教程', content: tutorialOverride?.basic?.trim() || BASIC_TUTORIAL },
-      { key: 'advanced', title: '进阶教程', content: tutorialOverride?.advanced?.trim() || ADVANCED_TUTORIAL },
+      { key: 'basic', title: '基础教程', content: safeText(tutorialOverride?.basic) || BASIC_TUTORIAL },
+      { key: 'advanced', title: '进阶教程', content: safeText(tutorialOverride?.advanced) || ADVANCED_TUTORIAL },
     ],
     updatedAt: formatTimestamp(updatedAtMs ?? Date.now()),
   };

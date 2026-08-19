@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
 
-function intEnv(name: string, fallback: number): number {
-  const v = process.env[name];
+function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const v = env[name];
   if (!v) return fallback;
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
@@ -44,21 +44,21 @@ export interface AppConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const ts3Host = env.TS3_HOST || '';
-  const queryPort = intEnv('TS3_QUERY_PORT', 10011);
+  const queryPort = intEnv(env, 'TS3_QUERY_PORT', 10011);
 
   return {
-    port: intEnv('PORT', 3001),
+    port: intEnv(env, 'PORT', 3001),
     ts3: {
       host: ts3Host,
       queryPort,
-      serverPort: intEnv('TS3_SERVER_PORT', 9987),
-      serverId: intEnv('TS3_SERVER_ID', 1),
+      serverPort: intEnv(env, 'TS3_SERVER_PORT', 9987),
+      serverId: intEnv(env, 'TS3_SERVER_ID', 1),
       username: env.TS3_QUERY_USERNAME || 'serveradmin',
       password: env.TS3_QUERY_PASSWORD || '',
     },
     publicServer: {
       host: env.TS3_PUBLIC_HOST || ts3Host,
-      port: intEnv('TS3_PUBLIC_PORT', 9987),
+      port: intEnv(env, 'TS3_PUBLIC_PORT', 9987),
     },
     site: {
       title: env.SITE_TITLE || 'Voice',
@@ -77,7 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // 未配置时使用进程级随机密钥，避免公开默认值被用于伪造管理员令牌。
     jwtSecret: env.JWT_SECRET || randomBytes(32).toString('hex'),
     dbPath: env.DB_PATH || 'data/ts3monitor.db',
-    collectIntervalMs: intEnv('COLLECT_INTERVAL_MS', 30000),
-    sampleIntervalMs: intEnv('SAMPLE_INTERVAL_MS', 300000),
+    collectIntervalMs: intEnv(env, 'COLLECT_INTERVAL_MS', 30000),
+    sampleIntervalMs: intEnv(env, 'SAMPLE_INTERVAL_MS', 300000),
   };
 }
