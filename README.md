@@ -1,19 +1,36 @@
-# TS3 Monitor — TeamSpeak3 语音服务器监控管理站
+# TS3 Monitor
 
-一个参照 `teamspeak.nanodesu.net` 实现的功能完整的 TeamSpeak3 监控站。后端通过 ServerQuery 协议（TCP 10011）连接真实 TS3 服务器，周期采集数据写入 SQLite，经 REST 向前端提供数据。
+面向 TeamSpeak 3 服务器的监控与管理站。后端通过 ServerQuery 协议（默认 TCP `10011`）连接真实 TS3 服务器，周期采集数据写入 SQLite，并通过 REST API 与 WebSocket 为网页提供实时数据。
 
-功能包括：实时在线、在线时长统计、活跃榜、热门频道、周冠军、弹性频道自动扩容、下载链接、汉化包、使用教程、个人数据查询与管理后台。
+## 功能概览
+
+- **监控仪表盘**：实时在线、在线时长、活跃榜、热门频道和历史统计。
+- **自动化功能**：周冠军、成就和弹性频道自动扩容与回收。
+- **管理后台**：TS3 连接配置、用户与频道管理、服务器组与频道组分配。
+- **站点内容**：下载链接、汉化包、基础与进阶教程、个人资料查询。
+- **多分站管理**：从主站后台创建独立的 TS3 分站，每个分站拥有独立配置、数据库、统计数据和后台密码。
+
+## 架构
+
+```text
+浏览器 -> Vue 3 前端 -> Express API / WebSocket -> SQLite
+                                             -> TeamSpeak 3 ServerQuery
+```
+
+生产环境中，后端会自动托管 `frontend/dist` 中的前端构建产物，因此只需部署一个 Node.js 服务。
 
 ## 环境要求
 
 - Node.js 22.5 或更高版本（本项目使用 Node 内置的 `node:sqlite`，22.5 以下无法运行）
 - npm
+- 可访问的 TeamSpeak 3 ServerQuery 服务（默认端口 `10011`）
 
 ## 目录结构
 
 ```
 backend/   后端服务（Express + SQLite + ts3-nodejs-library）
 frontend/  前端（Vue 3 + Vite）
+install.md  Ubuntu + Nginx + HTTPS 生产部署指南
 ```
 
 ## 快速开始
@@ -25,7 +42,7 @@ frontend/  前端（Vue 3 + Vite）
 ```bash
 # 启动后端
 cd backend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -41,13 +58,13 @@ http://localhost:3001
 # 1. 准备后端配置
 cd backend
 # 创建 .env，只填写首次启动密码即可
-echo ADMIN_PASSWORD=请替换为你的后台密码 > .env
+printf '%s\n' 'ADMIN_PASSWORD=请替换为你的后台密码' > .env
 # TS3 连接信息可在后台填写，无需写入 .env
-npm install
+npm ci
 
 # 2. 构建前端（后端会托管构建产物）
 cd ../frontend
-npm install
+npm ci
 npm run build
 
 # 3. 启动后端
@@ -58,6 +75,8 @@ npm run dev
 > 如果 `.env` 里没有配置 TS3 连接信息，后端不会连接任何服务器，也不会生成任何假数据。打开网页会提示「尚未连接 TS3 服务器」，点击「前往后台配置」填写服务器地址、端口、账号、密码即可自动连接。
 
 ## 配置说明（`.env`）
+
+> `.env` 包含后台密码、JWT 密钥和 TS3 ServerQuery 凭据，不能提交到 Git 仓库。生产环境请设置固定且随机的 `JWT_SECRET`，否则服务重启后已有的管理员登录令牌会失效。
 
 | 变量 | 说明 | 必填 |
 |------|------|------|
@@ -112,13 +131,17 @@ npm run dev
 
 ## 生产部署
 
+完整的服务器、域名和 HTTPS 部署步骤见 [install.md](./install.md)。其中包含 DNS 解析、Nginx 反向代理、PM2 常驻运行、Certbot 证书、备份及更新流程。
+
 ```bash
 # 构建后端
 cd backend
+npm ci
 npm run build
 
 # 构建前端
 cd ../frontend
+npm ci
 npm run build
 
 # 启动后端（托管前端构建产物）
@@ -155,4 +178,5 @@ npm test
 
 - **启动后日志提示「未配置 TS3 服务器」**：`.env` 中未填写 `TS3_HOST`，或下载包缺少 `.env`。打开网页后台「服务器配置」填写即可。
 - **`node:sqlite` 报错**：Node 版本低于 22.5，请升级。
+- **服务重启后后台登录失效**：生产环境未设置固定的 `JWT_SECRET`。将随机长字符串写入 `backend/.env` 后重启服务。
 - **数据库历史数据丢失**：`data/ts3monitor.db` 不随 git 提交。如需迁移历史数据，请连同该文件一起拷贝。
