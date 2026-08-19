@@ -60,8 +60,13 @@ async function main(): Promise<void> {
   app.use('/api', createHostSelectedApiRouter(legacyRouter, subsiteManager));
   app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, ts3Connected: ts3.connected, site: config.site.slug });
+  app.get('/api/health', (req, res) => {
+    res.json({
+      ok: true,
+      ts3Connected: ts3.connected,
+      site: config.site.slug,
+      platform: !subsiteManager.isManagedSubsiteHost(req.hostname),
+    });
   });
 
   // 生产模式：托管前端构建产物

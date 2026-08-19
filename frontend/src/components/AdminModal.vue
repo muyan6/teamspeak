@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue';
+import { defineAsyncComponent, onMounted, ref } from 'vue';
 import { api } from '../api';
 
 type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tutorial' | 'ts3' | 'modules' | 'subsites';
@@ -7,6 +7,7 @@ type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tu
 const password = ref('');
 const authed = ref(api.isAuthed());
 const loginError = ref('');
+const isPlatformAdmin = ref(false);
 const activeTab = ref<AdminTab>('elastic');
 const AchievementsPanel = defineAsyncComponent(() => import('../features/achievements/AchievementsPanel.vue'));
 const ElasticChannelsPanel = defineAsyncComponent(() => import('../features/elastic-channels/ElasticChannelsPanel.vue'));
@@ -33,6 +34,16 @@ function logout(): void {
   authed.value = false;
   password.value = '';
 }
+
+async function loadAdminScope(): Promise<void> {
+  try {
+    isPlatformAdmin.value = (await api.getHealth()).platform;
+  } catch {
+    isPlatformAdmin.value = false;
+  }
+}
+
+onMounted(() => { void loadAdminScope(); });
 </script>
 
 <template>
@@ -70,7 +81,7 @@ function logout(): void {
           <button class="btn sm" :class="{ primary: activeTab === 'site' }" @click="activeTab = 'site'">站点配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'tutorial' }" @click="activeTab = 'tutorial'">教程配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'modules' }" @click="activeTab = 'modules'">主页模块</button>
-          <button class="btn sm" :class="{ primary: activeTab === 'subsites' }" @click="activeTab = 'subsites'">统一分站</button>
+          <button v-if="isPlatformAdmin" class="btn sm" :class="{ primary: activeTab === 'subsites' }" @click="activeTab = 'subsites'">统一分站</button>
         </div>
 
         <div class="tab-panel">
@@ -82,7 +93,7 @@ function logout(): void {
           <SiteConfigPanel v-else-if="activeTab === 'site'" />
           <TutorialConfigPanel v-else-if="activeTab === 'tutorial'" />
           <HomeModulesPanel v-else-if="activeTab === 'modules'" />
-          <MultiSubsitesPanel v-else-if="activeTab === 'subsites'" />
+          <MultiSubsitesPanel v-else-if="activeTab === 'subsites' && isPlatformAdmin" />
         </div>
       </div>
     </div>

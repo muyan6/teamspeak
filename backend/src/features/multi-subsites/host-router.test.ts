@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createHostSelectedApiRouter } from './host-router.js';
+import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter } from './host-router.js';
 
 describe('分站 Host 路由', () => {
   it('将已启用分站请求转发至专属路由', () => {
@@ -28,5 +28,19 @@ describe('分站 Host 路由', () => {
     const handler = createHostSelectedApiRouter(legacy, manager as never);
     handler({ hostname: 'example.com' } as never, {} as never, vi.fn());
     expect(legacy).toHaveBeenCalledOnce();
+  });
+
+  it('不向分站暴露统一分站平台路由', async () => {
+    const manager = { isManagedSubsiteHost: vi.fn(() => true) };
+    const router = createMultiSubsitePlatformRouter({} as never, manager as never);
+    const app = (await import('express')).default();
+    app.use('/api/platform', router);
+    const server = (await import('node:http')).createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/platform/settings`, { headers: { Host: 'alpha.example.com' } });
+    expect(response.status).toBe(404);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 });

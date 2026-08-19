@@ -41,6 +41,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  getHealth: () => request<{ ok: boolean; ts3Connected: boolean; site: string; platform: boolean }>('/health'),
   getData: () => request<DashboardData>('/data'),
 
   getElasticLoad: () => request<ElasticChannelData>('/elastic/load'),
