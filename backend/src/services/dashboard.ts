@@ -2,7 +2,7 @@ import type { AppConfig } from '../config.js';
 import { buildSiteData, buildTutorial, type DownloadConfig, type SiteData, type TutorialData } from '../site.js';
 import type { StatsService } from './stats.js';
 import type { Ts3ClientWrapper, OnlineClientData, ChannelData } from '../ts3/client.js';
-import type { ElasticChannelService } from './elastic.js';
+import type { ElasticChannelService } from '../features/elastic-channels/service.js';
 import type { SiteConfigStore } from '../db/site-config.js';
 
 export interface RankEntry {

@@ -3,7 +3,7 @@ import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRouter, type ApiDeps } from '../src/api/router.js';
 import { AuthService } from '../src/services/auth.js';
-import { WeeklyChampionService } from '../src/services/champion.js';
+import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
 import { openDatabase } from '../src/db/database.js';
 import { StatsService } from '../src/services/stats.js';
 
@@ -14,7 +14,11 @@ describe('管理接口与配置回归', () => {
     await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   });
 
-  async function startRouter(): Promise<{ baseUrl: string; token: string }> {
+  async function startRouter(): Promise<{
+    baseUrl: string;
+    token: string;
+    savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }>;
+  }> {
     const auth = new AuthService('test-password', 'test-secret');
     const elasticGroups = [{
       id: 1,
@@ -30,12 +34,20 @@ describe('管理接口与配置回归', () => {
       createdAt: Date.now(),
     }];
 
+    const savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }> = [];
     const deps = {
       auth,
       configStore: { get: () => null, getJson: () => ({}), set: () => undefined, setJson: () => undefined },
       stats: { getTopUsers: () => [], getTopChannels: () => [], getDailyTrends: () => ({ labels: [], data: [] }) },
       elastic: { listGroups: () => elasticGroups, addGroup: () => elasticGroups[0], removeGroup: () => false },
-      champion: { getConfig: () => ({}), saveConfig: () => ({}), check: async () => null },
+      champion: {
+        getConfig: () => ({}),
+        saveConfig: (config: { enabled: number; serverGroupId: number | null; checkIntervalHours: number }) => {
+          savedChampionConfigs.push(config);
+          return config;
+        },
+        check: async () => null,
+      },
       achievement: {
         listLevels: () => [],
         getUnlockedUsers: () => [],
@@ -57,7 +69,7 @@ describe('管理接口与配置回归', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
-    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken() };
+    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), savedChampionConfigs };
   }
 
   it('弹性频道接口要求管理员凭证，避免泄露频道密码', async () => {
@@ -91,6 +103,17 @@ describe('管理接口与配置回归', () => {
       lastWinnerNickname: null,
     });
     db.close();
+  });
+
+  it('关闭周冠军时允许暂未配置奖励服务器组', async () => {
+    const { baseUrl, token, savedChampionConfigs } = await startRouter();
+    const response = await fetch(`${baseUrl}/champion/config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: 0, serverGroupId: 0, checkIntervalHours: 24 }),
+    });
+    expect(response.status).toBe(200);
+    expect(savedChampionConfigs).toEqual([{ enabled: 0, serverGroupId: null, checkIntervalHours: 24 }]);
   });
 
   it('成就管理接口需要管理员凭证并校验新增数据', async () => {

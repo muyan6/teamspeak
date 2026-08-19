@@ -3,6 +3,10 @@
 .gemini
 .opencode
 
+# Local browser regression artifacts
+/.edge-check-profile/
+/edge-*.png
+
 # Linked Git worktrees used for isolated feature tasks
 /.worktrees/
 

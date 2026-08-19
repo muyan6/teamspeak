@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { useDashboard } from '../composables/dashboard';
 import type { RankEntry, TrendData } from '../types';
-import OnlineStatsChart from '../components/OnlineStatsChart.vue';
 import { renderMarkdown } from '../utils';
 import { useHomeModules } from '../features/home-modules/home-modules';
 
 const { data, error } = useDashboard();
 const { modules: visibleModules, load: loadHomeModules } = useHomeModules();
+const OnlineStatsChart = defineAsyncComponent(() => import('../components/OnlineStatsChart.vue'));
 const copied = ref(false);
 const trendRange = ref<'week' | 'month'>('week');
 const rankRange = ref<'week' | 'month'>('week');

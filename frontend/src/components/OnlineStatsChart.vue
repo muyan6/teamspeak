@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import * as echarts from 'echarts';
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
 import type { TrendData } from '../types';
+
+echarts.use([GridComponent, TooltipComponent, LineChart, CanvasRenderer]);
 
 const props = defineProps<{ trend: TrendData; title?: string }>();
 

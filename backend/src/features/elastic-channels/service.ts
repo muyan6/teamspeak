@@ -1,5 +1,5 @@
-import type { AppDatabase } from '../db/database.js';
-import { Ts3ClientWrapper } from '../ts3/client.js';
+import type { AppDatabase } from '../../db/database.js';
+import { Ts3ClientWrapper } from '../../ts3/client.js';
 
 export interface ElasticGroup {
   id: number;

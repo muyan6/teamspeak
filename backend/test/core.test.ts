@@ -3,9 +3,9 @@ import { MockTs3Server } from './mock-ts3-server.js';
 import { openDatabase } from '../src/db/database.js';
 import { Ts3ClientWrapper } from '../src/ts3/client.js';
 import { StatsService } from '../src/services/stats.js';
-import { ElasticChannelService } from '../src/services/elastic.js';
-import { AchievementService } from '../src/services/achievement.js';
-import { WeeklyChampionService } from '../src/services/champion.js';
+import { ElasticChannelService } from '../src/features/elastic-channels/service.js';
+import { AchievementService } from '../src/features/achievements/service.js';
+import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
 
 describe('TS3 监控后端核心链路', () => {
   const mock = new MockTs3Server(10012);
@@ -262,7 +262,7 @@ describe('TS3 监控后端核心链路', () => {
   });
 
   it('成就服务能授予达标用户', async () => {
-    const ach = new AchievementService(db, ts3);
+    const ach = new AchievementService(db, ts3, new StatsService(db));
     ach.addLevel({ hours: 0, serverGroupId: 3, title: '测试成就' });
 
     const results = await ach.check();

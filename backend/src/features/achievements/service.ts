@@ -1,5 +1,6 @@
-import type { AppDatabase } from '../db/database.js';
-import { Ts3ClientWrapper } from '../ts3/client.js';
+import type { AppDatabase } from '../../db/database.js';
+import type { StatsService } from '../../services/stats.js';
+import { Ts3ClientWrapper } from '../../ts3/client.js';
 
 export interface AchievementLevel {
   id: number;
@@ -12,7 +13,8 @@ export interface AchievementLevel {
 export class AchievementService {
   constructor(
     private db: AppDatabase,
-    private ts3: Ts3ClientWrapper
+    private ts3: Ts3ClientWrapper,
+    private stats: StatsService
   ) {}
 
   listLevels(): AchievementLevel[] {
@@ -54,12 +56,15 @@ export class AchievementService {
     const results: Array<{ nickname: string; title: string; granted: boolean }> = [];
     const levels = this.listLevels().filter((l) => l.enabled === 1);
     if (levels.length === 0) return results;
+    const serverKey = this.stats.getServerKey();
 
     const users = this.db
       .prepare(
-        'SELECT client_database_id as clientDatabaseId, nickname, total_seconds as totalSeconds FROM user_online_duration'
+        `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as totalSeconds
+         FROM user_online_duration
+         WHERE server_key = ?`
       )
-      .all() as Array<{ clientDatabaseId: number; nickname: string; totalSeconds: number }>;
+      .all(serverKey) as Array<{ clientDatabaseId: number; nickname: string; totalSeconds: number }>;
 
     for (const user of users) {
       for (const level of levels) {
@@ -68,9 +73,9 @@ export class AchievementService {
 
         const alreadyGranted = this.db
           .prepare(
-            'SELECT 1 FROM achievement_grants WHERE client_database_id = ? AND level_id = ?'
+            'SELECT 1 FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
           )
-          .get(user.clientDatabaseId, level.id);
+          .get(serverKey, user.clientDatabaseId, level.id);
 
         if (alreadyGranted) {
           results.push({ nickname: user.nickname, title: level.title, granted: false });
@@ -81,9 +86,11 @@ export class AchievementService {
         if (ok) {
           this.db
             .prepare(
-              'INSERT OR IGNORE INTO achievement_grants (client_database_id, level_id, granted_at) VALUES (?, ?, ?)'
+              `INSERT OR IGNORE INTO achievement_grants
+                (server_key, client_database_id, level_id, granted_at)
+               VALUES (?, ?, ?, ?)`
             )
-            .run(user.clientDatabaseId, level.id, Date.now());
+            .run(serverKey, user.clientDatabaseId, level.id, Date.now());
         }
         results.push({ nickname: user.nickname, title: level.title, granted: ok });
       }
@@ -93,7 +100,9 @@ export class AchievementService {
 
   /** 已解锁成就的用户（用于荣誉殿堂时长成就榜） */
   getUnlockedCount(): number {
-    const row = this.db.prepare('SELECT COUNT(DISTINCT client_database_id) as cnt FROM achievement_grants').get() as {
+    const row = this.db.prepare(
+      'SELECT COUNT(DISTINCT client_database_id) as cnt FROM achievement_grants WHERE server_key = ?'
+    ).get(this.stats.getServerKey()) as {
       cnt: number;
     };
     return row.cnt;
@@ -104,11 +113,13 @@ export class AchievementService {
       .prepare(
         `SELECT u.nickname as nickname, l.title as title, l.hours as hours
          FROM achievement_grants g
-         JOIN user_online_duration u ON u.client_database_id = g.client_database_id
+         JOIN user_online_duration u
+           ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
+         WHERE g.server_key = ?
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
-      .all() as Array<{ nickname: string; title: string; hours: number }>;
+      .all(this.stats.getServerKey()) as Array<{ nickname: string; title: string; hours: number }>;
   }
 
   /** 用户个人成就查询 */
@@ -118,9 +129,9 @@ export class AchievementService {
         `SELECT l.title as title, l.hours as hours
          FROM achievement_grants g
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.client_database_id = ?
+         WHERE g.server_key = ? AND g.client_database_id = ?
          ORDER BY l.hours ASC`
       )
-      .all(clientDatabaseId) as Array<{ title: string; hours: number }>;
+      .all(this.stats.getServerKey(), clientDatabaseId) as Array<{ title: string; hours: number }>;
   }
 }

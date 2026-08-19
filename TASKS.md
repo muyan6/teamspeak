@@ -1,87 +1,60 @@
-# 功能任务协作约定
+# 功能开发规则（必须执行）
 
-本项目采用按功能纵切的并行协作方式。每个功能任务可同时修改该功能需要的前端、后端与测试，但不得直接修改公共整合文件。
+## 最高优先级：先判定，再编码
 
-## 工作目录
+每次改动先回答一个问题：**它是否增加了任何用户、管理员、接口、数据或自动化能力？**
 
-| 功能 | 分支 | Worktree |
-| --- | --- | --- |
-| 首页监控与实时数据 | `feature/home-monitor` | `.worktrees/home-monitor` |
-| 个人数据查询 | `feature/profile` | `.worktrees/profile` |
-| 弹性频道 | `feature/elastic-channels` | `.worktrees/elastic-channels` |
-| 周冠军 | `feature/weekly-champion` | `.worktrees/weekly-champion` |
-| 在线时长成就 | `feature/achievements` | `.worktrees/achievements` |
-| TS3 后台管理 | `feature/ts3-admin` | `.worktrees/ts3-admin` |
-| 站点配置与教程 | `feature/site-config` | `.worktrees/site-config` |
-| 整合与发布 | `main` | 项目根目录 |
+- **是：这是新功能。必须先新建功能文件，后写任何实现。**
+- **否：这是已有功能的修复。可以直接修改该功能已有文件。**
 
-## 功能范围
+本文件的规则优先于“优先修改现有文件”这类通用习惯；后者仅适用于修复，不适用于新功能。
 
-### 首页监控与实时数据
+## 新功能的不可跳过流程
 
-- 在线人数、实时名单、榜单、趋势图与 WebSocket 刷新。
-- 建议新增：`frontend/src/features/home-monitor/`、`backend/src/features/home-monitor/`。
+1. 选定目录名：`<slug>`。
+2. 列出并创建本次要新增的文件。
+3. 只在新功能目录中实现业务、界面、接口和测试。
+4. 最后才在公共文件增加最小接线。
 
-### 个人数据查询
+**第 2 步没有创建文件，禁止开始新功能实现。**
 
-- 昵称搜索、UID 选择、在线时长、连续在线、常去频道与好友数据。
-- 建议新增：`frontend/src/features/profile/`、`backend/src/features/profile/`。
+```text
+backend/src/features/<slug>/
+  routes.ts          # HTTP 接口（需要时）
+  service.ts         # 业务逻辑（需要时）
+  *.test.ts          # 功能回归测试
 
-### 弹性频道
+frontend/src/features/<slug>/
+  <Name>Panel.vue    # 功能界面（需要时）
+  api.ts             # 功能请求封装（需要时）
+  types.ts           # 功能专属类型（需要时）
+```
 
-- 弹性频道组配置、自动扩容/收缩和频道权限保护。
-- 建议新增：`frontend/src/features/elastic-channels/`、`backend/src/features/elastic-channels/`。
+只新建本次需要的文件，但不得把该功能的业务代码塞入其他功能目录或公共文件。
 
-### 周冠军
+## 公共文件只能接线
 
-- 奖励服务器组配置、定时检测、冠军切换与历史展示。
-- 建议新增：`frontend/src/features/weekly-champion/`、`backend/src/features/weekly-champion/`。
-
-### 在线时长成就
-
-- 成就等级、奖励服务器组、自动检测与已解锁记录。
-- 建议新增：`frontend/src/features/achievements/`、`backend/src/features/achievements/`。
-
-### TS3 后台管理
-
-- 频道、在线用户、封禁、移动用户、服务器组和频道组管理。
-- 建议新增：`frontend/src/features/ts3-admin/`、`backend/src/features/ts3-admin/`。
-
-### 站点配置与教程
-
-- 下载链接、教程内容、站点资料和展示配置。
-- 建议新增：`frontend/src/features/site-config/`、`backend/src/features/site-config/`。
-
-## 公共文件：仅整合任务修改
+以下文件只能增加 `import`、注册、挂载、导出或依赖注入；不得写业务规则、页面模板、路由实现或功能测试：
 
 - `backend/src/api/router.ts`
 - `backend/src/index.ts`
 - `frontend/src/App.vue`
+- `frontend/src/components/AdminModal.vue`
 - `frontend/src/api.ts`
 - `frontend/src/types.ts`
-- `frontend/src/components/AdminModal.vue`
-- 两端的 `package.json` 与锁文件
 
-功能任务需要接入公共文件时，应在提交说明中给出所需的路由、类型、组件挂载或依赖变更；由 `main` 工作目录统一接入。
+新增“签到管理”时，创建 `features/check-in/` 下的路由、服务、面板和测试；公共文件只注册它们。
 
-## 每个功能任务的完成标准
+## 什么情况必须新建文件
 
-1. 只在自己的 worktree 中工作。
-2. **新增功能必须新建独立文件**：前端组件、后端服务、路由模块与测试均放入对应的 `features/<功能名>/` 目录；不得把新功能继续追加到现有大文件、无关功能文件或公共入口文件中。
-3. 不直接编辑公共文件；只记录整合所需的最小变更。
-4. 运行相关测试与构建后提交到自己的功能分支。
-5. 在提交信息中说明：功能目标、接口契约、测试命令、整合要求。
+命中任一项即为新功能，必须走上述流程：
 
-现有功能的缺失接线、缺陷修复或极小调整可以修改其既有文件；只要是新增业务能力、独立管理分类或可复用模块，就必须创建自己的功能目录和文件。
+- 新接口、数据库读写、数据字段、定时任务或第三方集成。
+- 新后台分类、按钮、表单、列表、弹窗或独立交互流程。
+- 新业务规则、独立数据处理流程或可复用模块。
 
-## 整合顺序
+仅修正现有功能的错误、文案、样式、校验或边界条件，并且不增加上述能力，才属于“修复”。
 
-1. 首页监控与实时数据
-2. 个人数据查询
-3. 弹性频道
-4. 周冠军
-5. 在线时长成就
-6. TS3 后台管理
-7. 站点配置与教程
+## 整合与验收
 
-每合并一个功能分支，都要运行后端测试、前端构建和浏览器回归；发生冲突时，保持功能分支的业务实现，将公共入口修改收敛在 `main`。
+功能任务只改自己的 `features/<slug>/` 目录。需要修改公共接线文件时，由整合任务集中完成。整合后必须通过后端测试、后端构建、前端构建和浏览器回归。

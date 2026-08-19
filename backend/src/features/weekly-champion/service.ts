@@ -1,6 +1,6 @@
-import type { AppDatabase } from '../db/database.js';
-import { Ts3ClientWrapper } from '../ts3/client.js';
-import { StatsService } from './stats.js';
+import type { AppDatabase } from '../../db/database.js';
+import { Ts3ClientWrapper } from '../../ts3/client.js';
+import { StatsService } from '../../services/stats.js';
 
 export interface ChampionConfig {
   id: number;

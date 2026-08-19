@@ -8,9 +8,9 @@ import { openDatabase } from './db/database.js';
 import { SiteConfigStore } from './db/site-config.js';
 import { AuthService } from './services/auth.js';
 import { StatsService } from './services/stats.js';
-import { ElasticChannelService } from './services/elastic.js';
-import { WeeklyChampionService } from './services/champion.js';
-import { AchievementService } from './services/achievement.js';
+import { ElasticChannelService } from './features/elastic-channels/service.js';
+import { WeeklyChampionService } from './features/weekly-champion/service.js';
+import { AchievementService } from './features/achievements/service.js';
 import { MonitorService } from './services/monitor.js';
 import { DashboardService } from './services/dashboard.js';
 import { Ts3ClientWrapper, getTs3ServerKey, type Ts3ConnectionConfig } from './ts3/client.js';
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const ts3 = new Ts3ClientWrapper(ts3Config);
   const elastic = new ElasticChannelService(db, ts3);
   const champion = new WeeklyChampionService(db, ts3, stats);
-  const achievement = new AchievementService(db, ts3);
+  const achievement = new AchievementService(db, ts3, stats);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic);
 

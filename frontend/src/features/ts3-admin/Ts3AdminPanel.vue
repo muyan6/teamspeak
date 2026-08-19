@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
-import { api } from '../api';
-import type { AdminChannel, AdminClient, ChannelGroup, ServerGroup } from '../types';
+import { api } from '../../api';
+import type { AdminChannel, AdminClient, ChannelGroup, ServerGroup } from '../../types';
 
 const subTab = ref<'channels' | 'clients'>('channels');
 const channels = ref<AdminChannel[]>([]);
