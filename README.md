@@ -40,8 +40,9 @@ http://localhost:3001
 ```bash
 # 1. 准备后端配置
 cd backend
-cp .env.example .env
-# 编辑 .env，至少填写 ADMIN_PASSWORD 作为首次启动密码；TS3 连接信息也可在后台填写
+# 创建 .env，只填写首次启动密码即可
+echo ADMIN_PASSWORD=请替换为你的后台密码 > .env
+# TS3 连接信息可在后台填写，无需写入 .env
 npm install
 
 # 2. 构建前端（后端会托管构建产物）
