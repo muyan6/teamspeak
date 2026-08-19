@@ -73,6 +73,20 @@ export interface ChampionConfig {
   lastWinnerNickname: string | null;
 }
 
+export interface AchievementLevel {
+  id: number;
+  hours: number;
+  serverGroupId: number;
+  title: string;
+  enabled: number;
+}
+
+export interface UnlockedAchievement {
+  nickname: string;
+  title: string;
+  hours: number;
+}
+
 export interface ServerGroup {
   sgid: number;
   name: string;

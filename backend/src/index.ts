@@ -10,6 +10,7 @@ import { AuthService } from './services/auth.js';
 import { StatsService } from './services/stats.js';
 import { ElasticChannelService } from './services/elastic.js';
 import { WeeklyChampionService } from './services/champion.js';
+import { AchievementService } from './services/achievement.js';
 import { MonitorService } from './services/monitor.js';
 import { DashboardService } from './services/dashboard.js';
 import { Ts3ClientWrapper, getTs3ServerKey, type Ts3ConnectionConfig } from './ts3/client.js';
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   const ts3 = new Ts3ClientWrapper(ts3Config);
   const elastic = new ElasticChannelService(db, ts3);
   const champion = new WeeklyChampionService(db, ts3, stats);
+  const achievement = new AchievementService(db, ts3);
   const monitor = new MonitorService(ts3, stats, db, config.collectIntervalMs, config.sampleIntervalMs);
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic);
 
@@ -53,7 +55,7 @@ async function main(): Promise<void> {
     });
   }
 
-  app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, dashboard, ts3, publicServer: config.publicServer }));
+  app.use('/api', createRouter({ auth, configStore, stats, elastic, champion, achievement, dashboard, ts3, publicServer: config.publicServer }));
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, ts3Connected: ts3.connected, site: config.site.slug });
@@ -88,6 +90,7 @@ async function main(): Promise<void> {
     void monitor.collect();
   });
   elasticTimer(elastic);
+  achievementTimer(achievement);
   clientDirectoryTimer(ts3, stats);
 
   // 周期任务：周冠军检测（每次执行后按当前配置的间隔重新调度）
@@ -184,6 +187,21 @@ function scheduleChampionCheck(champion: WeeklyChampionService): void {
     timer.unref();
   };
   void run();
+}
+
+function achievementTimer(achievement: AchievementService): void {
+  const run = async (): Promise<void> => {
+    try {
+      const results = await achievement.check();
+      const granted = results.filter((result) => result.granted).length;
+      if (granted > 0) console.log(`[achievement] 本轮授予 ${granted} 项成就`);
+    } catch (err) {
+      console.error('[achievement] 检测失败:', (err as Error).message);
+    }
+  };
+  void run();
+  const timer = setInterval(run, 6 * 3600 * 1000);
+  timer.unref();
 }
 
 main().catch((err) => {

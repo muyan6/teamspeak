@@ -10,6 +10,7 @@
 | 个人数据查询 | `feature/profile` | `.worktrees/profile` |
 | 弹性频道 | `feature/elastic-channels` | `.worktrees/elastic-channels` |
 | 周冠军 | `feature/weekly-champion` | `.worktrees/weekly-champion` |
+| 在线时长成就 | `feature/achievements` | `.worktrees/achievements` |
 | TS3 后台管理 | `feature/ts3-admin` | `.worktrees/ts3-admin` |
 | 站点配置与教程 | `feature/site-config` | `.worktrees/site-config` |
 | 整合与发布 | `main` | 项目根目录 |
@@ -36,6 +37,11 @@
 - 奖励服务器组配置、定时检测、冠军切换与历史展示。
 - 建议新增：`frontend/src/features/weekly-champion/`、`backend/src/features/weekly-champion/`。
 
+### 在线时长成就
+
+- 成就等级、奖励服务器组、自动检测与已解锁记录。
+- 建议新增：`frontend/src/features/achievements/`、`backend/src/features/achievements/`。
+
 ### TS3 后台管理
 
 - 频道、在线用户、封禁、移动用户、服务器组和频道组管理。
@@ -61,10 +67,12 @@
 ## 每个功能任务的完成标准
 
 1. 只在自己的 worktree 中工作。
-2. 将新代码放入对应的 `features/<功能名>` 目录，并补充该功能的测试。
+2. **新增功能必须新建独立文件**：前端组件、后端服务、路由模块与测试均放入对应的 `features/<功能名>/` 目录；不得把新功能继续追加到现有大文件、无关功能文件或公共入口文件中。
 3. 不直接编辑公共文件；只记录整合所需的最小变更。
 4. 运行相关测试与构建后提交到自己的功能分支。
 5. 在提交信息中说明：功能目标、接口契约、测试命令、整合要求。
+
+现有功能的缺失接线、缺陷修复或极小调整可以修改其既有文件；只要是新增业务能力、独立管理分类或可复用模块，就必须创建自己的功能目录和文件。
 
 ## 整合顺序
 
@@ -72,7 +80,8 @@
 2. 个人数据查询
 3. 弹性频道
 4. 周冠军
-5. TS3 后台管理
-6. 站点配置与教程
+5. 在线时长成就
+6. TS3 后台管理
+7. 站点配置与教程
 
 每合并一个功能分支，都要运行后端测试、前端构建和浏览器回归；发生冲突时，保持功能分支的业务实现，将公共入口修改收敛在 `main`。

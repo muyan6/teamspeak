@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
-import type { ChampionConfig, ElasticGroup, ServerGroup, Ts3ConnectionInfo } from '../types';
+import type { AchievementLevel, ChampionConfig, ElasticGroup, ServerGroup, Ts3ConnectionInfo, UnlockedAchievement } from '../types';
 import Ts3Admin from './Ts3Admin.vue';
 
 const password = ref('');
 const authed = ref(api.isAuthed());
 const loginError = ref('');
-const activeTab = ref<'elastic' | 'champion' | 'server' | 'site' | 'ts3'>('elastic');
+const activeTab = ref<'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'ts3'>('elastic');
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 const savingTs3 = ref(false);
@@ -26,6 +26,11 @@ const egForm = ref({ name: '', namePrefix: '', createThreshold: 2, deleteThresho
 // 周冠军
 const champion = ref<ChampionConfig | null>(null);
 const championForm = ref({ enabled: 0, serverGroupId: 0, checkIntervalHours: 24 });
+
+// 在线时长成就
+const achievementLevels = ref<AchievementLevel[]>([]);
+const unlockedAchievements = ref<UnlockedAchievement[]>([]);
+const achievementForm = ref({ title: '', hours: 1, serverGroupId: 0 });
 
 // 被监控的 TS3 服务器连接配置
 const ts3Conn = ref<Ts3ConnectionInfo | null>(null);
@@ -68,6 +73,13 @@ async function loadChampion() {
   };
 }
 
+async function loadAchievements() {
+  [achievementLevels.value, unlockedAchievements.value] = await Promise.all([
+    api.listAchievementLevels(),
+    api.listUnlockedAchievements(),
+  ]);
+}
+
 async function loadSite() {
   const cfg = await api.getSiteConfig();
   siteGuide.value = cfg.guide ?? '';
@@ -99,7 +111,7 @@ async function loadTs3Config() {
 }
 
 async function loadAll() {
-  await Promise.all([loadElastic(), loadChampion(), loadSite(), loadServerGroups(), loadTs3Config()]);
+  await Promise.all([loadElastic(), loadChampion(), loadAchievements(), loadSite(), loadServerGroups(), loadTs3Config()]);
 }
 
 async function addElastic() {
@@ -124,6 +136,31 @@ async function saveChampion() {
 async function runChampionCheck() {
   const r = await api.checkChampion();
   showNotice(r.result ? `本周冠军：${r.result.nickname}` : '未检测到本周冠军');
+}
+
+async function addAchievement() {
+  if (!achievementForm.value.title.trim() || achievementForm.value.hours < 0 || !achievementForm.value.serverGroupId) return;
+  await api.addAchievementLevel(achievementForm.value);
+  achievementForm.value = { title: '', hours: 1, serverGroupId: 0 };
+  showNotice('在线时长成就已添加');
+  await loadAchievements();
+}
+
+async function toggleAchievement(level: AchievementLevel) {
+  await api.updateAchievementLevel(level.id, { ...level, enabled: level.enabled ? 0 : 1 });
+  await loadAchievements();
+}
+
+async function removeAchievement(id: number) {
+  await api.deleteAchievementLevel(id);
+  await loadAchievements();
+}
+
+async function runAchievementCheck() {
+  const result = await api.checkAchievements();
+  const granted = result.results.filter((entry) => entry.granted).length;
+  showNotice(granted ? `已授予 ${granted} 项成就` : '本轮没有新增成就');
+  await loadAchievements();
 }
 
 async function saveSite() {
@@ -187,6 +224,7 @@ onMounted(() => {
         <div class="tabs">
           <button class="btn sm" :class="{ primary: activeTab === 'elastic' }" @click="activeTab = 'elastic'">弹性频道</button>
           <button class="btn sm" :class="{ primary: activeTab === 'champion' }" @click="activeTab = 'champion'">周冠军</button>
+          <button class="btn sm" :class="{ primary: activeTab === 'achievement' }" @click="activeTab = 'achievement'">成就管理</button>
           <button class="btn sm" :class="{ primary: activeTab === 'server' }" @click="activeTab = 'server'">服务器配置</button>
           <button class="btn sm" :class="{ primary: activeTab === 'ts3' }" @click="activeTab = 'ts3'">TS3 管理</button>
           <button class="btn sm" :class="{ primary: activeTab === 'site' }" @click="activeTab = 'site'">站点配置</button>
@@ -215,6 +253,45 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 在线时长成就 -->
+        <div v-if="activeTab === 'achievement'" class="tab-panel">
+          <div class="modal-actions" style="margin-top: 0">
+            <button class="btn sm" @click="runAchievementCheck">立即检测</button>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>成就</th><th>在线时长</th><th>奖励服务器组</th><th>状态</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="level in achievementLevels" :key="level.id">
+                <td>{{ level.title }}</td>
+                <td>{{ level.hours }} 小时</td>
+                <td>{{ serverGroups.find((group) => group.sgid === level.serverGroupId)?.name || `SG${level.serverGroupId}` }}</td>
+                <td><button class="btn sm" :class="{ primary: level.enabled }" @click="toggleAchievement(level)">{{ level.enabled ? '已启用' : '已停用' }}</button></td>
+                <td style="text-align: right"><button class="btn sm danger" @click="removeAchievement(level.id)">删除</button></td>
+              </tr>
+              <tr class="tbl-form-row">
+                <td><input v-model="achievementForm.title" class="input" placeholder="成就名称" /></td>
+                <td><input v-model.number="achievementForm.hours" class="input" type="number" min="0" placeholder="小时" /></td>
+                <td>
+                  <select v-model.number="achievementForm.serverGroupId" class="input">
+                    <option :value="0" disabled>选择服务器组</option>
+                    <option v-for="group in serverGroups" :key="group.sgid" :value="group.sgid">{{ group.name }}</option>
+                  </select>
+                </td>
+                <td colspan="2" style="text-align: right"><button class="btn primary" @click="addAchievement">添加</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="achievement-history">
+            <div class="section-title">最近已解锁</div>
+            <div v-if="!unlockedAchievements.length" class="empty">暂无已解锁成就</div>
+            <ul v-else class="achievement-list">
+              <li v-for="entry in unlockedAchievements.slice(0, 10)" :key="`${entry.nickname}-${entry.title}`">
+                <span>{{ entry.nickname }}</span><span>{{ entry.title }} · {{ entry.hours }} 小时</span>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <!-- 周冠军 -->
@@ -352,6 +429,29 @@ onMounted(() => {
 
 .admin-surface {
   min-width: 0;
+}
+
+.achievement-history {
+  margin-top: 20px;
+}
+
+.achievement-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .admin-page-heading {

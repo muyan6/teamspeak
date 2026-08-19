@@ -4,6 +4,7 @@ import type { SiteConfigStore } from '../db/site-config.js';
 import type { StatsService } from '../services/stats.js';
 import type { ElasticChannelService } from '../services/elastic.js';
 import type { WeeklyChampionService } from '../services/champion.js';
+import type { AchievementService } from '../services/achievement.js';
 import type { DashboardService } from '../services/dashboard.js';
 import { getTs3ServerKey, type ClientDatabaseData, type Ts3ClientWrapper } from '../ts3/client.js';
 import { adminAuth } from './middleware.js';
@@ -15,6 +16,7 @@ export interface ApiDeps {
   stats: StatsService;
   elastic: ElasticChannelService;
   champion: WeeklyChampionService;
+  achievement: AchievementService;
   dashboard: DashboardService;
   ts3: Ts3ClientWrapper;
   publicServer: { host: string; port: number };
@@ -278,6 +280,67 @@ export function createRouter(deps: ApiDeps): Router {
   router.post('/champion/check', admin, asyncRoute(async (_req, res) => {
     const result = await deps.champion.check();
     res.json({ result });
+  }));
+
+  // 在线时长成就
+  router.get('/achievements/levels', admin, (_req, res) => {
+    res.json(deps.achievement.listLevels());
+  });
+
+  router.get('/achievements/unlocked', admin, (_req, res) => {
+    res.json(deps.achievement.getUnlockedUsers());
+  });
+
+  router.post('/achievements/levels', admin, (req, res) => {
+    const { hours, serverGroupId, title } = req.body ?? {};
+    const parsedHours = Number(hours);
+    const parsedGroupId = Number(serverGroupId);
+    const normalizedTitle = String(title ?? '').trim();
+    if (!Number.isFinite(parsedHours) || parsedHours < 0 || !Number.isInteger(parsedGroupId) || parsedGroupId <= 0 || !normalizedTitle) {
+      res.status(400).json({ error: '成就名称、非负时长与奖励服务器组必填' });
+      return;
+    }
+    res.status(201).json(deps.achievement.addLevel({
+      hours: parsedHours,
+      serverGroupId: parsedGroupId,
+      title: normalizedTitle.slice(0, 80),
+    }));
+  });
+
+  router.patch('/achievements/levels/:id', admin, (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    const { hours, serverGroupId, title, enabled } = req.body ?? {};
+    const parsedHours = Number(hours);
+    const parsedGroupId = Number(serverGroupId);
+    const normalizedTitle = String(title ?? '').trim();
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(parsedHours) || parsedHours < 0 || !Number.isInteger(parsedGroupId) || parsedGroupId <= 0 || !normalizedTitle) {
+      res.status(400).json({ error: '成就配置无效' });
+      return;
+    }
+    const updated = deps.achievement.updateLevel(id, {
+      hours: parsedHours,
+      serverGroupId: parsedGroupId,
+      title: normalizedTitle.slice(0, 80),
+      enabled: enabled ? 1 : 0,
+    });
+    if (!updated) {
+      res.status(404).json({ error: '成就等级不存在' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.delete('/achievements/levels/:id', admin, (req, res) => {
+    const removed = deps.achievement.removeLevel(Number.parseInt(req.params.id, 10));
+    if (!removed) {
+      res.status(404).json({ error: '成就等级不存在' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  router.post('/achievements/check', admin, asyncRoute(async (_req, res) => {
+    res.json({ results: await deps.achievement.check() });
   }));
 
   // 服务器组列表（用于配置选择）

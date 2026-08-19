@@ -36,6 +36,14 @@ describe('管理接口与配置回归', () => {
       stats: { getTopUsers: () => [], getTopChannels: () => [], getDailyTrends: () => ({ labels: [], data: [] }) },
       elastic: { listGroups: () => elasticGroups, addGroup: () => elasticGroups[0], removeGroup: () => false },
       champion: { getConfig: () => ({}), saveConfig: () => ({}), check: async () => null },
+      achievement: {
+        listLevels: () => [],
+        getUnlockedUsers: () => [],
+        addLevel: () => ({ id: 1, hours: 1, serverGroupId: 1, title: '测试成就', enabled: 1 }),
+        updateLevel: () => true,
+        removeLevel: () => true,
+        check: async () => [],
+      },
       dashboard: { getSiteSlug: () => 'test', getSiteDomain: () => '', getData: async () => ({}) },
       ts3: { connected: true, getChannels: async () => [] },
       publicServer: { host: 'localhost', port: 9987 },
@@ -83,5 +91,20 @@ describe('管理接口与配置回归', () => {
       lastWinnerNickname: null,
     });
     db.close();
+  });
+
+  it('成就管理接口需要管理员凭证并校验新增数据', async () => {
+    const { baseUrl, token } = await startRouter();
+    expect((await fetch(`${baseUrl}/achievements/levels`)).status).toBe(401);
+    expect((await fetch(`${baseUrl}/achievements/levels`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '', hours: -1, serverGroupId: 0 }),
+    })).status).toBe(400);
+    expect((await fetch(`${baseUrl}/achievements/levels`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '十小时在线', hours: 10, serverGroupId: 3 }),
+    })).status).toBe(201);
   });
 });
