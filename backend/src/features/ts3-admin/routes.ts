@@ -22,6 +22,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
       username: config.username,
       hasPassword: !!config.password,
       connected: deps.ts3.connected,
+      lastError: deps.ts3.lastError,
     });
   });
 
@@ -53,6 +54,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
         serverPort: config.serverPort,
         username: config.username,
         hasPassword: !!config.password,
+        lastError: deps.ts3.lastError,
       },
     });
   });

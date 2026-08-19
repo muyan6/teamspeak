@@ -276,4 +276,36 @@ describe('TS3 监控后端核心链路', () => {
     const current = champion.getCurrentChampion();
     expect(current).not.toBeNull();
   });
+
+  it('首次连接失败后会自动重试并恢复连接', async () => {
+    const retryPort = 10013;
+    const retryClient = new Ts3ClientWrapper({
+      host: '127.0.0.1',
+      queryPort: retryPort,
+      username: 'serveradmin',
+      password: '',
+    });
+    const retryServer = new MockTs3Server(retryPort);
+
+    try {
+      retryClient.on('error', () => undefined);
+      void retryClient.start();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(retryClient.connected).toBe(false);
+
+      await retryServer.start();
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('自动重连超时')), 5000);
+        retryClient.once('connected', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+
+      expect(retryClient.connected).toBe(true);
+    } finally {
+      retryClient.stop();
+      retryServer.stop();
+    }
+  }, 10000);
 });

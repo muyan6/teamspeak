@@ -1,12 +1,9 @@
 import { EventEmitter } from 'node:events';
 import {
   TeamSpeak,
+  QueryProtocol,
   TeamSpeakClient,
   ReasonIdentifier,
-  ClientConnectEvent,
-  ClientDisconnectEvent,
-  ChannelCreateEvent,
-  ChannelDeleteEvent,
 } from 'ts3-nodejs-library';
 
 export interface Ts3ConnectionConfig {
@@ -62,11 +59,15 @@ export interface ClientDatabaseData {
 
 export class Ts3ClientWrapper extends EventEmitter {
   private ts3: TeamSpeak | null = null;
-  private connecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
+  private connectionVersion = 0;
+  private connectingVersion: number | null = null;
   private stopped = false;
   connected = false;
+  lastError: string | null = null;
+
+  private static readonly QUERY_TIMEOUT_MS = 10000;
 
   constructor(private config: Ts3ConnectionConfig) {
     super();
@@ -83,7 +84,9 @@ export class Ts3ClientWrapper extends EventEmitter {
   updateConfig(newConfig: Partial<Ts3ConnectionConfig>): void {
     this.config = { ...this.config, ...newConfig };
     this.stop();
-    void this.start();
+    this.stopped = false;
+    this.lastError = null;
+    void this.connect();
   }
 
   async start(): Promise<void> {
@@ -92,6 +95,7 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   stop(): void {
+    this.connectionVersion += 1;
     this.stopped = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -110,70 +114,71 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   private async connect(): Promise<void> {
-    if (this.connecting || this.stopped) return;
+    const version = this.connectionVersion;
+    if (this.connectingVersion === version || this.stopped) return;
     if (!this.config.host) return;
-    this.connecting = true;
+    this.connectingVersion = version;
+    const isCurrentConnection = (): boolean => !this.stopped && version === this.connectionVersion;
     try {
-      const ts3 = new TeamSpeak({
+      // TeamSpeak.connect() resolves only after ServerQuery has logged in and selected the virtual server.
+      // Runtime event subscriptions must be registered afterwards, otherwise this library queues them before login.
+      const ts3 = await TeamSpeak.connect({
         host: this.config.host,
         queryport: this.config.queryPort,
         serverport: this.config.serverPort,
         username: this.config.username,
         password: this.config.password,
-        autoConnect: false,
+        protocol: QueryProtocol.RAW,
         readyTimeout: 10000,
       });
 
-      ts3.on('ready', () => {
-        this.connected = true;
-        this.reconnectAttempts = 0;
-        this.emit('connected');
-      });
+      if (!isCurrentConnection()) {
+        void ts3.quit();
+        return;
+      }
 
-      ts3.on('close', () => {
+      let terminated = false;
+      const terminate = (error?: Error): void => {
+        if (terminated || !isCurrentConnection()) return;
+        terminated = true;
+        if (!isCurrentConnection()) return;
         this.connected = false;
+        if (this.ts3 === ts3) this.ts3 = null;
+        if (this.connectingVersion === version) this.connectingVersion = null;
+        if (error) {
+          this.lastError = error.message;
+          if (this.listenerCount('error') > 0) this.emit('error', error);
+        }
         this.emit('disconnected');
-        void this.scheduleReconnect();
-      });
+        void this.scheduleReconnect(version);
+      };
 
-      ts3.on('error', (err: Error) => {
-        this.emit('error', err);
-      });
+      ts3.on('close', () => terminate());
+      ts3.on('error', (err: Error) => terminate(err));
 
-      ts3.on('clientconnect', (evt: ClientConnectEvent) => {
-        this.emit('clientconnect', evt.client);
-      });
-
-      ts3.on('clientdisconnect', (evt: ClientDisconnectEvent) => {
-        if (evt.client) this.emit('clientdisconnect', evt.client);
-      });
-
-      ts3.on('channelcreate', (evt: ChannelCreateEvent) => {
-        this.emit('channelcreate', evt.channel);
-      });
-
-      ts3.on('channeldelete', (evt: ChannelDeleteEvent) => {
-        this.emit('channeldelete', evt.cid);
-      });
-
-      await ts3.connect();
       this.ts3 = ts3;
+      this.connected = true;
+      this.lastError = null;
+      this.reconnectAttempts = 0;
+      this.emit('connected');
     } catch (err) {
-      this.emit('error', err as Error);
+      if (!isCurrentConnection()) return;
+      this.lastError = (err as Error).message;
+      if (this.listenerCount('error') > 0) this.emit('error', err as Error);
       this.connected = false;
-      await this.scheduleReconnect();
+      void this.scheduleReconnect(version);
     } finally {
-      this.connecting = false;
+      if (this.connectingVersion === version) this.connectingVersion = null;
     }
   }
 
-  private async scheduleReconnect(): Promise<void> {
-    if (this.stopped || this.reconnectTimer) return;
+  private async scheduleReconnect(version: number): Promise<void> {
+    if (this.stopped || version !== this.connectionVersion || this.reconnectTimer) return;
     this.reconnectAttempts += 1;
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      void this.connect();
+      if (version === this.connectionVersion && !this.stopped) void this.connect();
     }, delay);
   }
 
@@ -182,9 +187,43 @@ export class Ts3ClientWrapper extends EventEmitter {
     return this.ts3;
   }
 
+  private async executeQuery<T>(operation: () => Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('TS3 查询响应超时')), Ts3ClientWrapper.QUERY_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (error) {
+      if ((error as Error).message === 'TS3 查询响应超时') this.handleQueryTimeout(error as Error);
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private handleQueryTimeout(error: Error): void {
+    const ts3 = this.ts3;
+    if (!ts3 || !this.connected) return;
+    this.ts3 = null;
+    this.connected = false;
+    this.lastError = error.message;
+    try {
+      ts3.removeAllListeners();
+      void ts3.quit();
+    } catch {
+      /* ignore */
+    }
+    if (this.listenerCount('error') > 0) this.emit('error', error);
+    this.emit('disconnected');
+    void this.scheduleReconnect(this.connectionVersion);
+  }
+
   async getServerState(): Promise<ServerStateData | null> {
     try {
-      const info = await this.requireTs3().serverInfo();
+      const info = await this.executeQuery(() => this.requireTs3().serverInfo());
       return {
         name: info.virtualserverName,
         clientsOnline: Number(info.virtualserverClientsonline),
@@ -197,8 +236,8 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   async getClients(): Promise<OnlineClientData[]> {
-    const clients = await this.requireTs3().clientList();
-    const channels = await this.requireTs3().channelList();
+    const clients = await this.executeQuery(() => this.requireTs3().clientList());
+    const channels = await this.executeQuery(() => this.requireTs3().channelList());
     const channelNames = new Map<number, string>();
     for (const ch of channels) channelNames.set(parseInt(ch.cid, 10), ch.name);
 
@@ -207,7 +246,7 @@ export class Ts3ClientWrapper extends EventEmitter {
     const channelGroupByDbid = new Map<number, number>();
     try {
       if (clids.length > 0) {
-        const infos = await this.requireTs3().clientInfo(clids.map(String));
+        const infos = await this.executeQuery(() => this.requireTs3().clientInfo(clids.map(String)));
         for (const info of infos) {
           channelGroupByDbid.set(
             Number(info.clientDatabaseId),
@@ -234,7 +273,7 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   async getChannels(): Promise<ChannelData[]> {
-    const channels = await this.requireTs3().channelList();
+    const channels = await this.executeQuery(() => this.requireTs3().channelList());
     return channels.map((c) => ({
       cid: parseInt(c.cid, 10),
       parentId: parseInt(c.pid, 10),
@@ -246,14 +285,14 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   async getServerGroups(): Promise<Array<{ sgid: number; name: string }>> {
-    const groups = await this.requireTs3().serverGroupList();
+    const groups = await this.executeQuery(() => this.requireTs3().serverGroupList());
     return groups
       .filter((g) => g.type === 1)
       .map((g) => ({ sgid: parseInt(g.sgid, 10), name: g.name }));
   }
 
   async getChannelGroups(): Promise<Array<{ cgid: number; name: string }>> {
-    const groups = await this.requireTs3().channelGroupList();
+    const groups = await this.executeQuery(() => this.requireTs3().channelGroupList());
     return groups
       .filter((g) => g.type === 1)
       .map((g) => ({ cgid: parseInt(g.cgid, 10), name: g.name }));

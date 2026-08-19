@@ -188,6 +188,7 @@ export interface Ts3ConnectionInfo {
   username: string;
   hasPassword: boolean;
   connected: boolean;
+  lastError: string | null;
 }
 
 export interface DashboardData {

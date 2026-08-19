@@ -88,12 +88,6 @@ async function main(): Promise<void> {
     wsHub.broadcast('clients-changed', data);
     wsHub.broadcast('online-clients', stats.getCurrentOnline());
   });
-  ts3.on('clientconnect', () => {
-    void monitor.collect();
-  });
-  ts3.on('clientdisconnect', () => {
-    void monitor.collect();
-  });
   elasticTimer(elastic);
   achievementTimer(achievement);
   clientDirectoryTimer(ts3, stats);
@@ -105,8 +99,10 @@ async function main(): Promise<void> {
   ts3.on('connected', () => {
     console.log('[ts3] ServerQuery 已连接');
     monitor.start();
-    void monitor.collect();
-    void syncClientDirectory(ts3, stats);
+    const syncTimer = setTimeout(() => {
+      if (ts3.connected) void syncClientDirectory(ts3, stats);
+    }, 1000);
+    syncTimer.unref();
   });
   ts3.on('error', (err) => {
     console.error('[ts3] 错误:', err.message);

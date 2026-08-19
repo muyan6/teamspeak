@@ -65,7 +65,8 @@ async function waitForReconnect(): Promise<void> {
       }
     }
     if (checkId === connectionCheckId) {
-      showNotice('配置已保存，但 TS3 在 30 秒内未连接，请检查 ServerQuery 参数和防火墙');
+      const detail = connection.value?.lastError ? `：${connection.value.lastError}` : '，请检查 ServerQuery 参数和防火墙';
+      showNotice(`配置已保存，但 TS3 在 30 秒内未连接${detail}`);
     }
   } finally {
     if (checkId === connectionCheckId) reconnecting.value = false;
@@ -101,7 +102,10 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <div v-if="notice" class="notice">{{ notice }}</div>
-    <div v-if="connection" class="conn-status" :class="{ ok: connection.connected }">连接状态：{{ connection.connected ? '已连接' : reconnecting ? '重新连接中...' : '未连接' }}</div>
+    <div v-if="connection" class="conn-status" :class="{ ok: connection.connected }">
+      连接状态：{{ connection.connected ? '已连接' : reconnecting ? '重新连接中...' : '未连接' }}
+      <span v-if="!connection.connected && connection.lastError">（{{ connection.lastError }}）</span>
+    </div>
     <div class="field">
       <label>服务器地址（host）</label>
       <input v-model="form.host" class="input" placeholder="例如 150.158.129.222" />
