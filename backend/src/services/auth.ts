@@ -4,6 +4,22 @@ export interface AdminTokenPayload {
   role: 'admin';
 }
 
+export interface AdminPasswordStore {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+}
+
+export function initializeAdminPassword(store: AdminPasswordStore, bootstrapPassword: string): {
+  password: string;
+  initialized: boolean;
+} {
+  const savedPassword = store.get('adminPassword');
+  if (savedPassword) return { password: savedPassword, initialized: false };
+  if (!bootstrapPassword) return { password: '', initialized: false };
+  store.set('adminPassword', bootstrapPassword);
+  return { password: bootstrapPassword, initialized: true };
+}
+
 export class AuthService {
   constructor(
     private adminPassword: string,

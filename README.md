@@ -41,7 +41,7 @@ http://localhost:3001
 # 1. 准备后端配置
 cd backend
 cp .env.example .env
-# 编辑 .env，填写 TS3_HOST、TS3_QUERY_PASSWORD、ADMIN_PASSWORD 等真实值
+# 编辑 .env，至少填写 ADMIN_PASSWORD 作为首次启动密码；TS3 连接信息也可在后台填写
 npm install
 
 # 2. 构建前端（后端会托管构建产物）
@@ -61,12 +61,12 @@ npm run dev
 | 变量 | 说明 | 必填 |
 |------|------|------|
 | `PORT` | 后端监听端口，默认 `3001` | 否 |
-| `TS3_HOST` | 被监控 TS3 服务器地址 | 是 |
+| `TS3_HOST` | 被监控 TS3 服务器地址；仅作为首次启动时的迁移兜底，推荐在后台填写 | 否 |
 | `TS3_QUERY_PORT` | ServerQuery 端口，默认 `10011` | 否 |
 | `TS3_SERVER_PORT` | 语音端口，默认 `9987` | 否 |
 | `TS3_SERVER_ID` | 虚拟服务器 ID，默认 `1` | 否 |
 | `TS3_QUERY_USERNAME` | ServerQuery 账号，默认 `serveradmin` | 否 |
-| `TS3_QUERY_PASSWORD` | ServerQuery 密码 | 是 |
+| `TS3_QUERY_PASSWORD` | ServerQuery 密码；仅作为首次启动时的迁移兜底，推荐在后台填写 | 否 |
 | `TS3_PUBLIC_HOST` | 站点对外展示的地址（留空则显示 `TS3_HOST`） | 否 |
 | `TS3_PUBLIC_PORT` | 站点对外展示的端口，默认 `9987` | 否 |
 | `SITE_TITLE` | 站点标题 | 否 |
@@ -74,7 +74,7 @@ npm run dev
 | `SITE_SLUG` | 当前分站唯一标识，例如 `server-a` | 否 |
 | `SITE_DOMAIN` | 当前分站允许访问的域名，可用逗号分隔多个域名 | 否 |
 | `SITE_BASE_DOMAIN` | 统一分站的默认根域名；也可在总站后台「统一分站」中保存 | 否 |
-| `ADMIN_PASSWORD` | 后台管理密码 | 是 |
+| `ADMIN_PASSWORD` | 首次启动时初始化后台管理密码；初始化后密码保存在 SQLite，可从 `.env` 删除 | 首次启动必填 |
 | `JWT_SECRET` | JWT 签名密钥，生产环境请改成随机串 | 否 |
 | `DB_PATH` | SQLite 数据库路径，默认 `data/ts3monitor.db` | 否 |
 | `COLLECT_INTERVAL_MS` | 数据采集间隔（毫秒），默认 `30000` | 否 |
@@ -82,11 +82,11 @@ npm run dev
 
 ## 后台管理
 
-访问首页右上角「后台」按钮，输入 `ADMIN_PASSWORD` 配置的密码登录。
+首次启动时使用 `ADMIN_PASSWORD` 初始化后台密码。初始化后，后台密码和服务器连接配置均保存在 SQLite；重启服务不需要重新填写 TS3 信息，也不再把后台修改写回 `.env`。
 
 后台提供以下功能：
 
-- **服务器配置**：修改被监控 TS3 服务器的连接参数，保存后立即重新连接，并同步写回 `.env` 文件，无需手动改本地文件。
+- **服务器配置**：修改被监控 TS3 服务器的连接参数，直接保存到 SQLite，保存后立即重新连接，无需手动修改 `.env` 文件。
 - **弹性频道**：配置频道组的前缀、满员阈值、空置阈值，自动扩容/收缩频道。
 - **周冠军**：配置奖励服务器组与检测间隔。
 - **TS3 管理**：在线用户列表、频道管理、踢人/移动/封禁、服务器组与频道组分配。

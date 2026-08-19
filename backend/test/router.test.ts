@@ -2,7 +2,7 @@ import http from 'node:http';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRouter, type ApiDeps } from '../src/api/router.js';
-import { AuthService } from '../src/services/auth.js';
+import { AuthService, initializeAdminPassword } from '../src/services/auth.js';
 import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
 import { openDatabase } from '../src/db/database.js';
 import { StatsService } from '../src/services/stats.js';
@@ -12,6 +12,18 @@ describe('管理接口与配置回归', () => {
 
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  });
+
+  it('首次启动导入管理员密码，后续启动优先使用数据库密码', () => {
+    const values = new Map<string, string>();
+    const store = {
+      get: (key: string) => values.get(key) ?? null,
+      set: (key: string, value: string) => values.set(key, value),
+    };
+
+    expect(initializeAdminPassword(store, 'initial-password')).toEqual({ password: 'initial-password', initialized: true });
+    expect(initializeAdminPassword(store, 'changed-in-env')).toEqual({ password: 'initial-password', initialized: false });
+    expect(new AuthService('initial-password', 'test-secret').verifyAdminPassword('initial-password')).toBe(true);
   });
 
   async function startRouter(): Promise<{

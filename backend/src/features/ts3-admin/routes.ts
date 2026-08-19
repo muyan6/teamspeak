@@ -1,7 +1,6 @@
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
-import { syncTs3ConfigToEnv } from '../../env-file.js';
 import { getTs3ServerKey } from '../../ts3/client.js';
 
 export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
@@ -46,7 +45,6 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     deps.stats.setServerKey(getTs3ServerKey(config), true);
     deps.ts3.updateConfig(config);
     if (deps.persistTs3Config) deps.persistTs3Config(config);
-    else syncTs3ConfigToEnv(config);
     res.json({
       success: true,
       config: {

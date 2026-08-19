@@ -6,7 +6,7 @@ import cors from 'cors';
 import { loadConfig, type AppConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { SiteConfigStore } from './db/site-config.js';
-import { AuthService } from './services/auth.js';
+import { AuthService, initializeAdminPassword } from './services/auth.js';
 import { StatsService } from './services/stats.js';
 import { ElasticChannelService } from './features/elastic-channels/service.js';
 import { WeeklyChampionService } from './features/weekly-champion/service.js';
@@ -27,7 +27,14 @@ async function main(): Promise<void> {
 
   const db = openDatabase(config.dbPath);
   const configStore = new SiteConfigStore(db);
-  const auth = new AuthService(config.adminPassword, config.jwtSecret);
+  const adminPasswordConfig = initializeAdminPassword(configStore, config.adminPassword);
+  if (adminPasswordConfig.initialized) {
+    console.log('[auth] 已将 ADMIN_PASSWORD 初始化到数据库，后续认证不再依赖 .env');
+  }
+  if (!adminPasswordConfig.password) {
+    console.warn('[auth] 尚未初始化后台密码；请在首次启动前设置 ADMIN_PASSWORD');
+  }
+  const auth = new AuthService(adminPasswordConfig.password, config.jwtSecret);
   const stats = new StatsService(db);
 
   const ts3Config = loadTs3Config(config, configStore);
