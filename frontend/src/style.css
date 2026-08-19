@@ -790,16 +790,16 @@ footer {
     order: 3;
   }
 
+  .col-left > .card {
+    order: 6;
+  }
+
   .col-left > .chart-card {
     order: 4;
   }
 
   .grid-2 {
     order: 5;
-  }
-
-  .col-left > .card {
-    order: 6;
   }
 }
 
@@ -1480,5 +1480,30 @@ footer {
   }
   .modal .tbl {
     min-width: 640px;
+  }
+}
+
+@media (max-width: 480px) {
+  .site-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .header-left {
+    flex: 1 1 100%;
+    gap: 12px;
+  }
+  .header-titles {
+    min-width: 0;
+  }
+  .header-right {
+    width: 100%;
+    padding-left: 60px;
+    gap: 8px;
+  }
+  .header-action,
+  .header-admin {
+    flex: 1;
+    padding: 9px 12px;
+    text-align: center;
   }
 }
