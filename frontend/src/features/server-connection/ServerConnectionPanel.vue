@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
     </div>
     <div class="field">
       <label>服务器地址（host）</label>
-      <input v-model="form.host" class="input" placeholder="例如 150.158.129.222" />
+      <input v-model="form.host" class="input" placeholder="例如 ts3.example.com" />
     </div>
     <div class="field">
       <label>ServerQuery 端口</label>
