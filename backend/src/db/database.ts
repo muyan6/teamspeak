@@ -127,6 +127,31 @@ CREATE TABLE IF NOT EXISTS achievement_grants (
   UNIQUE(server_key, client_database_id, level_id)
 );
 
+CREATE TABLE IF NOT EXISTS badges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  badge_key TEXT UNIQUE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'behavior',
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '#fbbf24',
+  description TEXT NOT NULL DEFAULT '',
+  condition_type TEXT NOT NULL,
+  condition_params TEXT NOT NULL DEFAULT '{}',
+  server_group_id INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS badge_grants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_key TEXT NOT NULL DEFAULT 'legacy',
+  client_database_id INTEGER NOT NULL,
+  badge_id INTEGER NOT NULL,
+  granted_at INTEGER NOT NULL,
+  UNIQUE(server_key, client_database_id, badge_id)
+);
+
 CREATE TABLE IF NOT EXISTS champion_config (
   server_key TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 0,
@@ -232,7 +257,104 @@ export function openDatabase(dbPath: string): AppDatabase {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   migrateStatsSchema(db);
+  seedDefaultBadges(db);
   return db;
+}
+
+function seedDefaultBadges(db: AppDatabase): void {
+  const countRow = db.prepare('SELECT COUNT(*) as cnt FROM badges').get() as { cnt: number } | undefined;
+  if ((countRow?.cnt ?? 0) > 0) return;
+
+  const defaults = [
+    {
+      badge_key: 'night_owl',
+      name: '夜猫子',
+      category: 'behavior',
+      icon: 'ph-moon-stars',
+      color: '#818cf8',
+      description: '在凌晨 02:00~05:00 期间深度在线',
+      condition_type: 'night_owl',
+      condition_params: JSON.stringify({ start_hour: 2, end_hour: 5 }),
+      sort_order: 10,
+    },
+    {
+      badge_key: 'social_star',
+      name: '社交达人',
+      category: 'behavior',
+      icon: 'ph-users-three',
+      color: '#fb7185',
+      description: '拥有 3 位以上深度羁绊好友',
+      condition_type: 'bond_friends',
+      condition_params: JSON.stringify({ threshold: 3 }),
+      sort_order: 20,
+    },
+    {
+      badge_key: 'streak_master',
+      name: '连击达人',
+      category: 'behavior',
+      icon: 'ph-fire',
+      color: '#f97316',
+      description: '连续在线打卡达到 7 天',
+      condition_type: 'streak_days',
+      condition_params: JSON.stringify({ threshold: 7 }),
+      sort_order: 30,
+    },
+    {
+      badge_key: 'weekly_champion',
+      name: '荣誉周魁首',
+      category: 'behavior',
+      icon: 'ph-crown',
+      color: '#eab308',
+      description: '曾荣获语音服务器活跃周冠军',
+      condition_type: 'weekly_champion',
+      condition_params: JSON.stringify({ threshold: 1 }),
+      sort_order: 40,
+    },
+    {
+      badge_key: 'room_master',
+      name: '常驻房管',
+      category: 'behavior',
+      icon: 'ph-microphone',
+      color: '#06b6d4',
+      description: '在任一主力频道累计停留超过 50 小时',
+      condition_type: 'channel_stay',
+      condition_params: JSON.stringify({ threshold: 50 }),
+      sort_order: 50,
+    },
+    {
+      badge_key: 'iron_member',
+      name: '全勤铁人',
+      category: 'behavior',
+      icon: 'ph-lightning',
+      color: '#a855f7',
+      description: '累计活跃天数达到 30 天',
+      condition_type: 'active_days',
+      condition_params: JSON.stringify({ threshold: 30 }),
+      sort_order: 60,
+    },
+  ];
+
+  const insert = db.prepare(
+    `INSERT INTO badges
+      (badge_key, name, category, icon, color, description, condition_type, condition_params, server_group_id, enabled, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+  );
+
+  const now = Date.now();
+  for (const b of defaults) {
+    insert.run(
+      b.badge_key,
+      b.name,
+      b.category,
+      b.icon,
+      b.color,
+      b.description,
+      b.condition_type,
+      b.condition_params,
+      b.sort_order,
+      now
+    );
+  }
 }
 
 function tableExists(db: AppDatabase, table: string): boolean {

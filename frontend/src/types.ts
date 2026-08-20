@@ -13,10 +13,35 @@ export interface SiteInfo {
   globalServer: string;
 }
 
+export type BadgeConditionType =
+  | 'total_hours'
+  | 'active_days'
+  | 'streak_days'
+  | 'night_owl'
+  | 'bond_friends'
+  | 'channel_stay'
+  | 'weekly_champion';
+
+export interface BadgeDefinition {
+  id: number;
+  badgeKey: string;
+  name: string;
+  category: 'milestone' | 'behavior' | 'custom';
+  icon: string;
+  color: string;
+  description: string;
+  conditionType: BadgeConditionType;
+  conditionParams: Record<string, any>;
+  serverGroupId: number;
+  enabled: number;
+  sortOrder: number;
+  createdAt: number;
+}
+
 export interface UserBadge {
   id: string;
   name: string;
-  category: 'milestone' | 'behavior';
+  category: 'milestone' | 'behavior' | 'custom';
   icon: string;
   color: string;
   description: string;

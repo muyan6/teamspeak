@@ -124,4 +124,66 @@ describe('成就服务', () => {
     });
     db.close();
   });
+
+  it('支持后台查看、新增与修改勋章，并自动判定授予符合条件的用户', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    const service = new AchievementService(db, {} as Ts3ClientWrapper, stats);
+
+    // 1. 验证默认播种的 6 个系统勋章
+    const badges = service.listBadges();
+    expect(badges.length).toBeGreaterThanOrEqual(6);
+    expect(badges.some((b) => b.badgeKey === 'night_owl')).toBe(true);
+    expect(badges.some((b) => b.badgeKey === 'streak_master')).toBe(true);
+
+    // 2. 插入测试用户与活跃天数
+    db.prepare(`
+      INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES ('server-a', 10, 'uid-10', '勋章达人', 72000, 0, 0, ?)
+    `).run(Date.now());
+
+    // 插入连续 8 天打卡
+    const now = new Date();
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      db.prepare('INSERT INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)')
+        .run('server-a', 10, '勋章达人', dayStr, 3600);
+    }
+
+    // 3. 验证默认“连击达人”(>=7天)已自动解锁
+    const userBadges = service.getUserBadges(10);
+    const streakBadge = userBadges.find((b) => b.name === '连击达人');
+    expect(streakBadge?.unlocked).toBe(true);
+
+    // 4. 自定义新增勋章：在线超 15 小时（total_hours >= 15）
+    const customBadge = service.addBadge({
+      name: '破晓之星',
+      category: 'custom',
+      icon: 'ph-star',
+      color: '#38bdf8',
+      description: '累计在线达 15 小时',
+      conditionType: 'total_hours',
+      conditionParams: { threshold: 15 },
+    });
+    expect(customBadge.id).toBeGreaterThan(0);
+
+    // 用户有 72000s = 20 小时，应达成破晓之星
+    const updatedUserBadges = service.getUserBadges(10);
+    const starBadge = updatedUserBadges.find((b) => b.name === '破晓之星');
+    expect(starBadge?.unlocked).toBe(true);
+
+    // 5. 执行 check() 自动向用户写入 badge_grants
+    const checkRes = await service.check();
+    expect(checkRes.some((r) => r.nickname === '勋章达人' && r.title === '破晓之星')).toBe(true);
+
+    // 再次查询已持久化解锁记录
+    const unlockedBadges = service.getUnlockedBadges(10);
+    expect(unlockedBadges.some((b) => b.name === '破晓之星')).toBe(true);
+
+    db.close();
+  });
 });

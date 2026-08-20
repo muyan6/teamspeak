@@ -1009,7 +1009,7 @@ describe('TS3 监控后端核心链路', () => {
     const level50 = badges.find((b) => b.name === '资深成员');
     expect(level50?.unlocked).toBe(true);
 
-    const streakBadge = badges.find((b) => b.id === 'behavior_streak_7');
+    const streakBadge = badges.find((b) => b.name === '连击达人');
     expect(streakBadge?.unlocked).toBe(true);
 
     const unlockedList = achievement.getUnlockedBadges(777);

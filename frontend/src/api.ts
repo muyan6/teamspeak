@@ -2,6 +2,7 @@ import type {
   AdminChannel,
   AdminClient,
   AchievementLevel,
+  BadgeDefinition,
   ChampionConfig,
   ChannelGroup,
   DashboardData,
@@ -67,6 +68,11 @@ export const api = {
   updateAchievementLevel: (id: number, data: Record<string, unknown>) => request<{ success: boolean }>(`/achievements/levels/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAchievementLevel: (id: number) => request<{ success: boolean }>(`/achievements/levels/${id}`, { method: 'DELETE' }),
   checkAchievements: () => request<{ results: Array<{ nickname: string; title: string; granted: boolean }> }>('/achievements/check', { method: 'POST' }),
+
+  listBadges: () => request<BadgeDefinition[]>('/achievements/badges'),
+  addBadge: (data: Record<string, unknown>) => request<BadgeDefinition>('/achievements/badges', { method: 'POST', body: JSON.stringify(data) }),
+  updateBadge: (id: number, data: Record<string, unknown>) => request<{ success: boolean }>(`/achievements/badges/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBadge: (id: number) => request<{ success: boolean }>(`/achievements/badges/${id}`, { method: 'DELETE' }),
 
   getServerGroups: () => request<ServerGroup[]>('/server-groups'),
 
