@@ -246,7 +246,7 @@ main {
   width: 100%;
   max-width: 1560px;
   margin: 0 auto;
-  padding: 22px 28px 56px;
+  padding: 22px 32px 56px;
   position: relative;
   z-index: 1;
 }
@@ -290,7 +290,7 @@ main {
 
 .grid {
   display: grid;
-  gap: 16px;
+  gap: 24px;
 }
 
 .grid-2 {
@@ -705,8 +705,8 @@ footer {
 /* ===== 主布局：左 8 右 4 ===== */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.78fr) minmax(360px, 0.82fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 2.065fr) minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 
@@ -714,7 +714,7 @@ footer {
 .col-right {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
   min-width: 0;
 }
 
@@ -1622,6 +1622,371 @@ footer {
   color: var(--text-faint);
 }
 
+/* ===== 首页关键模块：参考站布局对齐 ===== */
+.honor-card,
+.elastic-card {
+  padding: 24px;
+  background: #111419;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.honor-title-row {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.honor-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.honor-heading .sub {
+  display: block;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.honor-layout {
+  grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
+  grid-template-areas: none;
+  gap: 16px;
+}
+
+.honor-main-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.honor-champion {
+  grid-area: auto;
+  min-height: 114px;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-left: 1px solid rgba(251, 191, 36, 0.22);
+  background: rgba(251, 191, 36, 0.045);
+}
+
+.honor-crown {
+  right: 4px;
+  bottom: -30px;
+  font-size: 120px;
+}
+
+.honor-champion-icon {
+  font-size: 34px;
+}
+
+.honor-champion-content strong {
+  margin-top: 6px;
+  font-size: 19px;
+}
+
+.honor-featured-title {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+}
+
+.honor-featured-hours {
+  margin-top: 5px;
+}
+
+.honor-rankings {
+  grid-area: auto;
+}
+
+.honor-levels {
+  grid-area: auto;
+}
+
+.honor-rankings-head {
+  margin-bottom: 16px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.honor-levels-head {
+  padding: 2px 0 10px;
+  border-bottom: 0;
+}
+
+.honor-ranking-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.honor-ranking {
+  display: flex;
+  min-height: 128px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.honor-ranking.is-first {
+  border-color: rgba(251, 146, 60, 0.38);
+  background: rgba(251, 146, 60, 0.06);
+}
+
+.honor-ranking:hover {
+  border-color: rgba(255, 255, 255, 0.17);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.honor-ranking-member {
+  gap: 0;
+}
+
+.honor-ranking-hours {
+  gap: 3px;
+}
+
+.honor-ranking-hours b {
+  font-size: 20px;
+}
+
+.honor-rank {
+  display: block;
+  width: auto;
+  height: auto;
+  color: var(--text-dim);
+  font-size: 22px;
+}
+
+.honor-ranking.is-first .honor-rank {
+  color: var(--orange);
+}
+
+.honor-level {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 60px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.honor-level.is-top-level {
+  border-color: rgba(251, 146, 60, 0.26);
+  background: rgba(251, 146, 60, 0.05);
+}
+
+.honor-level-index {
+  width: 20px;
+  height: 20px;
+}
+
+.honor-level > span:last-child {
+  min-width: 28px;
+  padding: 0;
+  border: 0;
+}
+
+.honor-level-toggle {
+  margin-top: 3px;
+  padding: 4px 0 0;
+}
+
+.elastic-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 0;
+}
+
+.elastic-group {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.elastic-group:hover {
+  border-color: rgba(34, 211, 238, 0.3);
+  background: rgba(34, 211, 238, 0.035);
+}
+
+.elastic-head {
+  min-height: 38px;
+  margin-bottom: 12px;
+}
+
+.elastic-group-identity {
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.elastic-folder {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--cyan);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.elastic-name {
+  display: block;
+  font-size: 15px;
+}
+
+.elastic-prefix {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.elastic-prefix b {
+  color: var(--cyan);
+}
+
+.elastic-load {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 5px;
+}
+
+.elastic-load-track {
+  width: 96px;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.elastic-load-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.elastic-load b {
+  color: var(--green);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.elastic-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.elastic-metrics > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.16);
+  text-align: center;
+}
+
+.elastic-metrics b {
+  width: 100%;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.elastic-metrics b.is-cyan {
+  color: var(--cyan);
+}
+
+.elastic-metrics b.is-amber {
+  color: var(--amber);
+}
+
+.elastic-metrics small {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.elastic-channels {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 12px;
+}
+
+.elastic-channel {
+  display: inline-flex;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.elastic-empty {
+  padding: 3px 0;
+}
+
+.elastic-overall {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 7px;
+  background: rgba(34, 211, 238, 0.045);
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.elastic-overall > span:first-child {
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.elastic-overall i {
+  margin-right: 6px;
+  font-style: normal;
+}
+
+.elastic-overall b {
+  color: var(--text-dim);
+}
+
 /* ===== 实时在线 ===== */
 .live-badge {
   background: rgba(16, 185, 129, 0.14);
@@ -1972,5 +2337,210 @@ footer {
   .honor-level {
     grid-template-columns: 14px minmax(0, 1fr) auto;
     gap: 8px;
+  }
+}
+
+/* ===== 参考站版式：保留当前配色，仅对齐尺寸、层级和节奏 ===== */
+:root {
+  --radius: 22px;
+}
+
+.site-header {
+  padding: 34px 32px;
+}
+
+main {
+  padding-top: 0;
+}
+
+.dashboard-grid {
+  grid-template-columns: minmax(0, 2.065fr) minmax(0, 1fr);
+  grid-template-areas:
+    'connect download'
+    'trend realtime'
+    'rankings realtime'
+    'honor realtime'
+    'elastic realtime';
+  column-gap: 24px;
+  row-gap: 22px;
+}
+
+.col-left,
+.col-right {
+  display: contents;
+}
+
+.connect-card {
+  grid-area: connect;
+  height: 200px;
+  margin-bottom: 9px;
+  padding: 24px;
+}
+
+.connect-badge {
+  margin-bottom: 10px;
+}
+
+.connect-title {
+  margin-bottom: 9px;
+  font-size: 26px;
+}
+
+.connect-row {
+  margin-bottom: 6px;
+}
+
+.connect-actions {
+  position: absolute;
+  top: 61px;
+  right: 24px;
+  margin: 0;
+}
+
+.connect-btn {
+  width: 196px;
+  min-height: 66px;
+  justify-content: center;
+  padding: 12px 20px;
+  border-radius: 16px;
+}
+
+.download-card-hero {
+  grid-area: download;
+  height: 200px;
+  margin-bottom: 9px;
+  padding: 24px;
+}
+
+.chart-card {
+  grid-area: trend;
+  min-height: 470px;
+  padding: 24px;
+}
+
+.grid-2 {
+  grid-area: rankings;
+  margin-bottom: 2px;
+}
+
+.grid-2 > .card {
+  min-height: 454px;
+  padding: 20px;
+}
+
+.honor-card {
+  grid-area: honor;
+  margin-bottom: 4px;
+}
+
+.elastic-card {
+  grid-area: elastic;
+}
+
+.col-right > .card {
+  grid-area: realtime;
+  min-height: 305px;
+  padding: 20px;
+}
+
+@media (max-width: 980px) {
+  .site-header {
+    padding: 24px 24px 18px;
+  }
+
+  main {
+    padding-top: 0;
+  }
+
+  .dashboard-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .connect-card,
+  .download-card-hero,
+  .chart-card,
+  .grid-2,
+  .honor-card,
+  .elastic-card,
+  .col-right > .card {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .connect-card {
+    order: 1;
+  }
+
+  .download-card-hero {
+    order: 2;
+  }
+
+  .col-right > .card {
+    order: 3;
+  }
+
+  .chart-card {
+    order: 4;
+  }
+
+  .grid-2 {
+    order: 5;
+  }
+
+  .honor-card {
+    order: 6;
+  }
+
+  .elastic-card {
+    order: 7;
+  }
+}
+
+@media (max-width: 640px) {
+  .connect-actions {
+    position: static;
+    margin-top: 14px;
+  }
+
+  .connect-btn {
+    width: auto;
+    min-height: 44px;
+  }
+
+  .honor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: none;
+  }
+
+  .honor-levels {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .honor-ranking-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .honor-ranking {
+    min-height: 82px;
+    padding: 12px;
+  }
+
+  .elastic-group {
+    padding: 14px;
+  }
+
+  .elastic-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .elastic-overall {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

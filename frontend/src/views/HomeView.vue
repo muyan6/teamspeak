@@ -69,6 +69,11 @@ function formatAchievementHours(hours: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
+function elasticLoadPercent(totalChannels: number, maxChannels: number): number {
+  if (maxChannels <= 0) return 0;
+  return Math.min(100, Math.round((totalChannels / maxChannels) * 100));
+}
+
 onMounted(() => void loadHomeModules());
 </script>
 
@@ -192,9 +197,10 @@ onMounted(() => void loadHomeModules());
       <!-- 荣誉殿堂 -->
       <section v-if="visibleModules.achievements" class="card honor-card">
         <div class="section-title honor-title-row">
-          <span style="display: flex; align-items: center; gap: 10px">
-            <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">♛</span>
-            <span>荣誉殿堂 <span class="sub">Hall of Fame</span></span>
+          <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">♛</span>
+          <span class="honor-heading">
+            <span>荣誉殿堂</span>
+            <span class="sub">Hall of Fame</span>
           </span>
         </div>
         <div v-if="achievements.featured || achievements.rankings.length || achievements.levels.length" class="honor-layout">
@@ -225,10 +231,9 @@ onMounted(() => void loadHomeModules());
                   class="honor-ranking"
                   :class="{ 'is-first': index === 0 }"
                 >
-                  <span class="honor-rank">0{{ index + 1 }}</span>
+                  <span class="honor-rank">#{{ index + 1 }}</span>
                   <div class="honor-ranking-member">
                     <strong>{{ member.nickname }}</strong>
-                    <small>连续在线</small>
                   </div>
                   <span class="honor-ranking-hours"><b>{{ member.days }}</b><small>天</small></span>
                 </div>
@@ -277,21 +282,37 @@ onMounted(() => void loadHomeModules());
           <span>弹性频道 <span class="sub">Elastic Channels</span></span>
         </div>
         <div class="elastic-grid">
-          <div v-for="(g, index) in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
+          <div v-for="g in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
             <div class="elastic-head">
               <div class="elastic-group-identity">
-                <span class="elastic-group-index">0{{ index + 1 }}</span>
-                <span class="elastic-name"><i aria-hidden="true"></i>{{ g.group.name }}</span>
+                <span class="elastic-folder" aria-hidden="true">▰</span>
+                <div>
+                  <span class="elastic-name">{{ g.group.name }}</span>
+                  <span class="elastic-prefix">前缀: <b>{{ g.group.namePrefix }}</b></span>
+                </div>
               </div>
-              <span class="elastic-stat"><b>{{ g.totalOnline }}</b><small>在线 / {{ g.totalChannels }} 频道</small></span>
+              <div class="elastic-load">
+                <div class="elastic-load-track"><span :style="{ width: elasticLoadPercent(g.totalChannels, g.group.maxChannels) + '%' }"></span></div>
+                <b>{{ elasticLoadPercent(g.totalChannels, g.group.maxChannels) }}%</b>
+              </div>
+            </div>
+            <div class="elastic-metrics">
+              <div><b>{{ g.totalChannels }}</b><small>频道数</small></div>
+              <div><b class="is-cyan">{{ g.totalOnline }}</b><small>在线用户</small></div>
+              <div><b>{{ g.group.maxChannels }}</b><small>频道上限</small></div>
+              <div><b class="is-amber">{{ g.group.createThreshold }}</b><small>扩容阈值</small></div>
             </div>
             <div class="elastic-channels">
               <span v-for="c in g.channels" :key="c.cid" class="elastic-channel">
-                <span><i aria-hidden="true"></i>{{ c.name }}</span><em>{{ c.online }} 人</em>
+                <span>{{ c.name }} ({{ c.online }} 人)</span>
               </span>
               <span v-if="g.channels.length === 0" class="elastic-empty">暂无频道</span>
             </div>
           </div>
+        </div>
+        <div class="elastic-overall">
+          <span><i aria-hidden="true">◌</i>整体负载</span>
+          <span>频道组: <b>{{ data.elastic_channels.groups.length }}</b>&nbsp;&nbsp; 总频道: <b>{{ data.elastic_channels.overallChannels }}</b></span>
         </div>
       </section>
     </div>

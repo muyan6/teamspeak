@@ -84,5 +84,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="el" style="width: 100%; height: 260px"></div>
+  <div ref="el" style="width: 100%; height: 361px"></div>
 </template>
