@@ -184,6 +184,28 @@ describe('成就服务', () => {
     const unlockedBadges = service.getUnlockedBadges(10);
     expect(unlockedBadges.some((b) => b.name === '破晓之星')).toBe(true);
 
+    // 6. 管理员修改条件（提高阈值到 50 小时，用户只有 20 小时）
+    service.updateBadge(customBadge.id, {
+      name: '破晓之星',
+      category: 'custom',
+      icon: 'ph-star',
+      color: '#38bdf8',
+      description: '累计在线达 50 小时',
+      conditionType: 'total_hours',
+      conditionParams: { threshold: 50 },
+      enabled: 1,
+    });
+
+    // 重新判定：用户不再达成破晓之星
+    const afterRaiseBadges = service.getUserBadges(10);
+    const starBadgeAfterRaise = afterRaiseBadges.find((b) => b.name === '破晓之星');
+    expect(starBadgeAfterRaise?.unlocked).toBe(false);
+
+    // 执行 check() 应自动从 badge_grants 回收
+    await service.check();
+    const afterCheckUnlocked = service.getUnlockedBadges(10);
+    expect(afterCheckUnlocked.some((b) => b.name === '破晓之星')).toBe(false);
+
     db.close();
   });
 });

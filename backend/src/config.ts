@@ -29,6 +29,7 @@ export interface AppConfig {
     slug: string;
     domain: string;
     adminName: string;
+    adminQq: string;
     adminSteam: string;
     globalServer: string;
   };
@@ -45,6 +46,7 @@ export interface AppConfig {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const ts3Host = env.TS3_HOST || '';
   const queryPort = intEnv(env, 'TS3_QUERY_PORT', 10011);
+  const adminQqVal = env.SITE_ADMIN_QQ || env.SITE_ADMIN_STEAM || '';
 
   return {
     port: intEnv(env, 'PORT', 3001),
@@ -68,7 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       slug: env.SITE_SLUG || 'default',
       domain: env.SITE_DOMAIN || '',
       adminName: env.SITE_ADMIN_NAME || '',
-      adminSteam: env.SITE_ADMIN_STEAM || '',
+      adminQq: adminQqVal,
+      adminSteam: adminQqVal,
       globalServer: env.SITE_GLOBAL_SERVER || '',
     },
     platform: {

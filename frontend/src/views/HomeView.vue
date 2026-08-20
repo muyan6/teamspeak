@@ -36,6 +36,24 @@ const tutorialSection = computed(() => {
 });
 const tutorialHtml = computed(() => (tutorialSection.value ? renderMarkdown(tutorialSection.value.content) : ''));
 
+const adminQqContact = computed(() => (data.value?.site.adminQq || data.value?.site.adminSteam || '').trim());
+const adminQqLink = computed(() => {
+  const c = adminQqContact.value;
+  if (!c) return '';
+  if (/^https?:\/\//i.test(c) || /^tencent:\/\//i.test(c) || /^mqqwpa:\/\//i.test(c)) return c;
+  const num = c.replace(/[^0-9]/g, '');
+  if (num) {
+    return `tencent://message/?uin=${num}&Site=TeamSpeak&Menu=yes`;
+  }
+  return c;
+});
+const adminQqDisplay = computed(() => {
+  const c = adminQqContact.value;
+  if (!c) return 'QQ';
+  if (/^https?:\/\//i.test(c)) return 'QQ 联系方式';
+  return c.startsWith('QQ') ? c : `QQ: ${c}`;
+});
+
 async function copyText(text: string) {
   if (!text) return;
   try {
@@ -185,14 +203,16 @@ onMounted(() => void loadHomeModules());
                 </button>
               </template>
             </div>
-            <div class="connect-admin-row" v-if="data.site.adminName">
-              <i class="ph-bold ph-user-gear"></i>
-              <span>需私人频道联系 <span class="connect-admin-highlight">{{ data.site.adminName }}</span></span>
-              <template v-if="data.site.adminSteam">
-                <span class="sublink-sep">|</span>
+            <div class="connect-admin-row" v-if="data.site.adminName || adminQqContact">
+              <template v-if="data.site.adminName">
+                <i class="ph-bold ph-user-gear"></i>
+                <span>需私人频道联系 <span class="connect-admin-highlight">{{ data.site.adminName }}</span></span>
+              </template>
+              <template v-if="adminQqContact">
+                <span v-if="data.site.adminName" class="sublink-sep">|</span>
                 <span class="sublink-item">
                   <i class="ph-bold ph-chat-circle-dots"></i> 若不在请联系
-                  <a :href="data.site.adminSteam" target="_blank" rel="noopener" class="connect-admin-highlight">Steam</a>
+                  <a :href="adminQqLink" target="_blank" rel="noopener" class="connect-admin-highlight">{{ adminQqDisplay }}</a>
                 </span>
               </template>
             </div>

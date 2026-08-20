@@ -94,6 +94,7 @@ export class AchievementService {
   }
 
   removeLevel(id: number): boolean {
+    this.db.prepare('DELETE FROM achievement_grants WHERE level_id = ?').run(id);
     return this.db.prepare('DELETE FROM achievement_levels WHERE id = ?').run(id).changes > 0;
   }
 
@@ -224,6 +225,7 @@ export class AchievementService {
   }
 
   removeBadge(id: number): boolean {
+    this.db.prepare('DELETE FROM badge_grants WHERE badge_id = ?').run(id);
     return this.db.prepare('DELETE FROM badges WHERE id = ?').run(id).changes > 0;
   }
 
@@ -324,7 +326,7 @@ export class AchievementService {
     }
   }
 
-  /** 检测所有用户是否达成成就与勋章并授予服务器组 */
+  /** 检测所有用户是否达成成就与勋章并授予/回收服务器组 */
   async check(): Promise<Array<{ nickname: string; title: string; granted: boolean }>> {
     const serverKey = this.stats.getServerKey();
     const existingCheck = this.checksInFlight.get(serverKey);
@@ -342,6 +344,23 @@ export class AchievementService {
     const levels = this.listLevels().filter((l) => l.enabled === 1);
     const badges = this.listBadges().filter((b) => b.enabled === 1);
 
+    // 清理已停用或已删除的勋章与成就 grants
+    const enabledLevelIds = levels.map((l) => l.id);
+    if (enabledLevelIds.length > 0) {
+      const placeholders = enabledLevelIds.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM achievement_grants WHERE server_key = ? AND level_id NOT IN (${placeholders})`).run(serverKey, ...enabledLevelIds);
+    } else {
+      this.db.prepare('DELETE FROM achievement_grants WHERE server_key = ?').run(serverKey);
+    }
+
+    const enabledBadgeIds = badges.map((b) => b.id);
+    if (enabledBadgeIds.length > 0) {
+      const placeholders = enabledBadgeIds.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM badge_grants WHERE server_key = ? AND badge_id NOT IN (${placeholders})`).run(serverKey, ...enabledBadgeIds);
+    } else {
+      this.db.prepare('DELETE FROM badge_grants WHERE server_key = ?').run(serverKey);
+    }
+
     const users = this.db
       .prepare(
         `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as totalSeconds
@@ -351,18 +370,20 @@ export class AchievementService {
       .all(serverKey) as Array<{ clientDatabaseId: number; nickname: string; totalSeconds: number }>;
 
     for (const user of users) {
-      // 1. 检测并授予时长里程碑成就 (Milestone Levels)
+      // 1. 检测并授予/回收时长里程碑成就 (Milestone Levels)
       for (const level of levels) {
         const requiredSeconds = level.hours * 3600;
-        if (user.totalSeconds < requiredSeconds) continue;
+        const qualifies = user.totalSeconds >= requiredSeconds;
 
-        const alreadyGranted = this.db
-          .prepare(
-            'SELECT 1 FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
-          )
-          .get(serverKey, user.clientDatabaseId, level.id);
+        const alreadyGranted = Boolean(
+          this.db
+            .prepare(
+              'SELECT 1 FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
+            )
+            .get(serverKey, user.clientDatabaseId, level.id)
+        );
 
-        if (!alreadyGranted) {
+        if (qualifies && !alreadyGranted) {
           if (level.serverGroupId > 0) {
             try {
               await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
@@ -380,21 +401,38 @@ export class AchievementService {
             .run(serverKey, user.clientDatabaseId, level.id, Date.now());
 
           results.push({ nickname: user.nickname, title: level.title, granted: true });
+        } else if (!qualifies && alreadyGranted) {
+          // 条件提高或不再满足，回收成就
+          if (level.serverGroupId > 0) {
+            try {
+              await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
+            } catch (err) {
+              console.warn(`[achievement] 移除 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
+            }
+          }
+
+          this.db
+            .prepare(
+              'DELETE FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
+            )
+            .run(serverKey, user.clientDatabaseId, level.id);
         }
       }
 
-      // 2. 检测并授予动态勋章 (Badges)
+      // 2. 检测并授予/回收动态勋章 (Badges)
       for (const badge of badges) {
         const evalRes = this.evaluateBadgeForUser(badge, user.clientDatabaseId);
-        if (!evalRes.unlocked) continue;
+        const qualifies = evalRes.unlocked;
 
-        const alreadyGranted = this.db
-          .prepare(
-            'SELECT 1 FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?'
-          )
-          .get(serverKey, user.clientDatabaseId, badge.id);
+        const alreadyGranted = Boolean(
+          this.db
+            .prepare(
+              'SELECT 1 FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?'
+            )
+            .get(serverKey, user.clientDatabaseId, badge.id)
+        );
 
-        if (!alreadyGranted) {
+        if (qualifies && !alreadyGranted) {
           if (badge.serverGroupId > 0) {
             try {
               await this.ts3.addClientToServerGroup(badge.serverGroupId, user.clientDatabaseId);
@@ -412,6 +450,21 @@ export class AchievementService {
             .run(serverKey, user.clientDatabaseId, badge.id, Date.now());
 
           results.push({ nickname: user.nickname, title: badge.name, granted: true });
+        } else if (!qualifies && alreadyGranted) {
+          // 条件提高或不再满足，回收勋章与服务器组
+          if (badge.serverGroupId > 0) {
+            try {
+              await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
+            } catch (err) {
+              console.warn(`[achievement] 移除 TS3 勋章服务器组异常: badge=${badge.name}, dbid=${user.clientDatabaseId}`, err);
+            }
+          }
+
+          this.db
+            .prepare(
+              'DELETE FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?'
+            )
+            .run(serverKey, user.clientDatabaseId, badge.id);
         }
       }
     }
@@ -492,8 +545,8 @@ export class AchievementService {
     for (const g of grants) grantMap.set(g.level_id, g.granted_at);
 
     for (const level of levels) {
-      const isGranted = grantMap.has(level.id) || totalHours >= level.hours;
-      const grantedAt = grantMap.get(level.id);
+      const isGranted = totalHours >= level.hours;
+      const grantedAt = isGranted ? (grantMap.get(level.id) ?? Date.now()) : undefined;
 
       let color = '#34d399';
       if (level.hours >= 500) color = '#ec4899';
@@ -528,8 +581,8 @@ export class AchievementService {
 
     for (const b of dynamicBadges) {
       const evalRes = this.evaluateBadgeForUser(b, clientDatabaseId);
-      const isGranted = badgeGrantMap.has(b.id) || evalRes.unlocked;
-      const grantedAt = badgeGrantMap.get(b.id);
+      const isGranted = evalRes.unlocked;
+      const grantedAt = isGranted ? (badgeGrantMap.get(b.id) ?? Date.now()) : undefined;
 
       badges.push({
         id: `badge_${b.id}`,

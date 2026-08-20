@@ -9,7 +9,8 @@ export interface SiteInfo {
   mirrorDownload: string;
   translationDownload: string;
   adminName: string;
-  adminSteam: string;
+  adminQq?: string;
+  adminSteam?: string;
   globalServer: string;
 }
 
@@ -211,6 +212,7 @@ export interface SiteConfig {
   serverName?: string;
   serverAddress?: string;
   adminName?: string;
+  adminQq?: string;
   adminSteam?: string;
 }
 

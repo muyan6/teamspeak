@@ -8,7 +8,7 @@ const site = ref({
   serverName: '',
   serverAddress: '',
   adminName: '',
-  adminSteam: '',
+  adminQq: '',
 });
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -28,7 +28,7 @@ async function load(): Promise<void> {
       serverName: config.serverName ?? '',
       serverAddress: config.serverAddress ?? '',
       adminName: config.adminName ?? '',
-      adminSteam: config.adminSteam ?? '',
+      adminQq: config.adminQq ?? config.adminSteam ?? '',
     };
   } catch (error) {
     showNotice((error as Error).message);
@@ -37,7 +37,10 @@ async function load(): Promise<void> {
 
 async function save(): Promise<void> {
   try {
-    await api.saveSiteConfig(site.value);
+    await api.saveSiteConfig({
+      ...site.value,
+      adminSteam: site.value.adminQq, // 兼容性同步
+    });
     showNotice('站点配置已保存');
   } catch (error) {
     showNotice((error as Error).message);
@@ -71,8 +74,8 @@ onMounted(() => { void load(); });
       <input v-model="site.adminName" class="input" placeholder="可留空" />
     </div>
     <div class="field">
-      <label>管理员 Steam 链接</label>
-      <input v-model="site.adminSteam" class="input" placeholder="可留空" />
+      <label>管理员 QQ (QQ号或加好友链接)</label>
+      <input v-model="site.adminQq" class="input" placeholder="例如：12345678 或 QQ加好友链接" />
     </div>
     <div class="modal-actions"><button class="btn primary" @click="save">保存</button></div>
   </div>

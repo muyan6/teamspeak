@@ -11,6 +11,7 @@ export interface SiteData {
   mirrorDownload: string;
   translationDownload: string;
   adminName: string;
+  adminQq: string;
   adminSteam: string;
   globalServer: string;
 }
@@ -40,6 +41,7 @@ export interface SiteInfoConfig {
   serverName?: string;
   serverAddress?: string;
   adminName?: string;
+  adminQq?: string;
   adminSteam?: string;
 }
 
@@ -65,6 +67,7 @@ export function buildSiteData(config: AppConfig, serverName: string, download?: 
   const port = config.publicServer.port;
   const defaultAddress = port === 9987 ? host : `${host}:${port}`;
   const address = safeText(siteInfo?.serverAddress) || defaultAddress;
+  const adminContact = safeText(siteInfo?.adminQq) || safeText(siteInfo?.adminSteam) || config.site.adminQq || config.site.adminSteam;
   return {
     title: safeText(siteInfo?.title) || config.site.title,
     footerDescription: safeText(siteInfo?.footerDescription) || 'TeamSpeak3 语音服务器',
@@ -76,7 +79,8 @@ export function buildSiteData(config: AppConfig, serverName: string, download?: 
     mirrorDownload: download?.mirrorDownload || DOWNLOAD_LINKS.mirrorDownload,
     translationDownload: download?.translationDownload || DOWNLOAD_LINKS.translationDownload,
     adminName: safeText(siteInfo?.adminName) || config.site.adminName,
-    adminSteam: safeText(siteInfo?.adminSteam) || config.site.adminSteam,
+    adminQq: adminContact,
+    adminSteam: adminContact,
     globalServer: config.site.globalServer,
   };
 }
