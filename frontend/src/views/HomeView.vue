@@ -8,6 +8,7 @@ import { useHomeModules } from '../features/home-modules/home-modules';
 const { data, error } = useDashboard();
 const { modules: visibleModules, load: loadHomeModules } = useHomeModules();
 const OnlineStatsChart = defineAsyncComponent(() => import('../components/OnlineStatsChart.vue'));
+
 const copied = ref(false);
 const trendRange = ref<'week' | 'month'>('week');
 const rankRange = ref<'week' | 'month'>('week');
@@ -27,6 +28,7 @@ const achievements = computed(() => data.value?.achievements ?? { featured: null
 const visibleAchievementLevels = computed(() =>
   showAllAchievementLevels.value ? achievements.value.levels : achievements.value.levels.slice(0, 3),
 );
+
 const tutorialSection = computed(() => {
   if (!data.value) return null;
   const sections = data.value.tutorial.sections;
@@ -34,19 +36,21 @@ const tutorialSection = computed(() => {
 });
 const tutorialHtml = computed(() => (tutorialSection.value ? renderMarkdown(tutorialSection.value.content) : ''));
 
-async function copyAddress() {
-  if (!data.value) return;
+async function copyText(text: string) {
+  if (!text) return;
   try {
-    await navigator.clipboard.writeText(data.value.site.serverAddress);
+    await navigator.clipboard.writeText(text);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   } catch {
-    /* clipboard 不可用 */
+    /* clipboard fallback */
   }
 }
 
 function quickConnect() {
-  if (data.value) window.open(data.value.site.connectUrl, '_blank');
+  if (data.value?.site.connectUrl) {
+    window.open(data.value.site.connectUrl, '_blank');
+  }
 }
 
 function formatRankTime(minutes: number): string {
@@ -61,10 +65,6 @@ function rankWidth(items: RankEntry[], item: RankEntry): string {
   return `${Math.max(2, (cur / first) * 100)}%`;
 }
 
-function rankNumClass(i: number): string {
-  return i === 0 ? 'n1' : i === 1 ? 'n2' : i === 2 ? 'n3' : '';
-}
-
 function formatAchievementHours(hours: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
@@ -74,338 +74,663 @@ function elasticLoadPercent(totalChannels: number, maxChannels: number): number 
   return Math.min(100, Math.round((totalChannels / maxChannels) * 100));
 }
 
+function getElasticLoadClass(percent: number): string {
+  if (percent >= 80) return 'fill-rose';
+  if (percent >= 50) return 'fill-amber';
+  return 'fill-emerald';
+}
+
+function getElasticLoadTextClass(percent: number): string {
+  if (percent >= 80) return 'text-rose';
+  if (percent >= 50) return 'text-amber';
+  return 'text-emerald';
+}
+
+function hashCode(str: string): number {
+  if (!str) return 0;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) || 1;
+}
+
+const USER_ICONS = [
+  'ph-fill ph-headset',
+  'ph-fill ph-game-controller',
+  'ph-fill ph-alien',
+  'ph-fill ph-robot',
+  'ph-fill ph-crown',
+  'ph-fill ph-cat',
+  'ph-fill ph-dog',
+  'ph-fill ph-flame',
+  'ph-fill ph-lightning',
+  'ph-fill ph-snowflake',
+  'ph-fill ph-sun',
+  'ph-fill ph-moon-stars',
+  'ph-fill ph-star-four',
+  'ph-fill ph-diamond',
+  'ph-fill ph-rocket',
+  'ph-fill ph-trophy',
+  'ph-fill ph-heart',
+];
+
+function getUserIcon(name: string): string {
+  return USER_ICONS[hashCode(name) % USER_ICONS.length];
+}
+
+const ACHIEVEMENT_ICONS = [
+  'ph-fill ph-crown',
+  'ph-fill ph-star-four',
+  'ph-fill ph-medal',
+  'ph-fill ph-diamond',
+  'ph-fill ph-trophy',
+  'ph-fill ph-shield-chevron',
+  'ph-fill ph-sparkle',
+];
+
+function getAchievementIcon(idx: number): string {
+  return ACHIEVEMENT_ICONS[idx % ACHIEVEMENT_ICONS.length];
+}
+
 onMounted(() => void loadHomeModules());
 </script>
 
 <template>
-  <div v-if="error && !data" class="card" style="text-align: center; padding: 40px">
+  <div v-if="error && !data" class="glass-card" style="text-align: center; padding: 40px">
     <div style="font-size: 16px; color: var(--text-dim)">无法连接服务器数据</div>
     <div style="margin-top: 8px; font-size: 13px; color: var(--red)">{{ error }}</div>
     <router-link class="btn primary" style="margin-top: 16px" to="/admin">前往后台配置</router-link>
   </div>
 
   <template v-else-if="data">
-    <div v-if="!data.connected" class="card" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px">
+    <div v-if="!data.connected" class="glass-card" style="margin-bottom: 1.5rem; padding: 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem">
       <div>
-        <div style="font-weight: 600">尚未连接 TS3 服务器</div>
+        <div style="font-weight: 700; color: #ffffff">尚未连接 TS3 服务器</div>
         <div style="font-size: 13px; color: var(--text-dim); margin-top: 4px">请前往后台填写服务器连接参数，保存后将自动连接并开始采集数据。</div>
       </div>
       <router-link class="btn primary" to="/admin">前往后台配置</router-link>
     </div>
 
-    <div class="dashboard-grid">
-    <!-- 左列 -->
-    <div class="col-left">
-      <!-- Connect Card -->
-      <section v-if="visibleModules.connection" class="connect-card">
-        <div class="connect-badge">Join Now</div>
-        <h1 class="connect-title">
-          欢迎来到 <span class="gradient-text">{{ data.site.serverName }}</span>
-        </h1>
-        <div class="connect-row">
-          <span>服务器地址</span>
-          <button class="connect-ip" @click="copyAddress" :title="'点击复制'">
-            {{ data.site.serverAddress }} <span class="copy-hint">{{ copied ? '已复制' : '点击复制' }}</span>
+    <!-- Top Actions Grid (8 cols + 4 cols) -->
+    <section class="top-actions-grid">
+      <!-- Connect Card (8 cols) -->
+      <div v-if="visibleModules.connection" class="connect-card-col glass-card connect-card-hero">
+        <div class="connect-card-bg-gradient"></div>
+        <svg class="connect-card-watermark" viewBox="0 0 640 512" fill="currentColor">
+          <path d="M192 64h256c70.7 0 128 57.3 128 128v0c0 70.7-57.3 128-128 128c-40.3 0-76.9-18.7-100.7-48H292.7c-23.8 29.3-60.4 48-100.7 48c-70.7 0-128-57.3-128-128v0C64 121.3 121.3 64 192 64zM152 176c-13.3 0-24 10.7-24 24s10.7 24 24 24s24-10.7 24-24s-10.7-24-24-24zm48-24c0 8.8-7.2 16-16 16s-16-7.2-16-16s7.2-16 16-16s16 7.2 16 16zm248 24c-13.3 0-24 10.7-24 24s10.7 24 24 24s24-10.7 24-24s-10.7-24-24-24zm-16-40c-8.8 0-16 7.2-16 16s7.2 16 16 16s16-7.2 16-16s-7.2-16-16-16zm-160 32a16 16 0 1 0 0-32 16 16 0 1 0 0 32zm80-16a16 16 0 1 0 -32 0 16 16 0 1 0 32 0z"/>
+        </svg>
+
+        <div class="connect-card-content">
+          <div>
+            <div class="connect-badge-pill">
+              <i class="ph-bold ph-broadcast"></i> Join Now
+            </div>
+            <h2 class="connect-heading">
+              欢迎来到 <span class="gradient-title-text">{{ data.site.serverName || 'TeamSpeak 3' }}</span>
+            </h2>
+            <div class="connect-meta-row">
+              <span>服务器地址</span>
+              <button class="copy-ip-pill" @click="copyText(data.site.serverAddress)">
+                <span>{{ data.site.serverAddress }}</span>
+                <span class="copy-tooltip">{{ copied ? '已复制！' : '点击复制' }}</span>
+              </button>
+              <template v-if="data.site.globalServer">
+                <span class="sublink-sep">|</span>
+                <i class="ph-bold ph-globe text-xs"></i>
+                <span>国际入口</span>
+                <button class="copy-ip-pill" @click="copyText(data.site.globalServer)">
+                  <span>{{ data.site.globalServer }}</span>
+                  <span class="copy-tooltip">{{ copied ? '已复制！' : '点击复制' }}</span>
+                </button>
+              </template>
+            </div>
+            <div class="connect-admin-row" v-if="data.site.adminName">
+              <i class="ph-bold ph-user-gear"></i>
+              <span>需私人频道联系 <span class="connect-admin-highlight">{{ data.site.adminName }}</span></span>
+              <template v-if="data.site.adminSteam">
+                <span class="sublink-sep">|</span>
+                <span class="sublink-item">
+                  <i class="ph-bold ph-chat-circle-dots"></i> 若不在请联系
+                  <a :href="data.site.adminSteam" target="_blank" rel="noopener" class="connect-admin-highlight">QQ</a>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <button class="quick-connect-btn" @click="quickConnect">
+            <i class="ph-bold ph-plug quick-connect-icon"></i>
+            <div>
+              <div class="quick-connect-kicker">Quick Connect</div>
+              <div class="quick-connect-title">Connect</div>
+            </div>
           </button>
         </div>
-        <div class="connect-admin" v-if="data.site.adminName">
-          <span>需私人频道联系</span>
-          <span style="color: var(--text); font-weight: 600">{{ data.site.adminName }}</span>
-          <template v-if="data.site.adminSteam">
-            <span>若不在请联系</span>
-            <a :href="data.site.adminSteam" target="_blank" rel="noopener">QQ</a>
+      </div>
+
+      <!-- Download Card (4 cols) -->
+      <div v-if="visibleModules.downloads" class="download-card-col glass-card download-card-hero">
+        <i class="ph-duotone ph-download-simple download-card-watermark"></i>
+        <div>
+          <h3 class="download-card-title">
+            <i class="ph-duotone ph-windows-logo" style="color: #38bdf8; font-size: 1.25rem"></i> 需要客户端？
+          </h3>
+          <p class="download-card-subtitle">推荐使用 v3.6.2 稳定版</p>
+        </div>
+
+        <a class="download-main-btn" :href="data.site.clientDownload" target="_blank" rel="noopener">
+          <div style="display: flex; align-items: center; gap: 0.625rem">
+            <div class="download-icon-box">
+              <i class="ph-bold ph-download-simple"></i>
+            </div>
+            <div>
+              <div class="download-name">Windows 64-bit</div>
+              <div class="download-tag">官方下载</div>
+            </div>
+          </div>
+          <i class="ph-bold ph-arrow-right download-arrow"></i>
+        </a>
+
+        <div class="download-sublinks">
+          <a class="sublink-item" :href="data.site.mirrorDownload" target="_blank" rel="noopener">
+            <i class="ph-bold ph-cloud-arrow-down"></i> 备用下载
+          </a>
+          <span class="sublink-sep">|</span>
+          <a class="sublink-item translation" :href="data.site.translationDownload" target="_blank" rel="noopener">
+            <i class="ph-bold ph-translate"></i> 汉化包
+          </a>
+          <template v-if="data.tutorial.enabled">
+            <span class="sublink-sep">|</span>
+            <button class="sublink-item guide" style="background: none; border: none; font-size: inherit; font-family: inherit" @click="showTutorial = true">
+              <i class="ph-bold ph-book-open"></i> 使用教程
+            </button>
           </template>
         </div>
-        <div class="connect-actions">
-          <button class="connect-btn" @click="quickConnect">Quick Connect →</button>
-        </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- 流量趋势 -->
-      <section v-if="visibleModules.trend" class="card chart-card">
-        <div class="section-head">
-          <div class="chart-title-group">
-            <div class="section-icon" style="background: linear-gradient(135deg, rgba(244,63,94,.25), rgba(236,72,153,.18)); color: var(--primary)">◔</div>
-            <div>
-              <div class="section-title" style="margin-bottom: 2px">流量趋势</div>
-              <div class="sub" style="font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .6px">Online Statistics</div>
-            </div>
-          </div>
-          <div class="seg">
-            <button :class="{ active: trendRange === 'week', rose: trendRange === 'week' }" @click="trendRange = 'week'">本周</button>
-            <button :class="{ active: trendRange === 'month', rose: trendRange === 'month' }" @click="trendRange = 'month'">本月</button>
-          </div>
-        </div>
-        <OnlineStatsChart :trend="trend" />
-      </section>
-
-      <!-- 活跃榜 + 热门频道 -->
-      <div v-if="visibleModules.userRanks || visibleModules.channelRanks" class="grid grid-2">
-        <section v-if="visibleModules.userRanks" class="card">
-          <div class="section-title" style="justify-content: space-between">
-            <span style="display: flex; align-items: center; gap: 10px">
-              <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">★</span>
-              <span>活跃榜 <span class="sub">Top Users</span></span>
-            </span>
-            <div class="seg">
-              <button :class="{ active: rankRange === 'week', amber: rankRange === 'week' }" @click="rankRange = 'week'">本周</button>
-              <button :class="{ active: rankRange === 'month', amber: rankRange === 'month' }" @click="rankRange = 'month'">本月</button>
-            </div>
-          </div>
-          <div v-if="ranks.length === 0" class="empty">No Data Available</div>
-          <ul v-else class="rank-list">
-            <li v-for="(u, i) in ranks" :key="u.name + i" class="rank-item amber">
-              <div class="rank-bar" :style="{ width: rankWidth(ranks, u) }"></div>
-              <div class="rank-inner">
-                <div class="rank-left">
-                  <span class="rank-num" :class="rankNumClass(i)">{{ i + 1 }}</span>
-                  <span class="rank-name">{{ u.name }}</span>
-                </div>
-                <span class="rank-value" :class="{ dim: i > 2 }">{{ formatRankTime(parseInt(u.value, 10) || 0) }}</span>
+    <!-- Main Dashboard 12-Column Grid (8 cols + 4 cols) -->
+    <main class="main-dashboard-grid">
+      <!-- Left Column (8 cols) -->
+      <div class="main-left-col">
+        <!-- 流量趋势 -->
+        <section v-if="visibleModules.trend" class="glass-card chart-card-box">
+          <div class="section-header-row">
+            <div class="section-title-group">
+              <div class="section-icon-box section-icon-gold">
+                <i class="ph-fill ph-chart-line-up"></i>
               </div>
-            </li>
-          </ul>
+              <div>
+                <h3 class="section-title-text">流量趋势</h3>
+                <p class="section-subtitle-text">Online Statistics</p>
+              </div>
+            </div>
+            <div class="seg-pill-switcher">
+              <button
+                class="seg-btn"
+                :class="{ active: trendRange === 'week', gold: trendRange === 'week' }"
+                @click="trendRange = 'week'"
+              >
+                本周
+              </button>
+              <button
+                class="seg-btn"
+                :class="{ active: trendRange === 'month', gold: trendRange === 'month' }"
+                @click="trendRange = 'month'"
+              >
+                本月
+              </button>
+            </div>
+          </div>
+          <OnlineStatsChart :trend="trend" />
         </section>
 
-        <section v-if="visibleModules.channelRanks" class="card">
-          <div class="section-title" style="justify-content: space-between">
-            <span style="display: flex; align-items: center; gap: 10px">
-              <span class="section-icon" style="background: rgba(56,189,248,.15); color: var(--sky)">#</span>
-              <span>热门频道 <span class="sub">Top Channels</span></span>
-            </span>
-            <div class="seg">
-              <button :class="{ active: channelRange === 'week', sky: channelRange === 'week' }" @click="channelRange = 'week'">本周</button>
-              <button :class="{ active: channelRange === 'month', sky: channelRange === 'month' }" @click="channelRange = 'month'">本月</button>
+        <!-- 活跃榜 + 热门频道 (2 Cols) -->
+        <div v-if="visibleModules.userRanks || visibleModules.channelRanks" class="ranks-grid-row">
+          <!-- 活跃榜 (Top Users) -->
+          <section v-if="visibleModules.userRanks" class="glass-card rank-card-box">
+            <div class="rank-card-header">
+              <div class="section-title-group">
+                <div class="section-icon-box" style="background: rgba(251, 191, 36, 0.15); color: #fbbf24">
+                  <i class="ph-fill ph-crown"></i>
+                </div>
+                <div>
+                  <h3 class="section-title-text">活跃榜</h3>
+                  <p class="section-subtitle-text">Top Users</p>
+                </div>
+              </div>
+              <div class="seg-pill-switcher">
+                <button
+                  class="seg-btn"
+                  :class="{ active: rankRange === 'week', amber: rankRange === 'week' }"
+                  @click="rankRange = 'week'"
+                >
+                  本周
+                </button>
+                <button
+                  class="seg-btn"
+                  :class="{ active: rankRange === 'month', amber: rankRange === 'month' }"
+                  @click="rankRange = 'month'"
+                >
+                  本月
+                </button>
+              </div>
+            </div>
+
+            <div v-if="ranks.length === 0" class="empty-box">
+              <i class="ph-duotone ph-tray empty-icon"></i>
+              <span>暂无数据</span>
+            </div>
+            <ul v-else class="rank-list-scroll">
+              <li v-for="(u, i) in ranks.slice(0, 7)" :key="u.name + i" class="rank-item-row">
+                <div class="rank-progress-bg rank-progress-amber" :style="{ width: rankWidth(ranks, u) }"></div>
+                <div class="rank-item-content">
+                  <div class="rank-user-info">
+                    <div class="rank-badge-icon">
+                      <i v-if="i === 0" class="ph-fill ph-crown" style="color: #fbbf24; font-size: 1.125rem; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.6))"></i>
+                      <i v-else-if="i === 1" class="ph-fill ph-medal" style="color: #94a3b8; font-size: 0.9375rem"></i>
+                      <i v-else-if="i === 2" class="ph-fill ph-medal" style="color: #d97706; font-size: 0.9375rem"></i>
+                      <span v-else class="rank-index-num">{{ i + 1 }}</span>
+                    </div>
+                    <span class="rank-name-text">{{ u.name }}</span>
+                  </div>
+                  <span
+                    class="rank-duration-text"
+                    :class="i === 0 ? 'top-amber' : (i === 1 ? 'top-silver' : (i === 2 ? 'top-bronze' : ''))"
+                  >
+                    {{ formatRankTime(parseInt(u.value, 10) || 0) }}
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <!-- 热门频道 (Top Channels) -->
+          <section v-if="visibleModules.channelRanks" class="glass-card rank-card-box">
+            <div class="rank-card-header">
+              <div class="section-title-group">
+                <div class="section-icon-box" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8">
+                  <i class="ph-fill ph-fire"></i>
+                </div>
+                <div>
+                  <h3 class="section-title-text">热门频道</h3>
+                  <p class="section-subtitle-text">Top Channels</p>
+                </div>
+              </div>
+              <div class="seg-pill-switcher">
+                <button
+                  class="seg-btn"
+                  :class="{ active: channelRange === 'week', sky: channelRange === 'week' }"
+                  @click="channelRange = 'week'"
+                >
+                  本周
+                </button>
+                <button
+                  class="seg-btn"
+                  :class="{ active: channelRange === 'month', sky: channelRange === 'month' }"
+                  @click="channelRange = 'month'"
+                >
+                  本月
+                </button>
+              </div>
+            </div>
+
+            <div v-if="channels.length === 0" class="empty-box">
+              <i class="ph-duotone ph-tray empty-icon"></i>
+              <span>暂无数据</span>
+            </div>
+            <ul v-else class="rank-list-scroll">
+              <li v-for="(c, i) in channels.slice(0, 7)" :key="c.name + i" class="rank-item-row">
+                <div class="rank-progress-bg rank-progress-sky" :style="{ width: rankWidth(channels, c) }"></div>
+                <div class="rank-item-content">
+                  <div class="rank-user-info">
+                    <div class="rank-badge-icon">
+                      <i v-if="i === 0" class="ph-fill ph-fire" style="color: #38bdf8; font-size: 1.125rem; filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6))"></i>
+                      <i v-else-if="i === 1" class="ph-fill ph-fire" style="color: #7dd3fc; font-size: 0.9375rem"></i>
+                      <i v-else-if="i === 2" class="ph-fill ph-fire" style="color: #bae6fd; font-size: 0.9375rem"></i>
+                      <span v-else class="rank-index-num">{{ i + 1 }}</span>
+                    </div>
+                    <span class="rank-name-text">{{ c.name }}</span>
+                    <span v-if="i === 0" class="rank-hot-tag">Hot</span>
+                  </div>
+                  <span class="rank-duration-text" :class="i === 0 ? 'top-sky' : ''">
+                    {{ formatRankTime(parseInt(c.value, 10) || 0) }}
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <!-- 荣誉殿堂 (Hall of Fame) -->
+        <section v-if="visibleModules.achievements" class="glass-card hall-of-fame-card">
+          <div class="section-header-row" style="margin-bottom: 1.25rem">
+            <div class="section-title-group">
+              <i class="ph-fill ph-trophy" style="font-size: 1.75rem; color: #fbbf24; filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.4))"></i>
+              <div>
+                <h3 class="section-title-text">荣誉殿堂</h3>
+                <p class="section-subtitle-text">Hall of Fame</p>
+              </div>
             </div>
           </div>
-          <div v-if="channels.length === 0" class="empty">No Data Available</div>
-          <ul v-else class="rank-list">
-            <li v-for="(c, i) in channels" :key="c.name + i" class="rank-item sky">
-              <div class="rank-bar" :style="{ width: rankWidth(channels, c) }"></div>
-              <div class="rank-inner">
-                <div class="rank-left">
-                  <span class="rank-num" :class="rankNumClass(i)">{{ i + 1 }}</span>
-                  <span class="rank-name">{{ c.name }}</span>
+
+          <div v-if="achievements.featured || achievements.rankings.length || achievements.levels.length" class="hall-grid-inner">
+            <!-- Left Sub-col (7 cols) -->
+            <div class="hall-left-col">
+              <!-- 1. 周冠军 / 最高荣誉 卡片 -->
+              <div class="champion-hero-card">
+                <i class="ph-fill ph-crown champion-crown-watermark"></i>
+                <div class="champion-trophy-box">
+                  <i class="ph-fill ph-trophy"></i>
                 </div>
-                <span class="rank-value" :class="{ dim: i > 2 }">{{ formatRankTime(parseInt(c.value, 10) || 0) }}</span>
+                <div class="champion-info-box">
+                  <div class="champion-kicker-row">
+                    <span class="champion-kicker-dot"></span>
+                    <span class="champion-kicker-text">活跃大佬本周魁首</span>
+                  </div>
+                  <div class="champion-user-name">
+                    {{ achievements.featured ? achievements.featured.nickname : '虚位以待' }}
+                  </div>
+                  <div class="champion-group-badge">
+                    <i class="ph-bold ph-map-pin" style="font-size: 0.6875rem"></i>
+                    <span>{{ achievements.featured ? achievements.featured.title : '全服统计' }}</span>
+                  </div>
+                </div>
               </div>
-            </li>
-          </ul>
+
+              <!-- 2. 连续在线 (Streak Challenge) -->
+              <div>
+                <div class="streak-section-header">
+                  <div style="display: flex; align-items: center; gap: 0.5rem">
+                    <i class="ph-fill ph-flame" style="color: #fb923c; font-size: 1.125rem"></i>
+                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em">连续在线</span>
+                  </div>
+                  <span class="badge-count-pill" style="font-size: 0.625rem">{{ achievements.rankings.length }}人</span>
+                </div>
+
+                <div class="streak-cards-flex">
+                  <template v-if="achievements.rankings.length">
+                    <div
+                      v-for="(member, index) in achievements.rankings.slice(0, 3)"
+                      :key="member.nickname + index"
+                      class="streak-card-item"
+                      :class="{ 'is-top': index === 0 }"
+                    >
+                      <div class="streak-card-top-row">
+                        <span class="streak-rank-num" :class="{ 'is-top': index === 0 }">#{{ index + 1 }}</span>
+                        <i v-if="index === 0" class="ph-fill ph-flame" style="color: #fb923c; font-size: 1.125rem"></i>
+                        <i v-else class="ph-fill ph-user" style="color: #737373; font-size: 0.875rem"></i>
+                      </div>
+                      <div>
+                        <div class="streak-user-nickname">{{ member.nickname }}</div>
+                        <div class="streak-val-row">
+                          <span class="streak-val-num" :class="{ 'is-top': index === 0 }">{{ member.days }}</span>
+                          <span class="streak-val-unit">天</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="empty-box" style="width: 100%; padding: 1.5rem">
+                    <span style="font-size: 0.75rem">暂无连续在线数据</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Sub-col: 时长成就等级列表 (5 cols) -->
+            <div class="hall-right-col achievements-list-col">
+              <div class="streak-section-header">
+                <div style="display: flex; align-items: center; gap: 0.5rem">
+                  <i class="ph-fill ph-medal" style="color: #fbbf24; font-size: 1.125rem"></i>
+                  <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em">时长成就</span>
+                </div>
+                <span class="badge-count-pill" style="font-size: 0.625rem">{{ achievements.levels.length }}级</span>
+              </div>
+
+              <div class="achievements-items-wrap">
+                <template v-if="achievements.levels.length">
+                  <div
+                    v-for="(level, index) in visibleAchievementLevels"
+                    :key="level.id"
+                    class="achievement-level-card"
+                    :class="{ 'is-top': index === 0 }"
+                  >
+                    <div
+                      class="achievement-badge-box"
+                      :style="{
+                        background: index === 0 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                        color: index === 0 ? '#fbbf24' : '#d4d4d4'
+                      }"
+                    >
+                      <i :class="getAchievementIcon(index)"></i>
+                    </div>
+                    <div style="flex: 1; min-width: 0">
+                      <div class="achievement-title-text">{{ level.title }}</div>
+                      <div style="font-size: 0.6875rem; color: var(--text-faint)">累计 {{ formatAchievementHours(level.hours) }} 小时</div>
+                    </div>
+                    <span class="achievement-count-text">{{ level.unlockedCount }}人</span>
+                  </div>
+                </template>
+                <div v-else class="empty-box" style="padding: 1.5rem">
+                  <span style="font-size: 0.75rem">暂无成就配置</span>
+                </div>
+              </div>
+
+              <button
+                v-if="achievements.levels.length > 3"
+                type="button"
+                class="expand-levels-btn"
+                @click="showAllAchievementLevels = !showAllAchievementLevels"
+              >
+                <span>{{ showAllAchievementLevels ? '收起等级' : `还有 ${achievements.levels.length - 3} 个等级` }}</span>
+                <i :class="showAllAchievementLevels ? 'ph-bold ph-caret-up' : 'ph-bold ph-caret-down'"></i>
+              </button>
+            </div>
+          </div>
+          <div v-else class="empty-box">
+            <i class="ph-duotone ph-trophy empty-icon"></i>
+            <span>暂无荣誉数据</span>
+          </div>
+        </section>
+
+        <!-- 弹性频道 (Elastic Channels) -->
+        <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="glass-card elastic-channels-card">
+          <div class="section-header-row">
+            <div class="section-title-group">
+              <i class="ph-fill ph-pulse" style="font-size: 1.75rem; color: #22d3ee; filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.4))"></i>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.5rem">
+                  <h3 class="section-title-text">弹性频道</h3>
+                  <span class="realtime-group-chip">动态扩容</span>
+                </div>
+                <p class="section-subtitle-text">Elastic Channels</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="elastic-groups-list">
+            <div v-for="g in data.elastic_channels.groups" :key="g.group.id" class="elastic-group-box">
+              <div class="elastic-group-head">
+                <div class="elastic-group-title-row">
+                  <div class="elastic-folder-box">
+                    <i class="ph-fill ph-folder-open"></i>
+                  </div>
+                  <div>
+                    <h4 class="elastic-parent-name">{{ g.group.name }}</h4>
+                    <p class="elastic-prefix-text">
+                      前缀: <span style="font-family: ui-monospace, monospace; color: #22d3ee; font-weight: 700">{{ g.group.namePrefix }}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div class="elastic-load-bar-wrap">
+                  <div class="elastic-track">
+                    <div
+                      class="elastic-fill"
+                      :class="getElasticLoadClass(elasticLoadPercent(g.totalChannels, g.group.maxChannels))"
+                      :style="{ width: `${elasticLoadPercent(g.totalChannels, g.group.maxChannels)}%` }"
+                    ></div>
+                  </div>
+                  <span
+                    class="elastic-percent-text"
+                    :class="getElasticLoadTextClass(elasticLoadPercent(g.totalChannels, g.group.maxChannels))"
+                  >
+                    {{ elasticLoadPercent(g.totalChannels, g.group.maxChannels) }}%
+                  </span>
+                </div>
+              </div>
+
+              <!-- 4-metric statistics grid -->
+              <div class="elastic-metrics-grid">
+                <div class="elastic-metric-cell">
+                  <div class="elastic-metric-val">{{ g.totalChannels }}</div>
+                  <div class="elastic-metric-lbl">频道数</div>
+                </div>
+                <div class="elastic-metric-cell">
+                  <div class="elastic-metric-val is-cyan">{{ g.totalOnline }}</div>
+                  <div class="elastic-metric-lbl">在线用户</div>
+                </div>
+                <div class="elastic-metric-cell">
+                  <div class="elastic-metric-val">{{ g.group.maxChannels }}</div>
+                  <div class="elastic-metric-lbl">频道上限</div>
+                </div>
+                <div class="elastic-metric-cell">
+                  <div class="elastic-metric-val is-amber">{{ g.group.createThreshold }}</div>
+                  <div class="elastic-metric-lbl">扩容阈值</div>
+                </div>
+              </div>
+
+              <!-- Sub-channels tags -->
+              <div class="elastic-subchannels-wrap">
+                <span v-for="c in g.channels" :key="c.cid" class="subchannel-chip">
+                  <i class="ph-fill ph-hash"></i>
+                  <span>{{ c.name }}</span>
+                  <span style="color: var(--text-faint)">({{ c.online }})</span>
+                </span>
+                <span v-if="g.channels.length === 0" class="subchannel-chip" style="color: var(--text-faint)">
+                  暂无活跃子频道
+                </span>
+              </div>
+            </div>
+
+            <!-- Summary Bar -->
+            <div class="elastic-summary-card">
+              <div class="elastic-summary-left">
+                <i class="ph-fill ph-chart-pie"></i>
+                <span>总体负载</span>
+              </div>
+              <div class="elastic-summary-right">
+                <span style="color: var(--text-dim)">频道组: <b style="color: #ffffff">{{ data.elastic_channels.groups.length }}</b></span>
+                <span style="color: var(--text-dim)">总频道: <b style="color: #ffffff">{{ data.elastic_channels.overallChannels }}</b></span>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
 
-      <!-- 荣誉殿堂 -->
-      <section v-if="visibleModules.achievements" class="card honor-card">
-        <div class="section-title honor-title-row">
-          <span class="section-icon" style="background: rgba(251,191,36,.15); color: var(--amber)">♛</span>
-          <span class="honor-heading">
-            <span>荣誉殿堂</span>
-            <span class="sub">Hall of Fame</span>
-          </span>
-        </div>
-        <div v-if="achievements.featured || achievements.rankings.length || achievements.levels.length" class="honor-layout">
-          <div class="honor-main-column">
-            <div class="honor-champion">
-              <span class="honor-crown" aria-hidden="true">♛</span>
-              <span class="honor-champion-icon" aria-hidden="true">♛</span>
-              <div class="honor-champion-content">
-                <span class="honor-kicker"><i></i>最高荣誉</span>
-                <template v-if="achievements.featured">
-                  <strong>{{ achievements.featured.nickname }}</strong>
-                  <span class="honor-featured-title">{{ achievements.featured.title }}</span>
-                  <span class="honor-featured-hours">累计 {{ formatAchievementHours(achievements.featured.hours) }} 小时达成</span>
-                </template>
-                <span v-else class="honor-placeholder">等待第一位成员点亮最高荣誉</span>
+      <!-- Right Column: Realtime Live Monitor (4 cols) -->
+      <aside class="main-right-col">
+        <div v-if="visibleModules.realtime" class="glass-card realtime-monitor-card">
+          <!-- Header -->
+          <div class="realtime-header">
+            <div class="section-title-group">
+              <div class="section-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #10b981">
+                <i class="ph-fill ph-users-three"></i>
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.5rem">
+                  <h3 class="section-title-text">实时在线</h3>
+                  <span class="realtime-pulse-box">
+                    <span class="realtime-pulse-ping"></span>
+                    <span class="realtime-pulse-dot"></span>
+                  </span>
+                </div>
+                <p class="section-subtitle-text">Live Monitor</p>
               </div>
             </div>
-
-            <div class="honor-rankings">
-              <div class="honor-subhead honor-rankings-head">
-                <span><b aria-hidden="true">♨</b>连续在线排行榜</span>
-                <small>{{ achievements.rankings.length }} 人</small>
-              </div>
-              <div v-if="achievements.rankings.length" class="honor-ranking-list">
-                <div
-                  v-for="(member, index) in achievements.rankings.slice(0, 3)"
-                  :key="member.nickname + index"
-                  class="honor-ranking"
-                  :class="{ 'is-first': index === 0 }"
-                >
-                  <span class="honor-rank">#{{ index + 1 }}</span>
-                  <div class="honor-ranking-member">
-                    <strong>{{ member.nickname }}</strong>
-                  </div>
-                  <span class="honor-ranking-hours"><b>{{ member.days }}</b><small>天</small></span>
-                </div>
-              </div>
-              <span v-else class="honor-placeholder">暂无累计时长记录</span>
+            <div class="badge-online-pill">
+              <i class="ph-fill ph-users"></i>
+              <span style="font-family: ui-monospace, monospace">{{ data.realtime_list.length }}</span>
             </div>
           </div>
 
-          <div class="honor-levels">
-            <div class="honor-subhead honor-levels-head"><span>时长成就</span><small>{{ achievements.levels.length }}级</small></div>
-            <div v-if="achievements.levels.length" class="honor-level-list">
-              <div
-                v-for="(level, index) in visibleAchievementLevels"
-                :key="level.id"
-                class="honor-level"
-                :class="{ 'is-top-level': index === 0 }"
-              >
-                <span class="honor-level-index">{{ index + 1 }}</span>
-                <div>
-                  <strong>{{ level.title }}</strong>
-                  <small>累计 {{ formatAchievementHours(level.hours) }} 小时</small>
-                </div>
-                <span>{{ level.unlockedCount }} 人</span>
-              </div>
-            </div>
-            <span v-else class="honor-placeholder">后台添加成就后将在此展示</span>
-            <button
-              v-if="achievements.levels.length > 3"
-              type="button"
-              class="honor-level-toggle"
-              :aria-expanded="showAllAchievementLevels"
-              @click="showAllAchievementLevels = !showAllAchievementLevels"
-            >
-              {{ showAllAchievementLevels ? '收起等级' : `还有 ${achievements.levels.length - 3} 个等级` }}
-              <span aria-hidden="true">{{ showAllAchievementLevels ? '⌃' : '⌄' }}</span>
-            </button>
+          <!-- User list -->
+          <div v-if="data.realtime_list.length === 0" class="empty-box" style="padding: 4rem 1rem">
+            <i class="ph-duotone ph-moon-stars empty-icon"></i>
+            <p style="font-weight: 700; color: #d4d4d4; font-size: 0.875rem">静谧时刻</p>
+            <p style="font-size: 0.75rem; color: var(--text-faint); margin-top: 0.25rem">等待第一位用户上线...</p>
           </div>
-        </div>
-        <div v-else class="empty">暂无荣誉数据</div>
-      </section>
-
-      <!-- 弹性频道 -->
-      <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="card elastic-card">
-        <div class="section-title elastic-title-row">
-          <span class="section-icon" style="background: rgba(34,211,238,.15); color: var(--cyan)">◈</span>
-          <span class="elastic-heading">
-            <span class="elastic-heading-line">
-              <span>弹性频道</span>
-              <span class="elastic-status">动态扩容</span>
-            </span>
-            <span class="sub">Elastic Channels</span>
-          </span>
-        </div>
-        <div class="elastic-grid">
-          <div v-for="g in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
-            <div class="elastic-head">
-              <div class="elastic-group-identity">
-                <span class="elastic-folder" aria-hidden="true">▰</span>
-                <div>
-                  <span class="elastic-name">{{ g.group.name }}</span>
-                  <span class="elastic-prefix">前缀: <b>{{ g.group.namePrefix }}</b></span>
+          <div v-else class="realtime-list-scroll">
+            <div v-for="(c, i) in data.realtime_list" :key="c.nickname + i" class="realtime-user-card">
+              <div class="realtime-avatar-box">
+                <i :class="getUserIcon(c.nickname)"></i>
+              </div>
+              <div class="realtime-user-details">
+                <div class="realtime-user-row">
+                  <span class="realtime-nickname">{{ c.nickname }}</span>
+                  <span v-for="g in c.groups.slice(0, 1)" :key="g" class="realtime-group-chip">#{{ g }}</span>
                 </div>
-              </div>
-              <div class="elastic-load">
-                <div class="elastic-load-track"><span :style="{ width: elasticLoadPercent(g.totalChannels, g.group.maxChannels) + '%' }"></span></div>
-                <b>{{ elasticLoadPercent(g.totalChannels, g.group.maxChannels) }}%</b>
+                <div class="realtime-channel-name">{{ c.channel || '默认频道' }}</div>
               </div>
             </div>
-            <div class="elastic-metrics">
-              <div><b>{{ g.totalChannels }}</b><small>频道数</small></div>
-              <div><b class="is-cyan">{{ g.totalOnline }}</b><small>在线用户</small></div>
-              <div><b>{{ g.group.maxChannels }}</b><small>频道上限</small></div>
-              <div><b class="is-amber">{{ g.group.createThreshold }}</b><small>扩容阈值</small></div>
+          </div>
+
+          <!-- Footer -->
+          <div class="realtime-footer">
+            <div style="display: flex; align-items: center; gap: 0.375rem">
+              <i class="ph-fill ph-clock"></i>
+              <span>实时更新中</span>
             </div>
-            <div class="elastic-channels">
-              <span v-for="c in g.channels" :key="c.cid" class="elastic-channel">
-                <span><i aria-hidden="true"></i>{{ c.name }} ({{ c.online }} 人)</span>
+            <div style="display: flex; align-items: center; gap: 0.375rem; color: #10b981; font-weight: 700">
+              <span class="realtime-pulse-box">
+                <span class="realtime-pulse-ping"></span>
+                <span class="realtime-pulse-dot"></span>
               </span>
-              <span v-if="g.channels.length === 0" class="elastic-empty">暂无频道</span>
+              <span>Live</span>
             </div>
           </div>
         </div>
-        <div class="elastic-overall">
-          <span><i aria-hidden="true">◌</i>整体负载</span>
-          <span>频道组: <b>{{ data.elastic_channels.groups.length }}</b>&nbsp;&nbsp; 总频道: <b>{{ data.elastic_channels.overallChannels }}</b></span>
-        </div>
-      </section>
-    </div>
-
-    <!-- 右列 -->
-    <div class="col-right">
-      <!-- 客户端下载 -->
-      <section v-if="visibleModules.downloads" class="download-card-hero">
-        <h3>需要客户端？</h3>
-        <p class="dl-sub">推荐使用 v3.6.2 稳定版</p>
-        <a class="download-main" :href="data.site.clientDownload" target="_blank" rel="noopener">
-          <div>
-            <div class="dl-name">Windows 64-bit</div>
-            <div class="dl-tag">官方下载</div>
-          </div>
-          <span style="color: var(--primary); font-size: 18px">→</span>
-        </a>
-        <div class="download-links">
-          <a :href="data.site.mirrorDownload" target="_blank" rel="noopener">备用下载</a>
-          <span class="dl-sep">|</span>
-          <a class="translation" :href="data.site.translationDownload" target="_blank" rel="noopener">汉化包</a>
-          <template v-if="data.tutorial.enabled">
-            <span class="dl-sep">|</span>
-            <a class="tutorial-link" href="#" @click.prevent="showTutorial = true">使用教程</a>
-          </template>
-        </div>
-      </section>
-
-      <!-- 实时在线 -->
-      <section v-if="visibleModules.realtime" class="card">
-        <div class="section-title" style="justify-content: space-between">
-          <span style="display: flex; align-items: center; gap: 10px">
-            <span class="section-icon" style="background: rgba(16,185,129,.15); color: var(--green)">●</span>
-            <span>实时在线 <span class="sub">Live Monitor</span></span>
-          </span>
-          <span class="badge live-badge">{{ data.realtime_list.length }}</span>
-        </div>
-        <div v-if="data.realtime_list.length === 0" class="empty">静谧时刻，等待第一位用户上线...</div>
-        <div v-else class="realtime-list">
-          <div v-for="(c, i) in data.realtime_list" :key="c.nickname + i" class="realtime-item">
-            <span class="realtime-avatar">{{ c.nickname.charAt(0).toUpperCase() }}</span>
-            <div style="min-width: 0; flex: 1">
-              <div class="realtime-name">{{ c.nickname }}</div>
-              <div class="realtime-channel">{{ c.channel || '默认频道' }}</div>
-            </div>
-            <div class="realtime-groups">
-              <span v-for="g in c.groups" :key="g" class="badge group-badge">{{ g }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="live-foot">
-          <span class="live-dot"></span> 实时更新中
-        </div>
-      </section>
-    </div>
+      </aside>
+    </main>
 
     <!-- 使用教程弹窗 -->
     <Teleport to="body">
-      <div v-if="showTutorial" class="modal-overlay" @click.self="showTutorial = false">
-        <div class="modal tutorial-modal">
-          <div class="tutorial-head">
-            <div class="tutorial-title-group">
-              <div class="tutorial-icon">?</div>
+      <div v-if="showTutorial" class="modal-backdrop-wrap" @click.self="showTutorial = false">
+        <div class="modal-dialog-box">
+          <div class="modal-head-row">
+            <div class="modal-title-left">
+              <div class="section-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #10b981">
+                <i class="ph-fill ph-book-open"></i>
+              </div>
               <div>
-                <h3>{{ data.tutorial.title }}</h3>
-                <p class="tutorial-sub">TeamSpeak Guide</p>
+                <h3 style="font-size: 1.125rem; font-weight: 800; color: #ffffff">{{ data.tutorial.title || '使用教程' }}</h3>
+                <p class="section-subtitle-text">TeamSpeak Guide</p>
               </div>
             </div>
-            <button class="modal-close" @click="showTutorial = false" title="关闭">×</button>
+            <button class="modal-close-x" @click="showTutorial = false" title="关闭">
+              <i class="ph-bold ph-x"></i>
+            </button>
           </div>
-          <div class="tutorial-tabs">
+          <div class="modal-tabs-row">
             <button
               v-for="s in data.tutorial.sections"
               :key="s.key"
-              class="tutorial-tab"
+              class="modal-tab-btn"
               :class="{ active: tutorialTab === s.key }"
               @click="tutorialTab = s.key"
-            >{{ s.title }}</button>
+            >
+              {{ s.title }}
+            </button>
           </div>
-          <div class="tutorial-body markdown" v-html="tutorialHtml"></div>
-          <div class="tutorial-foot">
-            <span class="tutorial-updated">更新时间：{{ data.tutorial.updatedAt }}</span>
+          <div class="modal-body-scroll" v-html="tutorialHtml"></div>
+          <div class="modal-foot-row">
+            <span style="font-size: 0.75rem; color: var(--text-faint)" v-if="data.tutorial.updatedAt">
+              更新时间：{{ data.tutorial.updatedAt }}
+            </span>
             <button class="btn green" @click="showTutorial = false">我知道了</button>
           </div>
         </div>
       </div>
     </Teleport>
-    </div>
   </template>
 </template>

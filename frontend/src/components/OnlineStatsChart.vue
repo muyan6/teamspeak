@@ -23,24 +23,29 @@ function render() {
     grid: { left: 40, right: 16, top: 20, bottom: 36 },
     tooltip: {
       trigger: 'axis',
+      backgroundColor: 'rgba(23, 23, 23, 0.92)',
+      borderColor: 'rgba(234, 179, 8, 0.3)',
+      borderWidth: 1,
+      padding: [8, 12],
+      textStyle: { color: '#e5e5e5', fontSize: 12 },
       formatter: (params: Array<{ name: string; value: number }>) => {
         const p = params[0];
         if (!p) return '';
-        return `${p.name}<br/>峰值在线：${p.value} 人`;
+        return `<div style="font-weight:600;margin-bottom:4px;color:#a3a3a3">${p.name}</div><div>峰值在线：<span style="color:#fbbf24;font-weight:800;font-family:monospace;font-size:14px">${p.value}</span> 人</div>`;
       },
     },
     xAxis: {
       type: 'category',
       data: props.trend.labels,
-      axisLine: { lineStyle: { color: '#3a4157' } },
-      axisLabel: { color: '#9aa3b8', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.12)' } },
+      axisLabel: { color: '#a3a3a3', fontSize: 11 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       minInterval: 1,
-      axisLabel: { color: '#9aa3b8', fontSize: 11 },
-      splitLine: { lineStyle: { color: 'rgba(42,48,68,0.6)' } },
+      axisLabel: { color: '#a3a3a3', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
     },
     series: [
       {
@@ -49,11 +54,17 @@ function render() {
         smooth: true,
         showSymbol: false,
         data: props.trend.data,
-        lineStyle: { color: '#f43f5e', width: 2.5 },
+        lineStyle: {
+          color: '#fbbf24',
+          width: 2.5,
+          shadowColor: 'rgba(234, 179, 8, 0.4)',
+          shadowBlur: 8,
+        },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(244,63,94,0.38)' },
-            { offset: 1, color: 'rgba(244,63,94,0)' },
+            { offset: 0, color: 'rgba(234, 179, 8, 0.38)' },
+            { offset: 0.6, color: 'rgba(180, 83, 9, 0.12)' },
+            { offset: 1, color: 'rgba(0, 0, 0, 0)' },
           ]),
         },
       },
