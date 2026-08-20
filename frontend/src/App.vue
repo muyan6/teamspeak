@@ -18,10 +18,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="bg-blob blob-1"></div>
-  <div class="bg-blob blob-2"></div>
-  <div class="bg-blob blob-3"></div>
-
   <header class="site-header">
     <div class="header-left">
       <div class="header-logo"><img src="/logo.svg" alt="logo" /></div>

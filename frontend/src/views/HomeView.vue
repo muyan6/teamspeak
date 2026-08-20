@@ -225,11 +225,11 @@ onMounted(() => void loadHomeModules());
                   class="honor-ranking"
                   :class="{ 'is-first': index === 0 }"
                 >
-                  <div class="honor-ranking-meta">
-                    <span class="honor-rank">#{{ index + 1 }}</span>
-                    <span class="honor-rank-icon" aria-hidden="true">{{ index === 0 ? '♨' : '●' }}</span>
+                  <span class="honor-rank">0{{ index + 1 }}</span>
+                  <div class="honor-ranking-member">
+                    <strong>{{ member.nickname }}</strong>
+                    <small>连续在线</small>
                   </div>
-                  <strong>{{ member.nickname }}</strong>
                   <span class="honor-ranking-hours"><b>{{ member.days }}</b><small>天</small></span>
                 </div>
               </div>
@@ -246,7 +246,7 @@ onMounted(() => void loadHomeModules());
                 class="honor-level"
                 :class="{ 'is-top-level': index === 0 }"
               >
-                <span class="honor-level-index">{{ index < 3 ? '' : index + 1 }}</span>
+                <span class="honor-level-index">{{ index + 1 }}</span>
                 <div>
                   <strong>{{ level.title }}</strong>
                   <small>累计 {{ formatAchievementHours(level.hours) }} 小时</small>
@@ -277,14 +277,17 @@ onMounted(() => void loadHomeModules());
           <span>弹性频道 <span class="sub">Elastic Channels</span></span>
         </div>
         <div class="elastic-grid">
-          <div v-for="g in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
+          <div v-for="(g, index) in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
             <div class="elastic-head">
-              <span class="elastic-name"><i aria-hidden="true"></i>{{ g.group.name }}</span>
-              <span class="elastic-stat"><b>{{ g.totalOnline }}</b> 在线 · {{ g.totalChannels }} 频道</span>
+              <div class="elastic-group-identity">
+                <span class="elastic-group-index">0{{ index + 1 }}</span>
+                <span class="elastic-name"><i aria-hidden="true"></i>{{ g.group.name }}</span>
+              </div>
+              <span class="elastic-stat"><b>{{ g.totalOnline }}</b><small>在线 / {{ g.totalChannels }} 频道</small></span>
             </div>
             <div class="elastic-channels">
               <span v-for="c in g.channels" :key="c.cid" class="elastic-channel">
-                <span>{{ c.name }}</span><em>{{ c.online }}人</em>
+                <span><i aria-hidden="true"></i>{{ c.name }}</span><em>{{ c.online }} 人</em>
               </span>
               <span v-if="g.channels.length === 0" class="elastic-empty">暂无频道</span>
             </div>
