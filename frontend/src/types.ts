@@ -13,9 +13,22 @@ export interface SiteInfo {
   globalServer: string;
 }
 
+export interface UserBadge {
+  id: string;
+  name: string;
+  category: 'milestone' | 'behavior';
+  icon: string;
+  color: string;
+  description: string;
+  unlocked: boolean;
+  unlockedAt?: number;
+  progress?: { current: number; total: number; unit: string };
+}
+
 export interface RankEntry {
   name: string;
   value: string;
+  badges?: UserBadge[];
 }
 
 export interface RealtimeEntry {
@@ -129,6 +142,8 @@ export interface ProfileData {
   };
   bond_friends: Array<{ dbid: number; name: string; hours: number; last_meet: number }>;
   frequent_channels: Array<{ name: string; minutes: number }>;
+  badges: UserBadge[];
+  activity_heatmap: Array<{ date: string; seconds: number }>;
 }
 
 export interface UserSuggestion {

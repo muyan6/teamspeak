@@ -4,11 +4,12 @@ import type { StatsService } from './stats.js';
 import type { Ts3ClientWrapper, OnlineClientData, ChannelData } from '../ts3/client.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
 import type { SiteConfigStore } from '../db/site-config.js';
-import type { AchievementService, HallOfFameData } from '../features/achievements/service.js';
+import type { AchievementService, HallOfFameData, UserBadge } from '../features/achievements/service.js';
 
 export interface RankEntry {
   name: string;
   value: string;
+  badges?: UserBadge[];
 }
 
 export interface RealtimeEntry {
@@ -90,8 +91,12 @@ export class DashboardService {
     return String(Math.max(0, Math.round(v / 60)));
   }
 
-  private toRankEntries(rows: Array<{ nickname: string; seconds: number }>): RankEntry[] {
-    return rows.map((u) => ({ name: u.nickname, value: this.secondsToMinutes(u.seconds) }));
+  private toRankEntries(rows: Array<{ clientDatabaseId: number; nickname: string; seconds: number }>): RankEntry[] {
+    return rows.map((u) => ({
+      name: u.nickname,
+      value: this.secondsToMinutes(u.seconds),
+      badges: this.achievement.getUnlockedBadges(u.clientDatabaseId),
+    }));
   }
 
   private buildElastic(channels: Array<{ cid: number; parentId?: number; name: string; totalClients: number }>): ElasticChannelData {

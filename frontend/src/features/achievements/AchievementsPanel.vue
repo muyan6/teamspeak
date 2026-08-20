@@ -32,11 +32,11 @@ async function load(): Promise<void> {
 }
 
 async function add(): Promise<void> {
-  if (!form.value.title.trim() || form.value.hours < 0 || !form.value.serverGroupId) return;
+  if (!form.value.title.trim() || form.value.hours < 0) return;
   try {
     await api.addAchievementLevel({ ...form.value, title: form.value.title.trim() });
     form.value = { title: '', hours: 1, serverGroupId: 0 };
-    showNotice('在线时长成就已添加');
+    showNotice('在线时长成就已添加并自动检测');
     await load();
   } catch (error) {
     showNotice((error as Error).message);
@@ -66,7 +66,7 @@ async function runCheck(): Promise<void> {
   try {
     const result = await api.checkAchievements();
     const granted = result.results.filter((entry) => entry.granted).length;
-    showNotice(granted ? `已授予 ${granted} 项成就` : '本轮没有新增成就');
+    showNotice(granted ? `已授予 ${granted} 项成就` : '本轮检测完毕，无新增未授予成就');
     await load();
   } catch (error) {
     showNotice((error as Error).message);
@@ -74,6 +74,7 @@ async function runCheck(): Promise<void> {
 }
 
 function groupName(serverGroupId: number): string {
+  if (!serverGroupId || serverGroupId <= 0) return '无（仅网站勋章）';
   return groups.value.find((group) => group.sgid === serverGroupId)?.name || `SG${serverGroupId}`;
 }
 
@@ -99,7 +100,7 @@ onMounted(() => { void load(); });
           <td><input v-model.number="form.hours" class="input" type="number" min="0" placeholder="小时" /></td>
           <td>
             <select v-model.number="form.serverGroupId" class="input">
-              <option :value="0" disabled>选择服务器组</option>
+              <option :value="0">无（仅勋章徽章与荣誉殿堂）</option>
               <option v-for="group in groups" :key="group.sgid" :value="group.sgid">{{ group.name }}</option>
             </select>
           </td>

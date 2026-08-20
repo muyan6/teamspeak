@@ -333,6 +333,18 @@ onMounted(() => void loadHomeModules());
                       <span v-else class="rank-index-num">{{ i + 1 }}</span>
                     </div>
                     <span class="rank-name-text">{{ u.name }}</span>
+                    <div v-if="u.badges && u.badges.length" class="rank-user-badges">
+                      <span
+                        v-for="b in u.badges.slice(0, 3)"
+                        :key="b.id"
+                        class="rank-badge-pill"
+                        :style="{ color: b.color, borderColor: b.color + '40', background: b.color + '15' }"
+                        :title="`${b.name} · ${b.description}`"
+                      >
+                        <i :class="['ph-fill', b.icon]"></i>
+                        <span class="badge-pill-name">{{ b.name }}</span>
+                      </span>
+                    </div>
                   </div>
                   <span
                     class="rank-duration-text"

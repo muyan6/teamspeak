@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
 import type { ProfileData, UserSuggestion } from '../types';
@@ -13,7 +13,102 @@ const loading = ref(false);
 const error = ref('');
 const profile = ref<ProfileData | null>(null);
 const suggestions = ref<UserSuggestion[]>([]);
+const hoveredDay = ref<{ date: string; seconds: number } | null>(null);
+const badgeFilter = ref<'all' | 'milestone' | 'behavior'>('all');
 let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+
+interface HeatmapDay {
+  date: string;
+  seconds: number;
+  level: number;
+}
+
+interface HeatmapWeek {
+  days: HeatmapDay[];
+  monthLabel?: string;
+}
+
+const heatmapWeeks = computed(() => {
+  if (!profile.value) return [];
+  const map = new Map<string, number>();
+  for (const item of profile.value.activity_heatmap || []) {
+    map.set(item.date, item.seconds);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dayOfWeek = today.getDay();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (52 * 7 + dayOfWeek));
+
+  const weeks: HeatmapWeek[] = [];
+  let currentMonth = -1;
+  const cursor = new Date(startDate);
+
+  for (let w = 0; w <= 52; w++) {
+    const days: HeatmapDay[] = [];
+    let weekMonthLabel: string | undefined;
+
+    for (let d = 0; d < 7; d++) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth();
+      const dateNum = cursor.getDate();
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dateNum).padStart(2, '0')}`;
+      const seconds = map.get(dateStr) || 0;
+
+      let level = 0;
+      if (seconds > 0) {
+        if (seconds < 3600) level = 1;
+        else if (seconds < 3 * 3600) level = 2;
+        else if (seconds < 6 * 3600) level = 3;
+        else level = 4;
+      }
+
+      if (month !== currentMonth && dateNum <= 7) {
+        currentMonth = month;
+        weekMonthLabel = `${month + 1}月`;
+      }
+
+      days.push({
+        date: dateStr,
+        seconds,
+        level,
+      });
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    weeks.push({
+      days,
+      monthLabel: weekMonthLabel,
+    });
+  }
+
+  return weeks;
+});
+
+const heatmapStats = computed(() => {
+  if (!profile.value) return { activeDays: 0, totalHours: 0, maxDayHours: 0 };
+  const list = profile.value.activity_heatmap || [];
+  let totalSec = 0;
+  let maxSec = 0;
+  for (const item of list) {
+    totalSec += item.seconds;
+    if (item.seconds > maxSec) maxSec = item.seconds;
+  }
+  return {
+    activeDays: list.filter((i) => i.seconds > 0).length,
+    totalHours: Math.round((totalSec / 3600) * 10) / 10,
+    maxDayHours: Math.round((maxSec / 3600) * 10) / 10,
+  };
+});
+
+const filteredBadges = computed(() => {
+  if (!profile.value || !profile.value.badges) return [];
+  if (badgeFilter.value === 'all') return profile.value.badges;
+  return profile.value.badges.filter((b) => b.category === badgeFilter.value);
+});
 
 const COLORS = [
   { bg: 'rgba(244,63,94,.16)', fg: '#fb7185' },
@@ -272,6 +367,200 @@ onMounted(() => {
             </li>
           </ul>
           <div v-else class="empty">暂无羁绊好友数据</div>
+        </div>
+
+        <!-- 365 天在线活跃热力图 (GitHub 风格) -->
+        <div class="card span-12 heatmap-card">
+          <div class="card-head heatmap-header">
+            <div style="display: flex; align-items: center; gap: 12px">
+              <div class="card-icon emerald">
+                <i class="ph-fill ph-calendar-check" style="font-size: 1.25rem"></i>
+              </div>
+              <div>
+                <h3>年度活跃热力图</h3>
+                <span class="card-sub">Activity Heatmap · 过去 365 天</span>
+              </div>
+            </div>
+            <div class="heatmap-summary-stats">
+              <div class="h-stat-pill">
+                <span class="h-stat-num">{{ heatmapStats.activeDays }}</span>
+                <span class="h-stat-label">活跃天数</span>
+              </div>
+              <div class="h-stat-pill">
+                <span class="h-stat-num">{{ heatmapStats.totalHours }}h</span>
+                <span class="h-stat-label">累计在线</span>
+              </div>
+              <div class="h-stat-pill">
+                <span class="h-stat-num">{{ heatmapStats.maxDayHours }}h</span>
+                <span class="h-stat-label">单日峰值</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="heatmap-container">
+            <div class="heatmap-scroll-area">
+              <!-- Month labels -->
+              <div class="heatmap-months-row">
+                <div class="heatmap-weekday-placeholder"></div>
+                <div class="heatmap-grid-months">
+                  <div
+                    v-for="(week, wIdx) in heatmapWeeks"
+                    :key="'m-' + wIdx"
+                    class="heatmap-month-col"
+                  >
+                    <span v-if="week.monthLabel" class="heatmap-month-label">{{ week.monthLabel }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Main Grid with Weekday Labels -->
+              <div class="heatmap-body-row">
+                <div class="heatmap-weekdays-labels">
+                  <span>周日</span>
+                  <span>周二</span>
+                  <span>周四</span>
+                  <span>周六</span>
+                </div>
+
+                <div class="heatmap-grid-weeks">
+                  <div
+                    v-for="(week, wIdx) in heatmapWeeks"
+                    :key="'w-' + wIdx"
+                    class="heatmap-week-col"
+                  >
+                    <div
+                      v-for="day in week.days"
+                      :key="day.date"
+                      class="heatmap-cell"
+                      :class="'level-' + day.level"
+                      @mouseenter="hoveredDay = day"
+                      @mouseleave="hoveredDay = null"
+                    >
+                      <div class="heatmap-tooltip">
+                        <span class="tooltip-date">{{ day.date }}</span>
+                        <span class="tooltip-val">{{ day.seconds > 0 ? fmtMinutes(Math.round(day.seconds / 60)) : '未在线' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Legend & Hover info footer -->
+            <div class="heatmap-foot-row">
+              <div class="heatmap-hover-info">
+                <template v-if="hoveredDay">
+                  <span class="hover-date">{{ hoveredDay.date }}:</span>
+                  <span class="hover-hours">{{ hoveredDay.seconds > 0 ? fmtMinutes(Math.round(hoveredDay.seconds / 60)) : '未在线' }}</span>
+                </template>
+                <template v-else>
+                  <span class="hover-placeholder">鼠标悬停查看单日详细在线记录</span>
+                </template>
+              </div>
+
+              <div class="heatmap-legend">
+                <span class="legend-text">少</span>
+                <div class="heatmap-cell level-0"></div>
+                <div class="heatmap-cell level-1"></div>
+                <div class="heatmap-cell level-2"></div>
+                <div class="heatmap-cell level-3"></div>
+                <div class="heatmap-cell level-4"></div>
+                <span class="legend-text">多</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 荣誉与徽章成就墙 -->
+        <div class="card span-12 badges-card">
+          <div class="card-head badges-header">
+            <div style="display: flex; align-items: center; gap: 12px">
+              <div class="card-icon amber">
+                <i class="ph-fill ph-medal" style="font-size: 1.25rem"></i>
+              </div>
+              <div>
+                <h3>荣誉与徽章墙</h3>
+                <span class="card-sub">Badges & Achievements · {{ (profile.badges || []).filter(b => b.unlocked).length }} / {{ (profile.badges || []).length }} 已解锁</span>
+              </div>
+            </div>
+
+            <!-- Filter tabs -->
+            <div class="badge-filter-tabs">
+              <button
+                class="b-filter-btn"
+                :class="{ active: badgeFilter === 'all' }"
+                @click="badgeFilter = 'all'"
+              >
+                全部 ({{ (profile.badges || []).length }})
+              </button>
+              <button
+                class="b-filter-btn"
+                :class="{ active: badgeFilter === 'milestone' }"
+                @click="badgeFilter = 'milestone'"
+              >
+                时长成就
+              </button>
+              <button
+                class="b-filter-btn"
+                :class="{ active: badgeFilter === 'behavior' }"
+                @click="badgeFilter = 'behavior'"
+              >
+                趣味徽章
+              </button>
+            </div>
+          </div>
+
+          <div v-if="filteredBadges.length" class="badges-grid-list">
+            <div
+              v-for="b in filteredBadges"
+              :key="b.id"
+              class="badge-card-item"
+              :class="{ 'is-unlocked': b.unlocked }"
+            >
+              <div class="badge-card-top">
+                <div
+                  class="badge-icon-box"
+                  :style="b.unlocked ? { background: b.color + '22', color: b.color, borderColor: b.color + '55' } : {}"
+                >
+                  <i :class="['ph-fill', b.icon]"></i>
+                </div>
+                <span
+                  class="badge-cat-tag"
+                  :class="b.category === 'milestone' ? 'cat-milestone' : 'cat-behavior'"
+                >
+                  {{ b.category === 'milestone' ? '时长成就' : '趣味徽章' }}
+                </span>
+              </div>
+
+              <div class="badge-card-main">
+                <div class="badge-title-row">
+                  <h4 class="badge-name">{{ b.name }}</h4>
+                  <span v-if="b.unlocked" class="badge-status-unlocked">
+                    <i class="ph-bold ph-check"></i> 已解锁
+                  </span>
+                  <span v-else class="badge-status-locked">
+                    <i class="ph-bold ph-lock"></i> 进行中
+                  </span>
+                </div>
+                <p class="badge-desc">{{ b.description }}</p>
+
+                <!-- Progress bar if locked and has progress -->
+                <div v-if="!b.unlocked && b.progress" class="badge-progress-wrap">
+                  <div class="badge-progress-bar">
+                    <div
+                      class="badge-progress-fill"
+                      :style="{ width: Math.min(100, Math.round((b.progress.current / b.progress.total) * 100)) + '%' }"
+                    ></div>
+                  </div>
+                  <div class="badge-progress-text">
+                    <span>达成进度</span>
+                    <span>{{ b.progress.current }} / {{ b.progress.total }} {{ b.progress.unit }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty">暂无相关徽章数据</div>
         </div>
       </div>
     </section>
@@ -807,6 +1096,421 @@ onMounted(() => {
   padding: 24px 0;
   color: var(--text-faint);
   font-size: 13px;
+}
+
+/* ========== Heatmap Card ========== */
+.heatmap-card {
+  padding: 20px;
+}
+
+.heatmap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.card-icon.emerald {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--green);
+}
+
+.heatmap-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.h-stat-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+
+.h-stat-num {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+
+.h-stat-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.heatmap-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.heatmap-scroll-area {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.heatmap-months-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  min-width: 760px;
+}
+
+.heatmap-weekday-placeholder {
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.heatmap-grid-months {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.heatmap-month-col {
+  width: 12px;
+  font-size: 10px;
+  color: var(--text-faint);
+  position: relative;
+}
+
+.heatmap-month-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.heatmap-body-row {
+  display: flex;
+  min-width: 760px;
+}
+
+.heatmap-weekdays-labels {
+  width: 32px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+  font-size: 9px;
+  color: var(--text-faint);
+  line-height: 12px;
+}
+
+.heatmap-weekdays-labels span:nth-child(1) { grid-row: 1; }
+.heatmap-weekdays-labels span:nth-child(2) { grid-row: 3; }
+.heatmap-weekdays-labels span:nth-child(3) { grid-row: 5; }
+.heatmap-weekdays-labels span:nth-child(4) { grid-row: 7; }
+
+.heatmap-grid-weeks {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.heatmap-week-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  position: relative;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.heatmap-cell.level-0 {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.heatmap-cell.level-1 {
+  background: rgba(16, 185, 129, 0.35);
+}
+
+.heatmap-cell.level-2 {
+  background: rgba(16, 185, 129, 0.6);
+}
+
+.heatmap-cell.level-3 {
+  background: rgba(16, 185, 129, 0.85);
+}
+
+.heatmap-cell.level-4 {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.3);
+  z-index: 10;
+}
+
+.heatmap-tooltip {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #171717;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.heatmap-cell:hover .heatmap-tooltip {
+  display: flex;
+}
+
+.tooltip-date {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.tooltip-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.heatmap-foot-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.heatmap-hover-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hover-date {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.hover-hours {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.hover-placeholder {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-text {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+
+/* ========== Badges Wall ========== */
+.badges-card {
+  padding: 20px;
+}
+
+.badges-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.badge-filter-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+}
+
+.b-filter-btn {
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.b-filter-btn:hover {
+  color: var(--text);
+}
+
+.b-filter-btn.active {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--amber);
+}
+
+.badges-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.badge-card-item {
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  opacity: 0.65;
+}
+
+.badge-card-item.is-unlocked {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  opacity: 1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.badge-card-item.is-unlocked:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+}
+
+.badge-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+
+.badge-cat-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.cat-milestone {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--amber);
+}
+
+.cat-behavior {
+  background: rgba(129, 140, 248, 0.12);
+  color: #818cf8;
+}
+
+.badge-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.badge-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.badge-status-unlocked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.badge-status-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.badge-desc {
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
+.badge-progress-wrap {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.badge-progress-bar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.badge-progress-fill {
+  height: 100%;
+  background: var(--amber);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.badge-progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-faint);
 }
 
 @media (max-width: 900px) {

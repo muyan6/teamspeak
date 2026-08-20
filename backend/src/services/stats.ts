@@ -1,4 +1,4 @@
-import type { AppDatabase } from '../db/database.js';
+import { openDatabase, type AppDatabase } from '../db/database.js';
 import type { OnlineClientData, ChannelData } from '../ts3/client.js';
 
 export interface OnlineRecord {
@@ -35,6 +35,7 @@ export interface ProfileData {
   };
   bond_friends: Array<{ dbid: number; name: string; hours: number; last_meet: number }>;
   frequent_channels: Array<{ name: string; minutes: number }>;
+  activity_heatmap: Array<{ date: string; seconds: number }>;
 }
 
 export interface ClientIdentityData {
@@ -576,10 +577,22 @@ export class StatsService {
     const weekTimeRow = this.db
       .prepare('SELECT COALESCE(SUM(active_seconds),0) as s FROM user_daily_activity WHERE server_key = ? AND client_database_id = ? AND day >= ?')
       .get(this.serverKey, dbid, this.weekStartKey()) as { s: number };
-
     const current = weekIdx >= 0 ? weekIdx + 1 : null;
     const lastWeek = lastWeekIdx >= 0 ? lastWeekIdx + 1 : null;
     const streak = this.computeStreak(daySet);
+
+    const oneYearAgo = new Date();
+    oneYearAgo.setDate(oneYearAgo.getDate() - 365);
+    const oneYearAgoKey = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, '0')}-${String(oneYearAgo.getDate()).padStart(2, '0')}`;
+
+    const heatmapRows = this.db
+      .prepare(
+        `SELECT day as date, active_seconds as seconds
+         FROM user_daily_activity
+         WHERE server_key = ? AND client_database_id = ? AND day >= ?
+         ORDER BY day ASC`
+      )
+      .all(this.serverKey, dbid, oneYearAgoKey) as Array<{ date: string; seconds: number }>;
 
     return {
       nickname,
@@ -605,6 +618,7 @@ export class StatsService {
       },
       bond_friends: this.getBondFriends(dbid),
       frequent_channels: this.getFrequentChannels(dbid),
+      activity_heatmap: heatmapRows,
     };
   }
 
@@ -874,5 +888,227 @@ export class StatsService {
       )
       .get(this.serverKey, since) as { peak: number; avg: number };
     return { peak: row.peak, avg: Math.round(row.avg) };
+  }
+
+  hasNightOwlSessions(clientDatabaseId: number): boolean {
+    const row = this.db.prepare(`
+      SELECT 1 FROM sessions
+      WHERE server_key = ? AND client_database_id = ?
+        AND (
+          CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5
+          OR (end_time IS NOT NULL AND CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5)
+        )
+      LIMIT 1
+    `).get(this.serverKey, clientDatabaseId);
+    return Boolean(row);
+  }
+
+  getUserTopChannelDuration(clientDatabaseId: number): number {
+    const row = this.db.prepare(`
+      SELECT COALESCE(MAX(seconds), 0) as maxSec
+      FROM user_channel_activity
+      WHERE server_key = ? AND client_database_id = ?
+    `).get(this.serverKey, clientDatabaseId) as { maxSec: number };
+    return row?.maxSec || 0;
+  }
+
+  getUserActiveDays(clientDatabaseId: number): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(DISTINCT day) as days
+      FROM user_daily_activity
+      WHERE server_key = ? AND client_database_id = ?
+    `).get(this.serverKey, clientDatabaseId) as { days: number };
+    return row?.days || 0;
+  }
+
+  getBondFriendsCount(clientDatabaseId: number): number {
+    return this.getBondFriends(clientDatabaseId).length;
+  }
+
+  isWeeklyChampionWinner(clientDatabaseId: number): boolean {
+    const row = this.db.prepare(`
+      SELECT 1 FROM champion_config
+      WHERE server_key = ? AND last_winner_client_db_id = ?
+      LIMIT 1
+    `).get(this.serverKey, clientDatabaseId);
+    return Boolean(row);
+  }
+
+  archiveOldData(
+    archiveDbPath: string,
+    sampleRetentionDays = 180,
+    dailyRetentionDays = 365
+  ): {
+    archivedSamples: number;
+    archivedSessions: number;
+    archivedChannelDays: number;
+    archivedUserDays: number;
+  } {
+    const archiveDb = openDatabase(archiveDbPath);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const sampleCutoffSec = nowSec - sampleRetentionDays * 86400;
+
+    const sampleCutoffDate = new Date(sampleCutoffSec * 1000);
+    const sampleCutoffDay = `${sampleCutoffDate.getFullYear()}-${String(sampleCutoffDate.getMonth() + 1).padStart(2, '0')}-${String(sampleCutoffDate.getDate()).padStart(2, '0')}`;
+
+    const dailyCutoffDate = new Date();
+    dailyCutoffDate.setDate(dailyCutoffDate.getDate() - dailyRetentionDays);
+    const dailyCutoffDay = `${dailyCutoffDate.getFullYear()}-${String(dailyCutoffDate.getMonth() + 1).padStart(2, '0')}-${String(dailyCutoffDate.getDate()).padStart(2, '0')}`;
+
+    let archivedSamples = 0;
+    let archivedSessions = 0;
+    let archivedChannelDays = 0;
+    let archivedUserDays = 0;
+
+    try {
+      // 1. 迁移 online_samples
+      const oldSamples = this.db
+        .prepare('SELECT server_key, sample_time, online_count FROM online_samples WHERE sample_time < ?')
+        .all(sampleCutoffSec) as Array<{ server_key: string; sample_time: number; online_count: number }>;
+      if (oldSamples.length > 0) {
+        const ins = archiveDb.prepare(
+          'INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)'
+        );
+        for (const s of oldSamples) {
+          ins.run(s.server_key, s.sample_time, s.online_count);
+        }
+        this.db.prepare('DELETE FROM online_samples WHERE sample_time < ?').run(sampleCutoffSec);
+        archivedSamples = oldSamples.length;
+      }
+
+      // 2. 迁移已结束的 sessions
+      const oldSessions = this.db
+        .prepare(
+          'SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions WHERE end_time IS NOT NULL AND end_time < ?'
+        )
+        .all(sampleCutoffSec) as Array<{
+        server_key: string;
+        client_database_id: number;
+        nickname: string;
+        start_time: number;
+        end_time: number;
+        duration_seconds: number;
+      }>;
+      if (oldSessions.length > 0) {
+        const ins = archiveDb.prepare(
+          'INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        for (const s of oldSessions) {
+          ins.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
+        }
+        this.db.prepare('DELETE FROM sessions WHERE end_time IS NOT NULL AND end_time < ?').run(sampleCutoffSec);
+        archivedSessions = oldSessions.length;
+      }
+
+      // 3. 迁移 channel_daily_activity
+      const oldChannelDays = this.db
+        .prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity WHERE day < ?')
+        .all(sampleCutoffDay) as Array<{
+        server_key: string;
+        channel_id: number;
+        channel_name: string;
+        day: string;
+        member_seconds: number;
+      }>;
+      if (oldChannelDays.length > 0) {
+        const ins = archiveDb.prepare(
+          'INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)'
+        );
+        for (const c of oldChannelDays) {
+          ins.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
+        }
+        this.db.prepare('DELETE FROM channel_daily_activity WHERE day < ?').run(sampleCutoffDay);
+        archivedChannelDays = oldChannelDays.length;
+      }
+
+      // 4. 迁移超期 user_daily_activity (>365天)
+      const oldUserDays = this.db
+        .prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity WHERE day < ?')
+        .all(dailyCutoffDay) as Array<{
+        server_key: string;
+        client_database_id: number;
+        nickname: string;
+        day: string;
+        active_seconds: number;
+      }>;
+      if (oldUserDays.length > 0) {
+        const ins = archiveDb.prepare(
+          'INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)'
+        );
+        for (const u of oldUserDays) {
+          ins.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
+        }
+        this.db.prepare('DELETE FROM user_daily_activity WHERE day < ?').run(dailyCutoffDay);
+        archivedUserDays = oldUserDays.length;
+      }
+
+      this.db.exec('PRAGMA optimize;');
+    } finally {
+      archiveDb.close();
+    }
+
+    return { archivedSamples, archivedSessions, archivedChannelDays, archivedUserDays };
+  }
+
+  restoreArchivedData(archiveDbPath: string): {
+    restoredSamples: number;
+    restoredSessions: number;
+    restoredChannelDays: number;
+    restoredUserDays: number;
+  } {
+    const archiveDb = openDatabase(archiveDbPath);
+    let restoredSamples = 0;
+    let restoredSessions = 0;
+    let restoredChannelDays = 0;
+    let restoredUserDays = 0;
+
+    try {
+      const samples = archiveDb.prepare('SELECT server_key, sample_time, online_count FROM online_samples').all() as Array<{
+        server_key: string;
+        sample_time: number;
+        online_count: number;
+      }>;
+      const insSample = this.db.prepare('INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)');
+      for (const s of samples) insSample.run(s.server_key, s.sample_time, s.online_count);
+      restoredSamples = samples.length;
+
+      const sessions = archiveDb.prepare('SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions').all() as Array<{
+        server_key: string;
+        client_database_id: number;
+        nickname: string;
+        start_time: number;
+        end_time: number;
+        duration_seconds: number;
+      }>;
+      const insSession = this.db.prepare('INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)');
+      for (const s of sessions) insSession.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
+      restoredSessions = sessions.length;
+
+      const channelDays = archiveDb.prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity').all() as Array<{
+        server_key: string;
+        channel_id: number;
+        channel_name: string;
+        day: string;
+        member_seconds: number;
+      }>;
+      const insChannel = this.db.prepare('INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)');
+      for (const c of channelDays) insChannel.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
+      restoredChannelDays = channelDays.length;
+
+      const userDays = archiveDb.prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity').all() as Array<{
+        server_key: string;
+        client_database_id: number;
+        nickname: string;
+        day: string;
+        active_seconds: number;
+      }>;
+      const insUser = this.db.prepare('INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)');
+      for (const u of userDays) insUser.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
+      restoredUserDays = userDays.length;
+    } finally {
+      archiveDb.close();
+    }
+
+    return { restoredSamples, restoredSessions, restoredChannelDays, restoredUserDays };
   }
 }

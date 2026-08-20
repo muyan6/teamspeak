@@ -113,6 +113,7 @@ async function main(): Promise<void> {
   elasticTimer(elastic);
   achievementTimer(achievement);
   clientDirectoryTimer(ts3, stats);
+  startDataArchiveTimer(stats, config);
 
   // 周期任务：周冠军检测（每次执行后按当前配置的间隔重新调度）
   scheduleChampionCheck(champion);
@@ -150,6 +151,24 @@ async function main(): Promise<void> {
   server.listen(config.port, () => {
     console.log(`TS3 站点后端已启动: http://localhost:${config.port}`);
   });
+}
+
+function startDataArchiveTimer(stats: StatsService, config: AppConfig): void {
+  const archiveDbPath = path.resolve(path.dirname(config.dbPath), 'archive.db');
+  const run = (): void => {
+    try {
+      const res = stats.archiveOldData(archiveDbPath, 180, 365);
+      if (res.archivedSamples > 0 || res.archivedSessions > 0 || res.archivedChannelDays > 0 || res.archivedUserDays > 0) {
+        console.log(`[archive] 历史数据归档完成: 采样点 ${res.archivedSamples} 条, 会话 ${res.archivedSessions} 条, 频道日活 ${res.archivedChannelDays} 条, 用户超期日活 ${res.archivedUserDays} 条 -> ${archiveDbPath}`);
+      }
+    } catch (err) {
+      console.error('[archive] 历史数据归档异常:', err);
+    }
+  };
+  const initial = setTimeout(run, 10_000);
+  initial.unref();
+  const timer = setInterval(run, 24 * 3600 * 1000);
+  timer.unref();
 }
 
 async function syncClientDirectory(ts3: Ts3ClientWrapper, stats: StatsService): Promise<void> {

@@ -74,15 +74,18 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
         res.status(404).json({ error: '未在成员数据库中找到该用户' });
         return;
       }
-      const { dbid: _dbid, ...profile } = localStats;
+      const { dbid, ...profile } = localStats;
+      const badges = deps.achievement.getUserBadges(dbid);
       res.json({
         ...profile,
         server_groups: [],
+        badges,
       });
       return;
     }
 
     const stats = deps.stats.getUserStatsByIdentity(client);
+    const badges = deps.achievement.getUserBadges(client.clientDatabaseId);
     let serverGroups: string[] = [];
     try {
       serverGroups = (await deps.ts3.getServerGroupsByClientDbId(client.clientDatabaseId)).map((group) => group.name);
@@ -100,6 +103,7 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
     res.json({
       ...profile,
       server_groups: serverGroups,
+      badges,
       total_time: { ...profile.total_time, first_seen: createdAt || profile.total_time.first_seen },
       streak: { ...profile.streak, last_online: formatTs3Date(client.lastConnected) || profile.streak.last_online },
     });

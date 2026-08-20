@@ -1,7 +1,7 @@
 import http from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import fs, { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path, { join } from 'node:path';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockTs3Server } from './mock-ts3-server.js';
@@ -930,5 +930,91 @@ describe('TS3 监控后端核心链路', () => {
       subsite.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  it('数据归档与转储能正确迁移超期数据至归档库并支持完整恢复', () => {
+    const mainDb = openDatabase(':memory:');
+    const archiveDbFile = path.resolve(process.cwd(), 'scratch_test_archive.db');
+    const stats = new StatsService(mainDb);
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const oldTimeSec = nowSec - 200 * 86400; // 200 days ago (>180)
+    const recentTimeSec = nowSec - 10 * 86400; // 10 days ago (<180)
+
+    // Insert sample and session in mainDb
+    mainDb.prepare('INSERT INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)').run('legacy', oldTimeSec, 5);
+    mainDb.prepare('INSERT INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)').run('legacy', recentTimeSec, 8);
+
+    mainDb.prepare('INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('legacy', 888, 'OldUser', oldTimeSec - 3600, oldTimeSec, 3600);
+    mainDb.prepare('INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('legacy', 999, 'RecentUser', recentTimeSec - 3600, recentTimeSec, 3600);
+
+    const archiveRes = stats.archiveOldData(archiveDbFile, 180, 365);
+    expect(archiveRes.archivedSamples).toBe(1);
+    expect(archiveRes.archivedSessions).toBe(1);
+
+    // Verify main DB only has recent records
+    const remainingSamples = mainDb.prepare('SELECT * FROM online_samples').all();
+    expect(remainingSamples).toHaveLength(1);
+    expect((remainingSamples[0] as { sample_time: number }).sample_time).toBe(recentTimeSec);
+
+    // Verify restore works
+    const restoreRes = stats.restoreArchivedData(archiveDbFile);
+    expect(restoreRes.restoredSamples).toBe(1);
+    expect(restoreRes.restoredSessions).toBe(1);
+
+    const restoredSamples = mainDb.prepare('SELECT * FROM online_samples').all();
+    expect(restoredSamples).toHaveLength(2);
+
+    mainDb.close();
+    try {
+      if (fs.existsSync(archiveDbFile)) fs.unlinkSync(archiveDbFile);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('统一成就与趣味徽章系统能正确识别时长成就与行为徽章', () => {
+    const testDb = openDatabase(':memory:');
+    const stats = new StatsService(testDb);
+    const mockTs3 = {} as never;
+    const achievement = new AchievementService(testDb, mockTs3, stats);
+
+    // Add milestone levels
+    achievement.addLevel({ hours: 10, serverGroupId: 10, title: '初出茅庐' });
+    achievement.addLevel({ hours: 50, serverGroupId: 20, title: '资深成员' });
+
+    // User with 60 hours online (216,000s)
+    testDb.prepare(`
+      INSERT INTO user_online_duration (server_key, client_database_id, unique_identifier, nickname, total_seconds, week_seconds, longest_session_seconds, last_updated)
+      VALUES ('legacy', 777, 'uid-777', 'BadgeUser', 216000, 3600, 3600, ?)
+    `).run(Date.now());
+
+    // Add 10 active days
+    for (let i = 0; i < 10; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      testDb.prepare('INSERT INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)')
+        .run('legacy', 777, 'BadgeUser', dayKey, 7200);
+    }
+
+    const badges = achievement.getUserBadges(777);
+    expect(badges.length).toBeGreaterThanOrEqual(6);
+
+    const level10 = badges.find((b) => b.name === '初出茅庐');
+    expect(level10?.unlocked).toBe(true);
+
+    const level50 = badges.find((b) => b.name === '资深成员');
+    expect(level50?.unlocked).toBe(true);
+
+    const streakBadge = badges.find((b) => b.id === 'behavior_streak_7');
+    expect(streakBadge?.unlocked).toBe(true);
+
+    const unlockedList = achievement.getUnlockedBadges(777);
+    expect(unlockedList.length).toBeGreaterThanOrEqual(3);
+
+    testDb.close();
   });
 });
