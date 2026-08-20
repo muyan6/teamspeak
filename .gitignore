@@ -115,6 +115,8 @@
 **/.env
 **/.env.local
 **/.env.*.local
+# 保留无敏感值的后端首次启动模板；填写真实凭据后请勿提交该文件。
+!backend/.env
 *.pem
 *.key
 
