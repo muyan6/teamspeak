@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="view-transition" content="same-origin">
+    <meta name="csrf-token" content="etmKRU20y3StgWeeexZF9fbfY37RtFWaPHn6fQPS">
+    <title>なのです · Voice</title>
+    <meta name="description" content="なのです! - Teamspeak实时监控面板">
+    <link rel="icon" href="/assets/img/favicon.png" type="image/x-icon">
+    <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+
+    <!-- 关键CSS内联：主题变量 + 基础样式 + View Transitions -->
+    <style>
+    :root {
+        --c-primary-50: 255 241 242; --c-primary-100: 255 228 230; --c-primary-200: 254 205 211;
+        --c-primary-300: 253 164 175; --c-primary-400: 251 113 133; --c-primary-500: 244 63 94;
+        --c-primary-600: 225 29 72; --c-primary-700: 190 18 60;
+        --c-accent-50: 253 242 248; --c-accent-100: 252 231 243; --c-accent-400: 244 114 182;
+        --c-accent-500: 236 72 153; --c-accent-600: 219 39 119;
+    }
+    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+    html:not(.theme-ready) body { transition: none !important; }
+    /* 深色模式就绪后显示页面（覆盖 body 内联 opacity:0） */
+    html.dark body { opacity: 1 !important; transition: opacity 0.3s ease; }
+    [x-cloak] { display: none !important; }
+
+    /* ===== View Transitions API 跨页面过渡动画 ===== */
+    @view-transition { navigation: auto; }
+
+    ::view-transition-old(site-header) {
+        animation: vt-header-out 0.1s ease-in both;
+    }
+    ::view-transition-new(site-header) {
+        animation: vt-header-in 0.12s ease-out both;
+    }
+
+    ::view-transition-old(page-content) {
+        animation: vt-out 0.12s ease-in both;
+    }
+    ::view-transition-new(page-content) {
+        animation: vt-in 0.45s 0.08s cubic-bezier(0, 0, 0.2, 1) both;
+    }
+
+    @keyframes vt-out {
+        to { opacity: 0; }
+    }
+    @keyframes vt-in {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    @keyframes vt-header-out {
+        to { opacity: 0; }
+    }
+    @keyframes vt-header-in {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+
+    /* ===== 全浏览器页面过渡动画 (CSS transition) ===== */
+    [data-vt="page-content"] {
+        opacity: 0;
+        transition: opacity 0.45s 0.08s cubic-bezier(0, 0, 0.2, 1);
+    }
+    [data-vt="site-header"] {
+        opacity: 0;
+        transition: opacity 0.12s ease-out;
+    }
+
+    .vt-ready [data-vt="page-content"] {
+        opacity: 1;
+    }
+    .vt-ready [data-vt="site-header"] {
+        opacity: 1;
+    }
+
+    .is-exiting [data-vt="site-header"] {
+        opacity: 0;
+        transition: opacity 0.1s ease-in;
+    }
+    .is-exiting [data-vt="page-content"] {
+        opacity: 0;
+        transition: opacity 0.12s ease-in;
+    }
+</style>
+
+    <!-- CSS -->
+    <link href="/assets/css/style.css" rel="stylesheet">
+    <link href="/assets/css/fonts.css" rel="stylesheet">
+
+    <!-- 字体预连接 + 预加载 -->
+    <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
+    <link rel="preload" as="font" type="font/ttf" href="https://gstatic.loli.net/s/plusjakartasans/v12/LDIbaomQNQcsA88c7O9yZ4KMCoOg4IA6-91aHEjcWuA_TknNSg.ttf" crossorigin>
+
+    <!-- 主题预加载 -->
+    <script src="/assets/js/theme-preload.js"></script>
+
+    <!-- 供应商库 -->
+    <script src="/assets/js/vendor/phosphor-icons.js"></script>
+        <script src="/assets/js/vendor/chart.min.js"></script>
+    <script defer src="/assets/js/vendor/alpine.min.js"></script>
+    <link href="/assets/css/tailwind.build.css" rel="stylesheet">
+
+        <script src="/assets/js/utils/deepEqual.js"></script>
+    <script src="/assets/js/utils/common.js"></script>
+    <script src="/assets/js/config/styles.js"></script>
+    <script src="/assets/js/modules/graph.js"></script>
+    <script src="/assets/js/modules/elastic.js"></script>
+    <script src="/assets/js/modules/champion.js"></script>
+    <script src="/assets/js/modules/onlineTime.js"></script>
+    <script src="/assets/js/modules/tutorial.js"></script>
+    <script src="/assets/js/modules/honor.js"></script>
+    <script src="/assets/js/app.js"></script>
+</head>
+<body style="opacity: 0" class="antialiased min-h-screen pb-12 bg-neutral-950 text-neutral-200 selection:bg-primary-500 selection:text-white"
+       x-data="dashboard()"        x-init="initApp()" >
+
+    <div class="noise-bg"></div>
+    <div class="bg-blob bg-primary-200 dark:bg-neutral-800 top-[-10%] left-[-10%] animate-blob"></div>
+    <div class="bg-blob bg-accent-100 dark:bg-neutral-800 bottom-[-10%] right-[-10%] animate-blob" style="animation-delay: 2s; width: 500px; height: 500px;"></div>
+
+    <div class="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            
+    <!-- Header -->
+        <header class="py-8 flex flex-col md:flex-row justify-between items-center gap-5" data-vt="site-header">
+            <div class="flex items-center gap-5">
+                <div class="relative group">
+                    <img :src="site.logo || '/assets/img/logo.png'" alt="Logo"
+                         class="w-16 h-16 rounded-xl shadow-lg relative z-10 border-2 border-white/80 dark:border-neutral-700/50 object-cover transform group-hover:scale-105 transition-transform duration-300">
+                </div>
+                <div class="flex flex-col">
+                    <h1 class="text-3xl font-bold text-neutral-800 dark:text-white" x-text="serverName || 'なのです！'">なのです！</h1>
+                    <div class="flex items-center gap-2 mt-1.5">
+                        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
+                            <span class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            </span>
+                            Online
+                        </div>
+                        <!-- 在线人数 -->
+                        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold backdrop-blur-sm transition-all duration-300"
+                             :class="autoRefresh.isRefreshing 
+                                 ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                 : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300'"
+                             :title="'上次更新: ' + getLastUpdateText()">
+                            <i class="ph-fill ph-users text-sm"></i>
+                            <span class="font-mono" x-text="onlineCount">0</span>
+                            <span>在线</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+            <!-- 个人数据仪表盘入口 -->
+            <a href="/profile"
+                    class="group flex items-center gap-2 px-3 py-2 rounded-xl bg-white/60 dark:bg-neutral-800/60 hover:bg-white dark:hover:bg-neutral-700/80 border border-sky-200/60 dark:border-sky-700/30 shadow-sm hover:shadow-md transition-all duration-300"
+                    title="查询我的在线数据">
+                <div class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center">
+                    <i class="ph-fill ph-magnifying-glass-plus text-sm text-sky-600 dark:text-sky-400"></i>
+                </div>
+                <span class="text-sm font-bold text-neutral-700 dark:text-neutral-200 hidden sm:inline">查我的数据</span>
+            </a>
+            <!-- 留言板入口 -->
+            <a href="/guestbook"
+                    class="group flex items-center gap-2 px-3 py-2 rounded-xl bg-white/60 dark:bg-neutral-800/60 hover:bg-white dark:hover:bg-neutral-700/80 border border-emerald-100 dark:border-emerald-700/30 shadow-sm hover:shadow-md transition-all duration-300" style="--tw-border-opacity:0.3"
+                    title="留言板">
+                <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                    <i class="ph-fill ph-chats text-sm text-emerald-600 dark:text-emerald-400"></i>
+                </div>
+                <span class="text-sm font-bold text-neutral-700 dark:text-neutral-200 hidden sm:inline">留言板</span>
+            </a>
+            <!-- 深色模式标识 -->
+            <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-neutral-200/50 dark:bg-neutral-700/30"
+                 title="深色模式">
+                <i class="ph-bold ph-moon-stars text-lg text-neutral-400 dark:text-neutral-500"></i>
+            </div>
+            
+
+            </div>
+        </header>
+
+        <div data-vt="page-content">
+
+        <!-- Top Actions -->
+        <section class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
+            <!-- Connect Card -->
+            <div class="md:col-span-8 glass-card p-6 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-primary-50/50 dark:from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <svg class="absolute -right-8 -bottom-8 w-32 h-32 text-primary-500/5 dark:text-white/5 rotate-12" viewBox="0 0 640 512" fill="currentColor"><path d="M192 64h256c70.7 0 128 57.3 128 128v0c0 70.7-57.3 128-128 128c-40.3 0-76.9-18.7-100.7-48H292.7c-23.8 29.3-60.4 48-100.7 48c-70.7 0-128-57.3-128-128v0C64 121.3 121.3 64 192 64zM152 176c-13.3 0-24 10.7-24 24s10.7 24 24 24s24-10.7 24-24s-10.7-24-24-24zm48-24c0 8.8-7.2 16-16 16s-16-7.2-16-16s7.2-16 16-16s16 7.2 16 16zm248 24c-13.3 0-24 10.7-24 24s10.7 24 24 24s24-10.7 24-24s-10.7-24-24-24zm-16-40c-8.8 0-16 7.2-16 16s7.2 16 16 16s16-7.2 16-16s-7.2-16-16-16zm-160 32a16 16 0 1 0 0-32 16 16 0 1 0 0 32zm80-16a16 16 0 1 0 -32 0 16 16 0 1 0 32 0z"/></svg>
+                
+                <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+                    <div>
+                        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-primary-100/50 dark:bg-neutral-700/50 text-primary-700 dark:text-white text-xs font-bold mb-3">
+                            <i class="ph-bold ph-broadcast"></i> Join Now
+                        </div>
+                        <h2 class="text-2xl md:text-3xl font-bold text-neutral-800 dark:text-white mb-2">
+                             <span class="text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-rose-500 dark:from-red-500 dark:via-rose-400 dark:to-neutral-300">仙路已断</span> ，该你续接了
+                        </h2>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs md:text-sm text-neutral-500 dark:text-neutral-400">
+                            <span>服务器地址</span>
+                            <button @click="copyIp()" class="font-mono font-bold text-primary-600 dark:text-white bg-primary-50 dark:bg-neutral-800 px-2 py-0.5 rounded border border-primary-100 dark:border-neutral-600 hover:bg-primary-100 dark:hover:bg-neutral-700 transition-colors cursor-pointer group/btn relative">
+                                <span x-text="site.server_address || 'nanodesu'"></span>
+                                <span class="hidden group-hover/btn:block absolute -top-8 left-1/2 -translate-x-1/2 bg-neutral-800 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap">点击复制</span>
+                            </button>
+                            <template x-if="site.global_server">
+                                <span class="flex items-center gap-2">
+                                    <span class="text-neutral-300 dark:text-neutral-700">|</span>
+                                    <i class="ph-bold ph-globe text-xs"></i>
+                                    <span>国际入口</span>
+                                    <button @click="copyText(site.global_server)" class="font-mono font-bold text-primary-600 dark:text-white bg-primary-50 dark:bg-neutral-800 px-2 py-0.5 rounded border border-primary-100 dark:border-neutral-600 hover:bg-primary-100 dark:hover:bg-neutral-700 transition-colors cursor-pointer group/btn relative"><span x-text="site.global_server"></span><span class="hidden group-hover/btn:block absolute -top-8 left-1/2 -translate-x-1/2 bg-neutral-800 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap">点击复制</span></button>
+                                </span>
+                            </template>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs md:text-sm text-neutral-400 dark:text-neutral-500 font-medium">
+                            <i class="ph-bold ph-user-gear"></i>
+                            <span>需私人频道联系 <span class="text-neutral-600 dark:text-neutral-300 font-bold" x-text="site.admin_name || '3ku'"></span></span>
+                            <span class="text-neutral-300 dark:text-neutral-700">|</span>
+                            <span class="flex items-center gap-1">
+                                <i class="ph-bold ph-steam-logo text-neutral-400 dark:text-neutral-500"></i><span class="text-neutral-400 dark:text-neutral-500">若不在请联系</span> <a :href="site.admin_steam" target="_blank" class="text-neutral-600 dark:text-neutral-300 font-bold">Steam</a>
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <a :href="site.connect_url || 'ts3server://nanodesu'" 
+                       class="group shrink-0 flex items-center gap-3 bg-neutral-900 dark:bg-white hover:bg-primary-600 dark:hover:bg-neutral-200 text-white dark:text-black px-8 py-4 rounded-2xl font-bold shadow-xl shadow-neutral-900/10 hover:shadow-primary-500/30 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02]">
+                        <i class="ph-bold ph-plug text-xl transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110"></i>
+                        <div class="text-left">
+                            <div class="text-[10px] opacity-60 uppercase tracking-widest font-bold">Quick Connect</div>
+                            <div class="text-lg leading-none">Connect</div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            <!-- Download Card -->
+            <div class="md:col-span-4 glass-card p-6 flex flex-col relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-4 opacity-10 dark:opacity-5">
+                    <i class="ph-duotone ph-download-simple text-6xl text-neutral-800 dark:text-white"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-base text-neutral-700 dark:text-neutral-200 flex items-center gap-2">
+                        <i class="ph-duotone ph-windows-logo text-blue-500 dark:text-white text-lg"></i> 需要客户端？
+                    </h3>
+                    <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-1">推荐使用 v3.6.2 稳定版</p>
+                </div>
+                <a :href="site.client_download" target="_blank"
+                   class="mt-4 flex items-center justify-between p-2.5 bg-white/50 dark:bg-neutral-800/50 hover:bg-white dark:hover:bg-neutral-700/80 border border-white dark:border-white/5 rounded-xl transition-all group cursor-pointer shadow-sm hover:shadow-md">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center text-neutral-600 dark:text-neutral-300 group-hover:bg-primary-50 dark:group-hover:bg-neutral-600 group-hover:text-primary-600 dark:group-hover:text-white transition-colors">
+                            <i class="ph-bold ph-download-simple text-sm"></i>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-bold text-neutral-700 dark:text-neutral-200 group-hover:text-primary-700 dark:group-hover:text-white">Windows 64-bit</span>
+                            <span class="text-[10px] text-neutral-400 font-mono">官方下载</span>
+                        </div>
+                    </div>
+                    <i class="ph-bold ph-arrow-right text-neutral-300 group-hover:text-primary-500 dark:group-hover:text-white transition-transform group-hover:translate-x-1"></i>
+                </a>
+                <div class="mt-3 flex items-center gap-3 text-xs">
+                    <a href="https://cloud.nanodesu.net/d/teamspeak/TeamSpeak3-Client-win64-3.6.2.exe" target="_blank"
+                       class="flex items-center gap-1.5 text-neutral-500 hover:text-amber-600 dark:text-neutral-400 dark:hover:text-amber-400 transition-colors">
+                        <i class="ph-bold ph-cloud-arrow-down"></i>
+                        <span class="font-medium">备用下载</span>
+                    </a>
+                    <span class="text-neutral-300 dark:text-neutral-600">|</span>
+                    <a href="https://cloud.nanodesu.net/d/teamspeak/%E6%B1%89%E5%8C%96%E6%96%87%E4%BB%B6.ts3_translation" target="_blank"
+                       class="flex items-center gap-1.5 text-neutral-500 hover:text-green-600 dark:text-neutral-400 dark:hover:text-green-400 transition-colors">
+                        <i class="ph-bold ph-translate"></i>
+                        <span class="font-medium">汉化包</span>
+                    </a>
+                    <template x-if="tutorial && tutorial.enabled">
+                        <span class="flex items-center gap-3">
+                            <span class="text-neutral-300 dark:text-neutral-600">|</span>
+                            <button @click="showTutorialModal = true"
+                                    class="flex items-center gap-1.5 text-neutral-500 hover:text-primary-600 dark:text-neutral-400 dark:hover:text-primary-400 transition-colors">
+                                <i class="ph-bold ph-book-open"></i>
+                                <span class="font-medium">使用教程</span>
+                            </button>
+                        </span>
+                    </template>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Grid -->
+        <main class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Left Column -->
+            <div class="lg:col-span-8 flex flex-col gap-6">
+                
+                <!-- Chart Section -->
+                <div class="glass-card p-6">
+                    <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-100 to-primary-50 dark:from-neutral-800 dark:to-neutral-900 flex items-center justify-center text-primary-600 dark:text-white shadow-inner">
+                                <i class="ph-fill ph-chart-line-up text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-lg text-neutral-800 dark:text-neutral-100">流量趋势</h3>
+                                <p class="text-xs text-neutral-400">Online Statistics</p>
+                            </div>
+                        </div>
+                        <div class="bg-neutral-100/50 dark:bg-neutral-800/50 p-1 rounded-xl flex border border-neutral-200/50 dark:border-neutral-700/50 backdrop-blur-sm">
+                            <template x-for="t in ['week', 'month']">
+                                <button @click="switchChartTab(t)"
+                                        :class="currentTab === t ? 'bg-white dark:bg-neutral-700 text-primary-600 dark:text-white shadow-sm' : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'"
+                                        class="px-6 py-2 text-xs font-bold rounded-lg transition-all uppercase tracking-wide"
+                                        x-text="tabMap[t]"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="relative h-[250px] md:h-[350px] w-full">
+                        <div x-show="loading" class="absolute inset-0 flex items-center justify-center bg-white/40 dark:bg-neutral-900/40 backdrop-blur-md z-10 rounded-2xl transition-opacity">
+                            <div class="flex flex-col items-center gap-2">
+                                <i class="ph-duotone ph-spinner-gap animate-spin text-primary-500 text-3xl"></i>
+                            </div>
+                        </div>
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Ranks -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- User Rank (活跃榜) -->
+    <div class="glass-card p-5 flex flex-col h-[420px] scroll-fade-wrapper border border-white/5 shadow-2xl">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-5 pb-3 border-b border-neutral-100/10 dark:border-neutral-700/30">
+            <div class="flex items-center gap-3">
+                <div class="p-2 rounded-lg bg-amber-500/10">
+                    <i :class="getSectionIcon('active')" class="text-xl" :style="`color: ${getSectionIconColor('active')}`"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-base text-neutral-800 dark:text-neutral-100 tracking-tight">活跃榜</h3>
+                    <p class="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Top Users</p>
+                </div>
+            </div>
+            <div class="flex p-1 bg-black/20 rounded-lg">
+                <template x-for="t in ['week', 'month']">
+                    <button @click="rankTab = t" 
+                            :class="rankTab === t ? 'text-amber-400 bg-white/10 shadow-sm' : 'text-neutral-500 hover:text-neutral-300'"
+                            class="px-3 py-1 rounded-md text-[10px] font-bold transition-all duration-200 uppercase" x-text="tabMap[t]"></button>
+                </template>
+            </div>
+        </div>
+
+        <!-- List -->
+        <ul class="flex-1 overflow-y-auto scroller pr-1 space-y-1">
+            <template x-for="(item, index) in ranks[rankTab]?.slice(0, 8)" :key="index">
+                <li class="relative overflow-hidden rounded-xl group transition-all duration-300 hover:bg-white/[0.02]">
+                    <!-- 进度条背景 - 纯背景逻辑 -->
+                    <div class="absolute inset-y-0 left-0 z-0 bg-amber-500/[0.08] transition-all duration-500 ease-out" 
+                         :style="`width: ${Math.max(2, (item.value / (ranks[rankTab]?.[0]?.value || 1)) * 100)}%`"></div>
+                    
+                    <!-- 内容层 - 浮于上方 -->
+                    <div class="relative z-10 flex items-center justify-between w-full px-3 py-2.5">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-6 shrink-0 flex justify-center items-center" x-html="getRankBadgeHtml('active', index)"></div>
+                            <span class="truncate text-xs font-semibold text-zinc-300 group-hover:text-white transition-colors" x-text="item.name"></span>
+                            <div class="flex gap-1 shrink-0">
+                                <template x-for="(grp, gIdx) in getUserGroups(item.name)" :key="gIdx">
+                                    <span class="rounded-full bg-amber-500/10 text-amber-500/90 text-[9px] font-bold px-1.5 py-0.5 whitespace-nowrap" x-text="'#' + grp"></span>
+                                </template>
+                            </div>
+                        </div>
+                        
+                        <!-- 时长数据 - 强对齐 -->
+                        <div class="shrink-0 font-mono text-xs font-bold tabular-nums text-right ml-4 tracking-tight" 
+                             :class="index === 0 ? 'text-amber-400' : (index === 1 ? 'text-zinc-300' : (index === 2 ? 'text-orange-300/90' : 'text-zinc-500'))" 
+                             x-text="formatTime(item.value)"></div>
+                    </div>
+                </li>
+            </template>
+            <!-- Empty State -->
+            <li x-show="!ranks[rankTab]?.length" class="flex flex-col items-center justify-center h-40 opacity-40">
+                <i class="fas fa-inbox mb-2"></i>
+                <span class="text-[10px] font-bold uppercase tracking-widest">No Data Available</span>
+            </li>
+        </ul>
+    </div>
+    
+    <!-- Channel Rank (热门频道) -->
+    <div class="glass-card p-5 flex flex-col h-[420px] scroll-fade-wrapper border border-white/5 shadow-2xl">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-5 pb-3 border-b border-neutral-100/10 dark:border-neutral-700/30">
+            <div class="flex items-center gap-3">
+                <div class="p-2 rounded-lg bg-sky-500/10">
+                    <i :class="getSectionIcon('channel')" class="text-xl" :style="`color: ${getSectionIconColor('channel')}`"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-base text-neutral-800 dark:text-neutral-100 tracking-tight">热门频道</h3>
+                    <p class="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Top Channels</p>
+                </div>
+            </div>
+            <div class="flex p-1 bg-black/20 rounded-lg">
+                <template x-for="t in ['week', 'month']">
+                    <button @click="channelTab = t" 
+                            :class="channelTab === t ? 'text-sky-400 bg-white/10 shadow-sm' : 'text-neutral-500 hover:text-neutral-300'"
+                            class="px-3 py-1 rounded-md text-[10px] font-bold transition-all duration-200 uppercase" x-text="tabMap[t]"></button>
+                </template>
+            </div>
+        </div>
+
+        <!-- List -->
+        <ul class="flex-1 overflow-y-auto scroller pr-1 space-y-1">
+            <template x-for="(item, index) in channels[channelTab]?.slice(0, 8)" :key="index">
+                <li class="relative overflow-hidden rounded-xl group transition-all duration-300 hover:bg-white/[0.02]">
+                    <!-- 进度条背景 -->
+                    <div class="absolute inset-y-0 left-0 z-0 bg-sky-500/[0.08] transition-all duration-500 ease-out" 
+                         :style="`width: ${channels[channelTab]?.[0]?.value ? Math.max(2, (item.value / channels[channelTab][0].value) * 100) : 0}%`"></div>
+                    
+                    <div class="relative z-10 flex items-center justify-between w-full px-3 py-2.5">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-6 shrink-0 flex justify-center items-center" x-html="getRankBadgeHtml('channel', index)"></div>
+                            <span class="truncate text-xs font-semibold text-zinc-300 group-hover:text-white transition-colors" x-text="item.name"></span>
+                            <div class="flex gap-1 shrink-0">
+                                <span x-show="index === 0" class="rounded-full bg-red-500/10 text-red-500/90 text-[9px] font-bold px-1.5 py-0.5 whitespace-nowrap">Hot</span>
+                            </div>
+                        </div>
+                        <div class="shrink-0 font-mono text-xs font-bold tabular-nums text-right ml-4 tracking-tight" 
+                             :class="index === 0 ? 'text-sky-400' : 'text-zinc-500'" 
+                             x-text="item.value >= 60 ? (item.value / 60).toFixed(1) + 'h' : item.value + 'm'"></div>
+                    </div>
+                </li>
+            </template>
+        </ul>
+    </div>
+</div>
+
+
+
+
+<!-- Hall of Fame -->
+<div class="relative w-full rounded-2xl bg-white/70 dark:bg-neutral-900/70 backdrop-blur-xl border border-neutral-200/60 dark:border-neutral-700/50 shadow-sm p-6 overflow-hidden">
+
+    <!-- Header Section -->
+    <div class="flex items-end justify-between mb-5">
+        <div class="flex items-center gap-3">
+            <i :class="getSectionIcon('honor')" class="text-2xl" :style="`color: ${getSectionIconColor('honor')}; filter: drop-shadow(0 0 8px ${getSectionIconColor('honor')}40)`"></i>
+            <div>
+                <h3 class="font-bold text-lg text-neutral-800 dark:text-neutral-100 tracking-tight leading-none">荣誉殿堂</h3>
+                <p class="text-xs text-neutral-400">Hall of Fame</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div x-show="!weeklyChampion || !streakChallenge || !onlineTimeGroups" class="w-full flex flex-col items-center justify-center py-12 gap-3" x-cloak>
+        <i class="ph-duotone ph-spinner-gap animate-spin text-amber-500 text-2xl"></i>
+        <span class="text-xs text-neutral-400 font-bold tracking-widest uppercase">Loading...</span>
+    </div>
+
+    <!-- Main Grid -->
+    <div x-show="weeklyChampion && streakChallenge && onlineTimeGroups" 
+         class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start" x-cloak>
+
+        <!-- 左列 -->
+        <div class="lg:col-span-7 flex flex-col gap-4" x-ref="leftCol">
+            <!-- 1. 周冠军卡片 -->
+            <div class="group relative rounded-xl bg-neutral-50/80 dark:bg-neutral-800/50 border border-neutral-200/80 dark:border-neutral-700/60 p-5 flex items-center gap-4 overflow-hidden transition-all duration-300 hover:shadow-md">
+                <i class="ph-fill ph-crown absolute -right-4 -bottom-4 text-[6rem] -rotate-12 pointer-events-none" style="color: #fbbf24; opacity: 0.12"></i>
+                
+                <!-- 头像框 -->
+                <div class="shrink-0">
+                    <i class="ph-fill ph-trophy text-4xl" style="color: #fbbf24; filter: drop-shadow(0 0 8px #fbbf2440)"></i>
+                </div>
+
+                <!-- 核心数据 -->
+                <div class="flex-1 min-w-0 z-10 flex flex-col justify-center">
+                    <div class="inline-flex items-center gap-1.5 mb-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span class="text-xs font-bold text-amber-600 dark:text-amber-500 tracking-wider uppercase">活跃大佬本周魁首</span>
+                    </div>
+                    <div class="text-lg font-black text-neutral-800 dark:text-white truncate" x-text="weeklyChampion?.current_champion?.name || '虚位以待'"></div>
+                    <div class="inline-flex w-max items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-200/50 dark:bg-neutral-700/50 text-xs font-bold text-neutral-600 dark:text-neutral-300">
+                        <i class="ph-bold ph-map-pin text-[10px]"></i>
+                        <span x-text="weeklyChampion?.server_group_name || '全服统计'"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 连续在线 -->
+            <div class="flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <i :class="getSectionIcon('streak')" class="text-lg" :style="`color: ${getSectionIconColor('streak')}`"></i>
+                        <span class="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">连续在线</span>
+                    </div>
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded text-neutral-400 border border-neutral-200 dark:border-neutral-700" x-text="streakChallenge?.total_participants + '人'"></span>
+                </div>
+                
+                <!-- 三列卡片 -->
+                <div class="flex gap-2 sm:gap-3">
+                    <template x-for="(user, idx) in streakChallenge?.top3?.slice(0, 3) || []" :key="idx">
+                        <div class="group relative flex-1 min-w-0 flex flex-col justify-between p-3 sm:p-4 rounded-xl bg-white dark:bg-neutral-800/80 border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm cursor-pointer"
+                             :class="idx === 0 ? 'border-orange-200 dark:border-orange-800/60' : 'border-neutral-200/80 dark:border-neutral-700/50'">
+                            
+                            <div class="flex justify-between items-start mb-2 sm:mb-3">
+                                <span class="text-xl sm:text-2xl font-black tracking-tighter"
+                                      :class="idx === 0 ? 'text-orange-500' : 'text-neutral-400'">
+                                    #<span x-text="idx + 1"></span>
+                                </span>
+                                <div class="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center"
+                                     x-html="getRankBadgeHtml('streak', idx)">
+                                </div>
+                            </div>
+                            
+                            <div class="min-w-0">
+                                <div class="text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-200 truncate" x-text="user.nickname"></div>
+                                <div class="flex items-baseline gap-0.5 sm:gap-1">
+                                    <span class="text-base sm:text-lg font-black" :class="idx === 0 ? 'text-orange-500' : 'text-neutral-700 dark:text-neutral-100'" x-text="user.streak"></span>
+                                    <span class="text-[9px] sm:text-[10px] font-bold text-neutral-400">天</span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右列 - 时长成就（独立滚动） -->
+        <div class="lg:col-span-5 flex flex-col" x-data="{ showAllLevels: false, collapsedH: 0, expandedH: 0 }"
+             x-effect="if(onlineTimeGroups?.levels && !collapsedH) { $nextTick(() => { const items = $refs.achievementsList?.querySelectorAll(':scope > .group'); if(items?.length > 3) { let h = 0; for(let i = 0; i < 3; i++) { h += items[i].offsetHeight; } h += 8 * 2 + 7; collapsedH = h; let fh = 0; for(const it of items) fh += it.offsetHeight; fh += 8 * (items.length - 1); const lc = $el.closest('.grid')?.querySelector('[x-ref=leftCol]'); if(lc) { const hdr = $refs.achievementsList.previousElementSibling; expandedH = Math.min(fh, lc.offsetHeight - (hdr ? hdr.offsetHeight + 12 : 0)); } else { expandedH = fh; } } }) }">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <i :class="getSectionIcon('time')" class="text-lg" :style="`color: ${getSectionIconColor('time')}`"></i>
+                    <span class="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">时长成就</span>
+                </div>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded text-neutral-400 border border-neutral-200 dark:border-neutral-700" x-text="onlineTimeGroups?.levels?.filter(l => l.has_group && l.user_count > 0)?.length + '级'"></span>
+            </div>
+
+            <!-- 成就列表 - 带过渡的展开/收起 -->
+            <div class="space-y-2 pr-1 overflow-hidden transition-[max-height] duration-500 ease-in-out
+                        [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-neutral-300/80 dark:[&::-webkit-scrollbar-thumb]:bg-neutral-600/80 [&::-webkit-scrollbar-thumb]:rounded-full"
+                 :class="showAllLevels ? 'overflow-y-auto' : ''"
+                 :style="collapsedH ? 'max-height:' + (showAllLevels && expandedH ? expandedH : collapsedH) + 'px' : ''"
+                 x-ref="achievementsList">
+
+                <template x-for="(level, idx) in onlineTimeGroups?.levels?.filter(l => l.has_group && l.user_count > 0)?.reverse() || []" :key="idx">
+                    <div class="group cursor-pointer flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200 hover:shadow-sm"
+                         :class="idx === 0 ? 'bg-amber-50/80 dark:bg-amber-900/15 border border-amber-200/80 dark:border-amber-700/40' : (idx < 3 ? 'bg-neutral-50/80 dark:bg-neutral-800/40 border border-neutral-200/60 dark:border-neutral-700/40' : 'bg-neutral-50/50 dark:bg-neutral-800/25 border border-neutral-200/40 dark:border-neutral-700/30')"
+                         @click.stop="openLevelUsersModalByHours(level.hours)">
+                        <div class="w-8 h-8 flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 duration-200"
+                             x-html="getRankBadgeHtml('honor', idx)">
+                        </div>
+                        <span class="flex-1 text-sm font-bold truncate"
+                              :class="idx === 0 ? 'text-amber-700 dark:text-amber-400' : (idx < 3 ? 'text-neutral-700 dark:text-neutral-200' : 'text-neutral-500 dark:text-neutral-400')"
+                              x-text="level.server_group_name"></span>
+                        <span class="text-xs font-bold"
+                              :class="idx === 0 ? 'text-amber-600 dark:text-amber-500' : 'text-neutral-400'"
+                              x-text="level.user_count + '人'"></span>
+                    </div>
+                </template>
+
+                <!-- 空状态 -->
+                <div x-show="!onlineTimeGroups?.levels?.filter(l => l.has_group && l.user_count > 0)?.length" class="w-full flex flex-col items-center justify-center py-8 opacity-50">
+                    <i class="ph-duotone ph-ghost text-2xl mb-1"></i>
+                    <span class="text-xs font-bold tracking-widest uppercase">暂无数据</span>
+                </div>
+            </div>
+
+            <!-- 展开按钮 - 展开后隐藏 -->
+            <template x-if="(onlineTimeGroups?.levels?.filter(l => l.has_group && l.user_count > 0)?.length || 0) > 3">
+                <button x-show="!showAllLevels" @click="showAllLevels = true"
+                        class="shrink-0 mt-2 w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
+                    <span x-text="'还有 ' + (onlineTimeGroups.levels.filter(l => l.has_group && l.user_count > 0).length - 3) + ' 个等级'"></span>
+                    <i class="ph-bold ph-caret-down text-[10px]"></i>
+                </button>
+            </template>
+        </div>
+
+    </div>
+</div>
+                <!-- Elastic Channels Panel -->
+                <div class="glass-card p-6">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="flex items-center gap-3">
+                            <i :class="getSectionIcon('elastic')" class="text-2xl" :style="`color: ${getSectionIconColor('elastic')}; filter: drop-shadow(0 0 8px ${getSectionIconColor('elastic')}40)`"></i>
+                            <div>
+                                <h3 class="font-bold text-lg text-neutral-800 dark:text-neutral-100 flex items-center gap-2">
+                                    弹性频道
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 font-bold">动态扩容</span>
+                                </h3>
+                                <p class="text-xs text-neutral-400">Elastic Channels</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Elastic Channels Content -->
+                    <div class="space-y-4">
+                        <!-- Loading State: 首次加载中 -->
+                        <div x-show="!elasticChannels && loading" class="flex items-center justify-center py-8">
+                            <i class="ph-duotone ph-spinner-gap animate-spin text-cyan-500 text-2xl"></i>
+                        </div>
+                    
+                        <!-- Unavailable: 加载完成但数据为空（缓存未生成/TS3 不可达） -->
+                        <div x-show="!elasticChannels && !loading" class="text-center py-8 text-neutral-400">
+                            <i class="ph-duotone ph-warning-circle text-4xl mb-2 text-amber-500"></i>
+                            <p class="text-sm">弹性频道数据暂不可用</p>
+                            <p class="text-xs mt-1 text-neutral-500">请等待定时任务刷新缓存</p>
+                        </div>
+                    
+                        <!-- Empty State -->
+                        <div x-show="elasticChannels && (!elasticChannels.groups || elasticChannels.groups.length === 0)" 
+                             class="text-center py-8 text-neutral-400">
+                            <i class="ph-duotone ph-empty text-4xl mb-2"></i>
+                            <p class="text-sm">暂无弹性频道组</p>
+                        </div>
+                        
+                        <!-- Groups List -->
+                        <template x-for="(group, idx) in (elasticChannels?.groups || [])" :key="idx">
+                            <div class="p-4 rounded-xl bg-white/50 dark:bg-neutral-800/50 border border-white/60 dark:border-neutral-700 hover:border-cyan-200 dark:hover:border-cyan-800 transition-colors">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
+                                            <i class="ph-fill ph-folder-open text-sm"></i>
+                                        </div>
+                                        <div>
+                                            <h4 class="font-bold text-neutral-700 dark:text-neutral-200" x-text="group.parent_name"></h4>
+                                            <p class="text-xs text-neutral-400">
+                                                前缀: <span class="font-mono text-cyan-500" x-text="group.child_prefix"></span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <!-- Load Bar -->
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-24 h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
+                                                <div class="h-full rounded-full transition-all duration-500" 
+                                                     :class="getLoadColor(group.load_percent)"
+                                                     :style="`width: ${Math.min(100, group.load_percent)}%`"></div>
+                                            </div>
+                                            <span class="text-xs font-bold" :class="getLoadTextColor(group.load_percent)" x-text="group.load_percent + '%'"></span>
+                                        </div>
+                                        <button @click="confirmDeleteElasticGroup(idx)" 
+                                                class="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-neutral-400 hover:text-red-500 transition-colors hidden">
+                                            <i class="ph-bold ph-trash text-sm"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Channel Details -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-700">
+                                    <div class="text-center p-2 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
+                                        <div class="text-lg font-black text-neutral-700 dark:text-neutral-200" x-text="group.channels?.length || 0"></div>
+                                        <div class="text-[10px] text-neutral-400 font-bold">频道数</div>
+                                    </div>
+                                    <div class="text-center p-2 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
+                                        <div class="text-lg font-black text-cyan-500" x-text="group.users || 0"></div>
+                                        <div class="text-[10px] text-neutral-400 font-bold">在线用户</div>
+                                    </div>
+                                    <div class="text-center p-2 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
+                                        <div class="text-lg font-black text-neutral-700 dark:text-neutral-200" x-text="group.capacity || 0"></div>
+                                        <div class="text-[10px] text-neutral-400 font-bold">总容量</div>
+                                    </div>
+                                    <div class="text-center p-2 rounded-lg bg-neutral-50 dark:bg-neutral-900/50">
+                                        <div class="text-lg font-black text-amber-500" x-text="(group.channels?.filter(c => c.is_auto)?.length || 0)"></div>
+                                        <div class="text-[10px] text-neutral-400 font-bold">自动创建</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Sub Channels -->
+                                <div x-show="group.channels?.length > 0" class="mt-3 flex flex-wrap gap-1.5">
+                                    <template x-for="ch in group.channels" :key="ch.name">
+                                        <div class="px-2 py-1 rounded-md text-xs font-bold border transition-colors"
+                                             :class="ch.is_auto ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400' : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'">
+                                            <i class="ph-fill text-[10px]" :class="ch.is_auto ? 'ph-magic-wand' : 'ph-hash'"></i>
+                                            <span x-text="ch.name"></span>
+                                            <span class="text-neutral-400">(<span x-text="ch.users"></span>/<span x-text="ch.max_clients > 0 ? ch.max_clients : '∞'"></span>)</span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        
+                        <!-- Summary -->
+                        <div x-show="elasticChannels?.summary" class="p-4 rounded-xl bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/10 dark:to-blue-900/10 border border-cyan-100 dark:border-cyan-800/50">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2 text-sm font-bold text-cyan-700 dark:text-cyan-400">
+                                    <i class="ph-fill ph-chart-pie"></i>
+                                    总体负载
+                                </div>
+                                <div class="flex items-center gap-4 text-sm">
+                                    <span class="text-neutral-500">频道组: <span class="font-bold text-neutral-700 dark:text-neutral-200" x-text="elasticChannels?.summary?.total_groups || 0"></span></span>
+                                    <span class="text-neutral-500">总频道: <span class="font-bold text-neutral-700 dark:text-neutral-200" x-text="elasticChannels?.summary?.total_channels || 0"></span></span>
+                                    <span class="font-black" :class="getLoadTextColor(elasticChannels?.summary?.overall_load || 0)" x-text="(elasticChannels?.summary?.overall_load || 0) + '%'"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Donation Channel Entry -->
+                <div class="glass-card p-6 group hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="flex items-center gap-3">
+                            <i :class="getSectionIcon('donate')" class="text-2xl group-hover:scale-110 transition-transform duration-200" :style="`color: ${getSectionIconColor('donate')}; filter: drop-shadow(0 0 8px ${getSectionIconColor('donate')}40)`"></i>
+                            <div>
+                                <h3 class="font-bold text-lg text-neutral-800 dark:text-neutral-100 flex items-center gap-2">
+                                    捐赠频道
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-bold">专属特权</span>
+                                </h3>
+                                <p class="text-xs text-neutral-400">Donation Channel</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 border border-amber-100 dark:border-amber-800/50">
+                        <div class="flex items-start gap-4">
+                            <div class="shrink-0">
+                                <i class="ph-fill ph-crown text-4xl" style="color: #fb923c; filter: drop-shadow(0 0 8px #fb923c40)"></i>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-bold text-neutral-800 dark:text-white mb-1">创建专属频道</h4>
+                                <ul class="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
+                                    <li class="flex items-center gap-1.5">
+                                        <i class="ph-fill ph-check-circle text-emerald-500"></i>
+                                        <span>1年有效期</span>
+                                    </li>
+                                    <li class="flex items-center gap-1.5">
+                                        <i class="ph-fill ph-check-circle text-emerald-500"></i>
+                                        <span>Opus Music 最高音质</span>
+                                    </li>
+                                    <li class="flex items-center gap-1.5">
+                                        <i class="ph-fill ph-check-circle text-emerald-500"></i>
+                                        <span>自定义频道名称</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <a href="/donate" 
+                           class="mt-4 w-full px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-center shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 group/btn">
+                            <i class="ph-bold ph-rocket-launch group-hover/btn:animate-bounce"></i>
+                            <span>立即捐赠</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Relation Graph -->
+                <!-- 移动端隐藏 -->
+                
+            </div>
+
+            <!-- Right Column (Realtime) -->
+            <aside class="lg:col-span-4 relative">
+                <div class="glass-card flex flex-col sticky top-6 overflow-hidden max-h-[calc(100vh-3rem)]">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center p-4 border-b border-neutral-100 dark:border-neutral-700/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 flex items-center justify-center text-emerald-500">
+                                <i class="ph-fill ph-users-three text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-lg text-neutral-800 dark:text-neutral-100 flex items-center gap-2">
+                                    实时在线
+                                    <span class="relative flex h-2 w-2">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    </span>
+                                </h3>
+                                <span class="text-xs text-neutral-400">Live Monitor</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
+                            <i class="ph-fill ph-users text-sm"></i>
+                            <span class="font-mono font-bold" x-text="realtimeList.length || 0"></span>
+                        </div>
+                    </div>
+                                
+                    <!-- User List -->
+                    <div class="flex-1 overflow-y-auto scroller p-4 space-y-2">
+                        <template x-for="(user, idx) in realtimeList" :key="idx">
+                            <div class="group flex items-center gap-3 p-3 rounded-xl bg-white/60 dark:bg-neutral-800/40 border border-white/80 dark:border-neutral-700/50 hover:border-emerald-200 dark:hover:border-emerald-800/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-default">
+                                                    
+                                <!-- Avatar -->
+                                <div class="relative shrink-0 transition-transform group-hover:scale-110 duration-200"
+                                     x-html="getOnlineAvatarHtml(user.nickname)">
+                                </div>
+                                                    
+                                <!-- User Info -->
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-bold truncate max-w-[120px] text-neutral-700 dark:text-neutral-200"
+                                              x-text="user.nickname"></span>
+                                        <!-- Server Group Tag -->
+                                        <template x-for="(grp, gIdx) in (user.groups || []).slice(0, 1)" :key="gIdx">
+                                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-900/30"
+                                                  x-text="'#' + grp"></span>
+                                        </template>
+                                    </div>
+                                    <div class="text-xs text-neutral-400 truncate mt-0.5" x-text="user.channel"></div>
+                                </div>
+                            </div>
+                        </template>
+                                    
+                        <!-- Empty State -->
+                        <div x-show="realtimeList.length === 0" class="flex flex-col items-center justify-center py-16">
+                            <div class="w-16 h-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-4">
+                                <i class="ph-duotone ph-moon-stars text-3xl text-neutral-300 dark:text-neutral-600"></i>
+                            </div>
+                            <p class="text-sm font-bold text-neutral-400 dark:text-neutral-500">静谧时刻</p>
+                            <p class="text-xs text-neutral-300 dark:text-neutral-600 mt-1">等待第一位用户上线...</p>
+                        </div>
+                    </div>
+                                
+                    <!-- Footer -->
+                    <div x-show="realtimeList.length > 0" class="px-4 py-3 border-t border-neutral-100 dark:border-neutral-700/50 bg-neutral-50/50 dark:bg-neutral-900/50">
+                        <div class="flex items-center justify-between text-xs text-neutral-400">
+                            <div class="flex items-center gap-1">
+                                <i class="ph-fill ph-clock text-xs"></i>
+                                <span>实时更新中</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <span class="relative flex h-1.5 w-1.5">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                </span>
+                                <span class="text-emerald-500 font-medium">Live</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+        
+        <footer class="mt-16 mb-8 text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/40 dark:bg-neutral-800/40 border border-white/40 dark:border-white/5 backdrop-blur text-xs font-bold text-neutral-400 hover:text-primary-600 dark:hover:text-white transition-colors cursor-default">
+                <span>© 2026</span>
+                <i class="ph-fill ph-heart text-accent-500 animate-pulse"></i>
+                <span>Nanodesu</span>
+            </div>
+        </footer>
+    </div></div>
+    
+    <!-- Add Elastic Group Modal -->
+    <div x-cloak
+         x-show="showElasticModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeElasticModal()">
+        <div class="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6 border-b border-neutral-100 dark:border-neutral-800">
+                <h3 class="text-xl font-black text-neutral-800 dark:text-white flex items-center gap-2">
+                    <i class="ph-fill ph-plus-circle text-cyan-500"></i>
+                    添加弹性频道组
+                </h3>
+                <p class="text-xs text-neutral-400 mt-1">配置新的动态扩容频道组</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Admin Password First -->
+                <div class="p-4 rounded-xl bg-cyan-50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-shield-check text-cyan-500"></i>
+                        管理密码
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="password" x-model="elasticPassword" placeholder="输入管理密码"
+                               class="flex-1 px-4 py-3 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-cyan-500 focus:ring-0 transition-colors text-sm">
+                        <button @click="verifyElasticPassword()" 
+                                class="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-bold transition-colors flex items-center gap-2"
+                                :disabled="!elasticPassword">
+                            <i class="ph-bold ph-key"></i>
+                            验证
+                        </button>
+                    </div>
+                    <p class="text-xs text-cyan-600 dark:text-cyan-400 mt-1">输入密码后点击验证以继续配置</p>
+                </div>
+                
+                <!-- Config Form (show after password verified) -->
+                <template x-if="elasticPasswordVerified">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">父频道名称</label>
+                            <input type="text" x-model="elasticNewGroup.parent_name" placeholder="例如：英雄联盟大厅"
+                                   class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-cyan-500 focus:ring-0 transition-colors text-sm">
+                            <p class="text-xs text-neutral-400 mt-1">必须与 TS3 中的频道名称完全一致</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">子频道前缀</label>
+                            <input type="text" x-model="elasticNewGroup.child_prefix" placeholder="例如：LOL"
+                                   class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-cyan-500 focus:ring-0 transition-colors text-sm">
+                            <p class="text-xs text-neutral-400 mt-1">匹配 LOL#1, LOL#2 等频道</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">最大用户数</label>
+                                <input type="number" x-model="elasticNewGroup.default_max_clients" min="-1"
+                                       class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-cyan-500 focus:ring-0 transition-colors text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">空置超时(分钟)</label>
+                                <input type="number" x-model="elasticNewGroup.empty_timeout" min="1"
+                                       class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-cyan-500 focus:ring-0 transition-colors text-sm">
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                
+                <div x-show="elasticPasswordError" class="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+                    <i class="ph-bold ph-warning-circle"></i>
+                    <span x-text="elasticPasswordError"></span>
+                </div>
+            </div>
+            <div class="p-6 bg-neutral-50 dark:bg-neutral-800/50 flex justify-end gap-3">
+                <button @click="closeElasticModal()" class="px-5 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 font-bold transition-colors">
+                    取消
+                </button>
+                <button @click="addElasticGroup()" 
+                        x-show="elasticPasswordVerified"
+                        class="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-bold shadow-lg transition-colors flex items-center gap-2">
+                    <i class="ph-bold ph-plus"></i>
+                    添加
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirm Modal -->
+    <div x-cloak
+         x-show="showElasticDeleteConfirm" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="showElasticDeleteConfirm = false">
+        <div class="w-full max-w-sm bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden">
+            <div class="p-6 text-center">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-500">
+                    <i class="ph-fill ph-trash text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-black text-neutral-800 dark:text-white mb-2">确认删除</h3>
+                <p class="text-sm text-neutral-500">删除后该频道组将停止自动扩容</p>
+            </div>
+            <div class="px-6 pb-4">
+                <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">输入管理密码确认</label>
+                <input type="password" x-model="elasticPassword" placeholder="管理密码"
+                       class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-red-500 focus:ring-0 transition-colors text-sm">
+                <div x-show="elasticPasswordError" class="mt-2 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs">
+                    <span x-text="elasticPasswordError"></span>
+                </div>
+            </div>
+            <div class="p-6 bg-neutral-50 dark:bg-neutral-800/50 flex justify-center gap-3">
+                <button @click="showElasticDeleteConfirm = false; elasticPassword = ''" class="px-5 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 font-bold transition-colors">
+                    取消
+                </button>
+                <button @click="deleteElasticGroup()" class="px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold shadow-lg transition-colors flex items-center gap-2">
+                    <i class="ph-bold ph-trash"></i>
+                    删除
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Online Time Groups Config Modal -->
+    <div x-cloak
+         x-show="showOnlineTimeModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeOnlineTimeModal()">
+        <div class="w-full max-w-2xl bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden max-h-[90vh] flex flex-col"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6 border-b border-neutral-100 dark:border-neutral-800 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10">
+                <h3 class="text-xl font-black text-neutral-800 dark:text-white flex items-center gap-2">
+                    <i class="ph-fill ph-hourglass-medium text-amber-500"></i>
+                    时长成就配置
+                </h3>
+                <p class="text-xs text-neutral-400 mt-1">根据累计在线时长自动分配服务器组</p>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto flex-1">
+                <!-- Admin Password First -->
+                <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-shield-check text-amber-500"></i>
+                        管理密码
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="password" x-model="onlineTimePassword" placeholder="输入管理密码"
+                               class="flex-1 px-4 py-3 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-amber-500 focus:ring-0 transition-colors text-sm">
+                        <button @click="loadOnlineTimeServerGroups()" 
+                                class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold transition-colors flex items-center gap-2"
+                                :disabled="!onlineTimePassword">
+                            <i class="ph-bold ph-key"></i>
+                            加载配置
+                        </button>
+                    </div>
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">输入密码后点击加载配置以获取服务器组列表</p>
+                </div>
+                
+                <!-- Enable Toggle -->
+                <div class="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800" x-show="onlineTimeServerGroups.length > 0">
+                    <div class="flex items-center gap-3">
+                        <i class="ph-fill ph-power text-lg" :class="onlineTimeConfig.enabled ? 'text-emerald-500' : 'text-neutral-400'"></i>
+                        <span class="font-bold text-neutral-700 dark:text-neutral-200">启用时长成就奖励</span>
+                    </div>
+                    <button @click="onlineTimeConfig.enabled = !onlineTimeConfig.enabled"
+                            class="relative w-12 h-6 rounded-full transition-colors"
+                            :class="onlineTimeConfig.enabled ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-600'">
+                        <span class="absolute w-5 h-5 bg-white rounded-full top-0.5 transition-all shadow"
+                              :class="onlineTimeConfig.enabled ? 'left-6' : 'left-0.5'"></span>
+                    </button>
+                </div>
+                
+                <!-- Levels Configuration -->
+                <div x-show="onlineTimeServerGroups.length > 0">
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300">
+                            <i class="ph-fill ph-list-numbers text-amber-500"></i>
+                            等级配置 <span class="text-amber-500 font-normal" x-text="'(' + onlineTimeConfig.levels.length + ' 个等级)'"></span>
+                        </label>
+                        <button @click="onlineTimeConfig.levels.push({ hours: '', server_group_id: '', server_group_name: '', _key: ++onlineTimeLevelKey })" class="px-3 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 text-xs font-bold transition-colors">
+                            <i class="ph-bold ph-plus"></i> 添加等级
+                        </button>
+                    </div>
+                    <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                        <template x-for="(level, idx) in onlineTimeConfig.levels" :key="level._key">
+                            <div class="flex items-center gap-2 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 group">
+                                <span class="text-xs font-bold text-neutral-400 w-6 text-center" x-text="idx + 1"></span>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <input type="number" x-model.number="level.hours" min="1" placeholder="小时"
+                                           class="w-20 px-2 py-2 rounded-lg bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 focus:border-amber-500 focus:ring-0 transition-colors text-sm text-center font-bold">
+                                    <span class="text-xs text-neutral-400 font-bold">h</span>
+                                </div>
+                                <select x-model="level.server_group_id"
+                                        @change="updateOnlineTimeLevelName(idx)"
+                                        class="flex-1 px-3 py-2 rounded-lg bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 focus:border-amber-500 focus:ring-0 transition-colors text-sm min-w-0">
+                                    <option value="">选择服务器组...</option>
+                                    <template x-for="group in onlineTimeServerGroups" :key="group.sgid">
+                                        <option :value="String(group.sgid)" :selected="String(group.sgid) === String(level.server_group_id)" x-text="group.name"></option>
+                                    </template>
+                                </select>
+                                <button @click="onlineTimeConfig.levels.splice(idx, 1)" class="p-1.5 rounded-lg text-neutral-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100" title="删除此等级">
+                                    <i class="ph-bold ph-trash text-sm"></i>
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <div x-show="onlineTimeConfig.levels.length === 0" class="p-6 text-center text-neutral-400 text-sm">
+                        暂无等级，点击上方「添加等级」开始配置
+                    </div>
+                </div>
+                
+                <!-- Check Interval -->
+                <div x-show="onlineTimeServerGroups.length > 0">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-clock text-amber-500"></i>
+                        检测周期（小时）
+                    </label>
+                    <input type="number" x-model="onlineTimeConfig.check_interval_hours" min="1" max="168"
+                           class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-amber-500 focus:ring-0 transition-colors text-sm">
+                    <p class="text-xs text-neutral-400 mt-1">每隔多少小时检测一次用户时长（默认6小时）</p>
+                </div>
+                
+                <!-- Error Message -->
+                <div x-show="onlineTimePasswordError" class="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+                    <i class="ph-bold ph-warning-circle"></i>
+                    <span x-text="onlineTimePasswordError"></span>
+                </div>
+            </div>
+            <div class="p-6 bg-neutral-50 dark:bg-neutral-800/50 flex justify-between gap-3">
+                <button @click="manualCheckOnlineTime()" 
+                        x-show="onlineTimeServerGroups.length > 0"
+                        class="px-4 py-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-bold transition-colors flex items-center gap-2"
+                        :disabled="onlineTimeSaving">
+                    <i class="ph-bold ph-arrows-clockwise" :class="{'animate-spin': onlineTimeSaving}"></i>
+                    手动检测
+                </button>
+                <div x-show="onlineTimeServerGroups.length === 0"></div>
+                <div class="flex gap-3">
+                    <button @click="closeOnlineTimeModal()" class="px-5 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 font-bold transition-colors">
+                        取消
+                    </button>
+                    <button @click="saveOnlineTimeConfig()" 
+                            x-show="onlineTimeServerGroups.length > 0"
+                            class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-lg transition-colors flex items-center gap-2"
+                            :disabled="onlineTimeSaving">
+                        <i class="ph-bold ph-floppy-disk"></i>
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Weekly Champion Config Modal -->
+    <div x-cloak
+         x-show="showChampionModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeChampionModal()">
+        <div class="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6 border-b border-neutral-100 dark:border-neutral-800">
+                <h3 class="text-xl font-black text-neutral-800 dark:text-white flex items-center gap-2">
+                    <i class="ph-fill ph-trophy text-2xl" style="color: #fbbf24; filter: drop-shadow(0 0 6px #fbbf2440)"></i>
+                    周冠军奖励配置
+                </h3>
+                <p class="text-xs text-neutral-400 mt-1">每周活跃榜第一名自动获得服务器组奖励</p>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Admin Password First -->
+                <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-shield-check text-amber-500"></i>
+                        管理密码
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="password" x-model="championPassword" placeholder="输入管理密码"
+                               class="flex-1 px-4 py-3 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-amber-500 focus:ring-0 transition-colors text-sm">
+                        <button @click="loadServerGroups()" 
+                                class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold transition-colors flex items-center gap-2"
+                                :disabled="!championPassword">
+                            <i class="ph-bold ph-key"></i>
+                            加载配置
+                        </button>
+                    </div>
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">输入密码后点击加载配置以获取服务器组列表</p>
+                </div>
+                
+                <!-- Enable Toggle -->
+                <div class="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800" x-show="championServerGroups.length > 0">
+                    <div class="flex items-center gap-3">
+                        <i class="ph-fill ph-power text-lg" :class="championConfig.enabled ? 'text-emerald-500' : 'text-neutral-400'"></i>
+                        <span class="font-bold text-neutral-700 dark:text-neutral-200">启用周冠军奖励</span>
+                    </div>
+                    <button @click="championConfig.enabled = !championConfig.enabled"
+                            class="relative w-12 h-6 rounded-full transition-colors"
+                            :class="championConfig.enabled ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-600'">
+                        <span class="absolute w-5 h-5 bg-white rounded-full top-0.5 transition-all shadow"
+                              :class="championConfig.enabled ? 'left-6' : 'left-0.5'"></span>
+                    </button>
+                </div>
+                
+                <!-- Server Group Select -->
+                <div x-show="championServerGroups.length > 0">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-users-three text-amber-500"></i>
+                        奖励头衔组
+                    </label>
+                    <select x-model="championConfig.server_group_id"
+                            @change="updateSelectedGroupName()"
+                            class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-amber-500 focus:ring-0 transition-colors text-sm">
+                        <option value="">请选择服务器组</option>
+                        <template x-for="group in championServerGroups" :key="group.sgid">
+                            <option :value="group.sgid" x-text="group.name"></option>
+                        </template>
+                    </select>
+                    <p class="text-xs text-neutral-400 mt-1">选择奖励给周冠军的服务器组</p>
+                </div>
+                
+                <!-- Check Interval -->
+                <div x-show="championServerGroups.length > 0">
+                    <label class="block text-sm font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+                        <i class="ph-fill ph-clock text-amber-500"></i>
+                        检测周期（小时）
+                    </label>
+                    <input type="number" x-model="championConfig.check_interval_hours" min="1" max="168"
+                           class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-amber-500 focus:ring-0 transition-colors text-sm">
+                    <p class="text-xs text-neutral-400 mt-1">每隔多少小时检测一次周冠军（默认24小时，即1天）</p>
+                </div>
+                
+                <!-- Error Message -->
+                <div x-show="championPasswordError" class="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+                    <i class="ph-bold ph-warning-circle"></i>
+                    <span x-text="championPasswordError"></span>
+                </div>
+            </div>
+            <div class="p-6 bg-neutral-50 dark:bg-neutral-800/50 flex justify-between gap-3">
+                <button @click="manualCheckChampion()" 
+                        x-show="championServerGroups.length > 0"
+                        class="px-4 py-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-bold transition-colors flex items-center gap-2"
+                        :disabled="championSaving">
+                    <i class="ph-bold ph-arrows-clockwise" :class="{'animate-spin': championSaving}"></i>
+                    手动检测
+                </button>
+                <div x-show="championServerGroups.length === 0"></div>
+                <div class="flex gap-3">
+                    <button @click="closeChampionModal()" class="px-5 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 font-bold transition-colors">
+                        取消
+                    </button>
+                    <button @click="saveChampionConfig()" 
+                            x-show="championServerGroups.length > 0"
+                            class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-lg transition-colors flex items-center gap-2"
+                            :disabled="championSaving">
+                        <i class="ph-bold ph-floppy-disk"></i>
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Honor Hall Modal -->
+    <div x-cloak
+         x-show="showHonorModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeHonorModal()">
+        <div class="w-full max-w-2xl bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-5 border-b border-neutral-100 dark:border-neutral-800 bg-gradient-to-r from-yellow-50/50 to-amber-50/50 dark:from-yellow-900/10 dark:to-amber-900/10">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="shrink-0">
+                            <i class="ph-fill ph-trophy text-3xl" style="color: #fbbf24; filter: drop-shadow(0 0 8px #fbbf2440)"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-black text-neutral-800 dark:text-white">时长成就荣誉榜</h3>
+                            <p class="text-xs text-neutral-400">Honor Hall of Online Time</p>
+                        </div>
+                    </div>
+                    <button @click="closeHonorModal()" class="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                        <i class="ph-bold ph-x text-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-5">
+                <!-- Loading -->
+                <div x-show="honorLoading" class="flex items-center justify-center py-12">
+                    <i class="ph-duotone ph-spinner-gap animate-spin text-yellow-500 text-3xl"></i>
+                </div>
+                
+                <!-- Not Enabled -->
+                <div x-show="!honorLoading && honorData && !honorData.enabled" class="text-center py-12">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400">
+                        <i class="ph-duotone ph-hourglass text-3xl"></i>
+                    </div>
+                    <p class="text-neutral-400">时长成就功能未启用</p>
+                </div>
+                
+                <!-- Honor List -->
+                <div x-show="!honorLoading && honorData && honorData.enabled" class="space-y-4">
+                    <!-- Summary -->
+                    <div class="p-4 rounded-xl bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 border border-yellow-200 dark:border-yellow-800/50 flex items-center justify-between">
+                        <div>
+                            <div class="text-sm text-yellow-600 dark:text-yellow-400 font-bold">总计达成</div>
+                            <div class="text-xs text-neutral-500">已有用户解锁成就</div>
+                        </div>
+                        <div class="text-3xl font-black text-yellow-600 dark:text-yellow-400" x-text="honorData?.total_achieved || 0"></div>
+                    </div>
+                    
+                    <!-- Levels Grid -->
+                    <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                        <template x-for="(level, levelIdx) in (honorData?.levels || [])" :key="levelIdx">
+                            <div class="rounded-xl border overflow-hidden"
+                                 :class="level.users.length > 0 ? 'bg-white dark:bg-neutral-800/50 ' + getLevelBorderColor(levelIdx) : 'bg-neutral-50 dark:bg-neutral-800/30 border-neutral-200 dark:border-neutral-700 opacity-60'">
+                                <!-- Level Header -->
+                                <div class="flex items-center gap-2 p-3"
+                                     :class="getLevelHonorHeaderStyle(levelIdx)">
+                                    <div class="w-8 h-8 rounded-lg flex items-center justify-center"
+                                         :class="getLevelIconStyle(levelIdx)">
+                                        <i class="ph-fill text-sm" :class="getLevelIcon(levelIdx)"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-bold text-sm truncate" :class="getLevelAccentColor(levelIdx)" x-text="level.name"></div>
+                                        <div class="text-[10px] text-neutral-400" x-text="level.hours + '小时'"></div>
+                                    </div>
+                                    <div class="text-lg font-black" :class="getLevelAccentColor(levelIdx)" x-text="level.users.length"></div>
+                                </div>
+                                
+                                <!-- Users Preview -->
+                                <div class="px-3 pb-3">
+                                    <div x-show="level.users.length > 0" class="flex flex-wrap gap-1">
+                                        <template x-for="(user, userIdx) in level.users.slice(0, 4)" :key="userIdx">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 truncate max-w-[80px]" x-text="user.nickname"></span>
+                                        </template>
+                                        <span x-show="level.users.length > 4" class="text-[10px] text-neutral-400">+<span x-text="level.users.length - 4"></span></span>
+                                    </div>
+                                    <div x-show="level.users.length === 0" class="text-[10px] text-neutral-400">暂无用户</div>
+                                </div>
+                                <!-- Bar -->
+                                <div class="h-0.5" :class="level.users.length > 0 ? getLevelBarColor(levelIdx) : 'bg-neutral-200 dark:bg-neutral-700'"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Level Users Modal -->
+    <div x-cloak
+         x-show="showLevelUsersModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeLevelUsersModal()">
+        <div class="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <!-- Header -->
+            <div class="p-5 border-b border-neutral-100 dark:border-neutral-800" :class="getLevelHonorHeaderStyle(selectedLevelIdx)">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-11 h-11 rounded-xl flex items-center justify-center"
+                             :class="getLevelIconStyle(selectedLevelIdx)">
+                            <i class="ph-fill text-lg" :class="getLevelIcon(selectedLevelIdx)"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-black text-neutral-800 dark:text-white" x-text="selectedLevelData?.name || '加载中...'"></h3>
+                            <p class="text-xs text-neutral-400" x-text="selectedLevelData ? selectedLevelData.hours + '小时成就' : ''"></p>
+                        </div>
+                    </div>
+                    <button @click="closeLevelUsersModal()" class="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                        <i class="ph-bold ph-x text-lg"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-5">
+                <!-- Loading -->
+                <div x-show="levelUsersLoading" class="flex items-center justify-center py-8">
+                    <i class="ph-duotone ph-spinner-gap animate-spin text-2xl" :class="getLevelAccentColor(selectedLevelIdx)"></i>
+                </div>
+                
+                <!-- Users List -->
+                <div x-show="!levelUsersLoading && selectedLevelData">
+                    <div x-show="selectedLevelData?.users?.length > 0" class="space-y-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-1">
+                        <template x-for="(user, idx) in selectedLevelData?.users || []" :key="idx">
+                            <div class="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700">
+                                <span class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black"
+                                     :class="idx < 3 ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500'"
+                                     x-text="idx + 1"></span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm font-bold text-neutral-700 dark:text-neutral-200 truncate" x-text="user.nickname"></div>
+                                </div>
+                                <span class="text-sm font-mono font-bold" :class="getLevelAccentColor(selectedLevelIdx)" x-text="user.hours + 'h'"></span>
+                            </div>
+                        </template>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div x-show="selectedLevelData?.users?.length === 0" class="text-center py-8">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400">
+                            <i class="ph-duotone ph-users text-3xl"></i>
+                        </div>
+                        <p class="text-neutral-400 text-sm">暂无用户达成此等级</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="px-5 py-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-neutral-500">共 <span class="font-bold" :class="getLevelAccentColor(selectedLevelIdx)" x-text="selectedLevelData?.users?.length || 0"></span> 人达成</span>
+                    <button @click="closeLevelUsersModal()" class="px-4 py-2 rounded-xl text-white text-sm font-bold transition-colors"
+                            :class="getLevelButtonStyle(selectedLevelIdx)">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tutorial Modal -->
+    <div x-cloak
+         x-show="showTutorialModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="showTutorialModal = false">
+        <div class="w-full max-w-2xl bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden max-h-[85vh] flex flex-col"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <!-- Header -->
+            <div class="p-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-100 to-teal-50 dark:from-emerald-900/30 dark:to-teal-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                        <i class="ph-fill ph-book-open text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-black text-neutral-800 dark:text-white" x-text="tutorial?.title || '使用教程'"></h3>
+                        <p class="text-xs text-neutral-400">TeamSpeak Guide</p>
+                    </div>
+                </div>
+                <button @click="showTutorialModal = false" 
+                        class="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 flex items-center justify-center text-neutral-500 transition-colors">
+                    <i class="ph-bold ph-x"></i>
+                </button>
+            </div>
+            <!-- Content -->
+            <div class="p-6 overflow-y-auto flex-1 prose prose-sm dark:prose-invert max-w-none">
+                <div x-html="renderTutorialContent(tutorial?.content)"></div>
+            </div>
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 shrink-0">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-neutral-400" x-show="tutorial?.updated_at">
+                        <i class="ph-bold ph-clock"></i>
+                        更新于 <span x-text="tutorial?.updated_at"></span>
+                    </span>
+                    <button @click="showTutorialModal = false" 
+                            class="ml-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm transition-colors">
+                        知道了
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Admin Login Modal -->
+    <div x-cloak
+         x-show="showAdminLoginModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         @click.self="closeAdminLoginModal()">
+        <div class="w-full max-w-sm bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/60 dark:border-neutral-700 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <div class="p-6 text-center">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary-100 to-primary-50 dark:from-neutral-800 dark:to-neutral-900 flex items-center justify-center text-primary-600 dark:text-white shadow-xl">
+                    <i class="ph-fill ph-shield-check text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-black text-neutral-800 dark:text-white mb-2">进入后台</h3>
+                <p class="text-sm text-neutral-400">请输入管理密码验证身份</p>
+            </div>
+            <div class="px-6 pb-4">
+                <input type="password" x-model="adminPassword" placeholder="管理密码"
+                       @keydown.enter="loginToAdmin()"
+                       class="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:border-primary-500 focus:ring-0 transition-colors text-sm text-center">
+                <div x-show="adminLoginError" class="mt-3 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs text-center">
+                    <i class="ph-bold ph-warning-circle"></i>
+                    <span x-text="adminLoginError"></span>
+                </div>
+            </div>
+            <div class="p-6 bg-neutral-50 dark:bg-neutral-800/50 flex justify-center gap-3">
+                <button @click="closeAdminLoginModal()" class="px-5 py-2.5 rounded-xl bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 font-bold transition-colors">
+                    取消
+                </button>
+                <button @click="loginToAdmin()" 
+                        class="px-5 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 dark:bg-white dark:hover:bg-neutral-100 text-white dark:text-neutral-900 font-bold shadow-lg transition-colors flex items-center gap-2"
+                        :disabled="adminLoggingIn">
+                    <i class="ph-bold" :class="adminLoggingIn ? 'ph-spinner-gap animate-spin' : 'ph-sign-in'"></i>
+                    <span x-text="adminLoggingIn ? '验证中...' : '进入后台'"></span>
+                </button>
+            </div>
+        </div>
+
+    <script>
+(function(){
+    var b = document.body;
+    setTimeout(function(){
+        b.style.transition = 'opacity 0.3s ease';
+        b.offsetHeight;
+        b.style.opacity = '';
+        b.classList.add('vt-ready');
+    }, 50);
+
+    if (document.startViewTransition) return;
+    b.addEventListener('click', function(e){
+        var a = e.target.closest('a');
+        if (!a || e.metaKey || e.ctrlKey || e.shiftKey || a.target === '_blank') return;
+        var h = a.getAttribute('href');
+        if (!h || h.charAt(0) === '#' || h.indexOf('javascript:') === 0) return;
+        var u;
+        try { u = new URL(h, location.origin); } catch(_) { return; }
+        if (u.origin !== location.origin) return;
+        var p = u.pathname.replace(/\/+$/,'') || '/';
+        if (['/', '/profile', '/donate', '/guestbook'].indexOf(p) === -1) return;
+        e.preventDefault();
+        b.classList.add('is-exiting');
+        setTimeout(function(){ location.href = a.href; }, 130);
+    }, true);
+})();
+</script>
+    </div>
+
+    </body>
+</html>
+
