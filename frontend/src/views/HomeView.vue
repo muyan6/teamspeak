@@ -271,7 +271,7 @@ onMounted(() => void loadHomeModules());
       </section>
 
       <!-- 弹性频道 -->
-      <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="card">
+      <section v-if="visibleModules.elasticChannels && data.elastic_channels.groups.length > 0" class="card elastic-card">
         <div class="section-title">
           <span class="section-icon" style="background: rgba(34,211,238,.15); color: var(--cyan)">◈</span>
           <span>弹性频道 <span class="sub">Elastic Channels</span></span>
@@ -279,12 +279,12 @@ onMounted(() => void loadHomeModules());
         <div class="elastic-grid">
           <div v-for="g in data.elastic_channels.groups" :key="g.group.id" class="elastic-group">
             <div class="elastic-head">
-              <span class="elastic-name">{{ g.group.name }}</span>
-              <span class="elastic-stat">{{ g.totalOnline }} 在线 · {{ g.totalChannels }} 频道</span>
+              <span class="elastic-name"><i aria-hidden="true"></i>{{ g.group.name }}</span>
+              <span class="elastic-stat"><b>{{ g.totalOnline }}</b> 在线 · {{ g.totalChannels }} 频道</span>
             </div>
             <div class="elastic-channels">
               <span v-for="c in g.channels" :key="c.cid" class="elastic-channel">
-                {{ c.name }} <em>{{ c.online }}人</em>
+                <span>{{ c.name }}</span><em>{{ c.online }}人</em>
               </span>
               <span v-if="g.channels.length === 0" class="elastic-empty">暂无频道</span>
             </div>
