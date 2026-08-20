@@ -110,7 +110,9 @@ export class ElasticChannelService {
 
     for (const group of groups) {
       const prefix = group.namePrefix;
-      const members = channels.filter((c) => c.name.startsWith(prefix));
+      const members = channels.filter((c) =>
+        c.name.startsWith(prefix) && (group.baseChannelId ? c.parentId === group.baseChannelId : true)
+      );
       const fullChannels = members.filter((c) => c.totalClients >= group.createThreshold);
       const emptyChannels = members
         .filter((c) => c.totalClients <= group.deleteThreshold)

@@ -31,8 +31,12 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  if (!form.value.serverGroupId || form.value.checkIntervalHours <= 0) {
-    showNotice('请选择奖励服务器组，并填写有效检测间隔');
+  if (form.value.enabled === 1 && (!form.value.serverGroupId || form.value.serverGroupId <= 0)) {
+    showNotice('启用周冠军时必须选择奖励服务器组');
+    return;
+  }
+  if (form.value.checkIntervalHours <= 0) {
+    showNotice('请填写有效的检测周期（小时）');
     return;
   }
   try {

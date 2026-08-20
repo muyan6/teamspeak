@@ -51,19 +51,37 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       res.status(400).json({ error: '请提供昵称或 UID' });
       return;
     }
-    const clients = await deps.ts3.getClientDbList();
-    const client = findClient(clients, nickname, uid);
+    let client: ClientDatabaseData | null = null;
+    try {
+      const clients = await deps.ts3.getClientDbList();
+      client = findClient(clients, nickname, uid);
+      if (!client) {
+        const candidates = nickname ? clients
+          .filter((entry) => entry.nickname === nickname)
+          .map((entry) => ({ nickname: entry.nickname, uid: entry.uniqueIdentifier })) : [];
+        if (candidates.length > 1) {
+          res.status(409).json({ error: '存在同名用户，请从 UID 列表中选择', candidates });
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
     if (!client) {
-      const candidates = nickname ? clients
-        .filter((entry) => entry.nickname === nickname)
-        .map((entry) => ({ nickname: entry.nickname, uid: entry.uniqueIdentifier })) : [];
-      if (candidates.length > 1) {
-        res.status(409).json({ error: '存在同名用户，请从 UID 列表中选择', candidates });
+      const localStats = deps.stats.getUserStats(nickname, uid);
+      if (!localStats) {
+        res.status(404).json({ error: '未在成员数据库中找到该用户' });
         return;
       }
-      res.status(404).json({ error: '未在 TeamSpeak 成员数据库中找到该用户' });
+      const { dbid: _dbid, ...profile } = localStats;
+      res.json({
+        ...profile,
+        server_groups: [],
+      });
       return;
     }
+
     const stats = deps.stats.getUserStatsByIdentity(client);
     let serverGroups: string[] = [];
     try {
@@ -87,17 +105,13 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
     });
   }));
 
-  router.get('/stats/suggest', asyncRoute(async (req, res) => {
+  router.get('/stats/suggest', (req, res) => {
     const query = String(req.query.q || '').trim();
     if (!query) {
       res.json({ suggestions: [] });
       return;
     }
-    const normalized = query.toLocaleLowerCase();
-    const suggestions = (await deps.ts3.getClientDbList())
-      .filter((client) => client.nickname.toLocaleLowerCase().includes(normalized))
-      .slice(0, 8)
-      .map((client) => ({ nickname: client.nickname, uid: client.uniqueIdentifier }));
+    const suggestions = deps.stats.suggestNicknames(query, 8);
     res.json({ suggestions });
-  }));
+  });
 }

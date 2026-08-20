@@ -132,13 +132,11 @@ export class WeeklyChampionService {
         return { nickname: top.nickname, seconds: top.seconds, granted: false };
       }
 
-      // 先确认新冠军已获得权限，再移除旧冠军；移除失败时回滚新权限并保留旧状态供下轮重试。
+      // 先确认新冠军已获得权限，再尝试移除旧冠军；若旧冠军已退服或不在组内，记录告警并继续完成交接。
       if (cfg.lastWinnerClientDbId) {
         const removed = await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
         if (!removed) {
-          await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, clientDbId);
-          this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
-          return { nickname: top.nickname, seconds: top.seconds, granted: false };
+          console.warn(`[champion] 移除旧周冠军权限未成功（用户可能已退服或已不在组内）: dbid=${cfg.lastWinnerClientDbId}`);
         }
       }
     }

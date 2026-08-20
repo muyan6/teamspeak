@@ -386,9 +386,22 @@ export class Ts3ClientWrapper extends EventEmitter {
     }
   }
 
+  async getDefaultChannelGroupId(): Promise<number> {
+    try {
+      const info = await this.executeQuery(() => this.requireTs3().serverInfo());
+      return Number(info.virtualserverDefaultChannelGroup) || 8;
+    } catch {
+      return 8;
+    }
+  }
+
   async setClientChannelGroup(cgid: number, cid: number, clientDatabaseId: number): Promise<boolean> {
     try {
-      await this.requireTs3().setClientChannelGroup(String(cgid), String(cid), String(clientDatabaseId));
+      let targetCgid = cgid;
+      if (!targetCgid || targetCgid <= 0) {
+        targetCgid = await this.getDefaultChannelGroupId();
+      }
+      await this.requireTs3().setClientChannelGroup(String(targetCgid), String(cid), String(clientDatabaseId));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -401,6 +414,10 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().serverGroupAddClient(String(clientDatabaseId), String(sgid));
       return true;
     } catch (err) {
+      const errObj = err as { id?: number | string; message?: string };
+      if (errObj && (String(errObj.id) === '516' || /duplicate|already member/i.test(String(errObj.message)))) {
+        return true;
+      }
       this.reportError(err);
       return false;
     }
@@ -470,10 +487,13 @@ export class Ts3ClientWrapper extends EventEmitter {
     maxclients?: number;
   }): Promise<boolean> {
     try {
-      await this.requireTs3().channelEdit(String(cid), {
+      const query = this.requireTs3();
+      if (props.cpid !== undefined) {
+        await query.channelMove(String(cid), String(props.cpid));
+      }
+      await query.channelEdit(String(cid), {
         channelName: props.name,
-        cpid: props.cpid !== undefined ? String(props.cpid) : undefined,
-        channelPassword: props.password,
+        channelPassword: props.password !== undefined ? props.password : undefined,
         channelMaxclients: props.maxclients,
       });
       return true;
@@ -528,6 +548,10 @@ export class Ts3ClientWrapper extends EventEmitter {
       await this.requireTs3().serverGroupDelClient(String(clientDatabaseId), String(sgid));
       return true;
     } catch (err) {
+      const errObj = err as { id?: number | string; message?: string };
+      if (errObj && (String(errObj.id) === '517' || /not member|empty result/i.test(String(errObj.message)))) {
+        return true;
+      }
       this.reportError(err);
       return false;
     }

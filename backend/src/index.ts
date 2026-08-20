@@ -77,6 +77,11 @@ async function main(): Promise<void> {
   app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
   app.get('/api/health', (req, res) => {
+    const hostHealth = subsiteManager.getHealthForHost(req.hostname);
+    if (hostHealth) {
+      res.json(hostHealth);
+      return;
+    }
     res.json({
       ok: true,
       ts3Connected: ts3.connected,

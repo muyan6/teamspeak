@@ -192,7 +192,7 @@ onMounted(() => void loadHomeModules());
                 <span class="sublink-sep">|</span>
                 <span class="sublink-item">
                   <i class="ph-bold ph-chat-circle-dots"></i> 若不在请联系
-                  <a :href="data.site.adminSteam" target="_blank" rel="noopener" class="connect-admin-highlight">QQ</a>
+                  <a :href="data.site.adminSteam" target="_blank" rel="noopener" class="connect-admin-highlight">Steam</a>
                 </span>
               </template>
             </div>

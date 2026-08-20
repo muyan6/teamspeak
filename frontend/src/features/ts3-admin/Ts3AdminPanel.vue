@@ -54,21 +54,29 @@ async function loadClients() {
 
 async function createChannel() {
   if (!chForm.value.name.trim()) return;
-  await api.createChannel({
-    name: chForm.value.name.trim(),
-    cpid: chForm.value.cpid || undefined,
-    password: chForm.value.password || undefined,
-  });
-  chForm.value = { name: '', cpid: 0, password: '' };
-  showNotice('频道已创建');
-  await loadAll();
+  try {
+    await api.createChannel({
+      name: chForm.value.name.trim(),
+      cpid: chForm.value.cpid || undefined,
+      password: chForm.value.password || undefined,
+    });
+    chForm.value = { name: '', cpid: 0, password: '' };
+    showNotice('频道已创建');
+    await loadAll();
+  } catch (err) {
+    showNotice(`创建频道失败: ${(err as Error).message}`);
+  }
 }
 
 async function removeChannel(cid: number) {
   if (!window.confirm(`确定删除频道 #${cid} 及其所有子频道？此操作不可撤销。`)) return;
-  await api.deleteChannel(cid);
-  showNotice('频道已删除');
-  await loadAll();
+  try {
+    await api.deleteChannel(cid);
+    showNotice('频道已删除');
+    await loadAll();
+  } catch (err) {
+    showNotice(`删除频道失败: ${(err as Error).message}`);
+  }
 }
 
 function startEdit(ch: AdminChannel) {
@@ -78,73 +86,105 @@ function startEdit(ch: AdminChannel) {
 async function saveEdit() {
   if (!editing.value) return;
   const e = editing.value;
-  await api.editChannel(e.cid, {
-    name: e.name || undefined,
-    cpid: e.cpid || undefined,
-    password: e.password || undefined,
-    maxclients: e.maxclients > 0 ? e.maxclients : undefined,
-  });
-  editing.value = null;
-  showNotice('频道已更新');
-  await loadAll();
+  try {
+    await api.editChannel(e.cid, {
+      name: e.name || undefined,
+      cpid: e.cpid,
+      password: e.password,
+      maxclients: e.maxclients > 0 ? e.maxclients : undefined,
+    });
+    editing.value = null;
+    showNotice('频道已更新');
+    await loadAll();
+  } catch (err) {
+    showNotice(`更新频道失败: ${(err as Error).message}`);
+  }
 }
 
 async function kick(clid: number) {
   const c = clients.value.find((x) => x.clid === clid);
   if (!window.confirm(`确定将「${c?.nickname ?? clid}」踢出服务器？`)) return;
-  await api.kickClient(clid);
-  showNotice('已踢出');
-  await loadAll();
+  try {
+    await api.kickClient(clid);
+    showNotice('已踢出');
+    await loadAll();
+  } catch (err) {
+    showNotice(`踢出失败: ${(err as Error).message}`);
+  }
 }
 
 async function ban(c: AdminClient) {
   if (!window.confirm(`确定封禁用户「${c.nickname}」？`)) return;
   const input = window.prompt('封禁时长（秒，留空为永久）：');
   const time = input && input.trim() !== '' ? parseInt(input.trim(), 10) : undefined;
-  await api.banClient(c.clid, c.uniqueIdentifier, undefined, Number.isFinite(time) ? time : undefined);
-  showNotice('已封禁');
-  await loadAll();
+  try {
+    await api.banClient(c.clid, c.uniqueIdentifier, undefined, Number.isFinite(time) ? time : undefined);
+    showNotice('已封禁');
+    await loadAll();
+  } catch (err) {
+    showNotice(`封禁失败: ${(err as Error).message}`);
+  }
 }
 
 async function move(clid: number) {
   const cid = moveSel.value[clid];
   if (!cid) return;
   const password = window.prompt('目标频道密码（无密码请留空）：');
-  await api.moveClient(clid, cid, password && password.trim() !== '' ? password.trim() : undefined);
-  showNotice('已移动');
-  await loadAll();
+  try {
+    await api.moveClient(clid, cid, password && password.trim() !== '' ? password.trim() : undefined);
+    showNotice('已移动');
+    await loadAll();
+  } catch (err) {
+    showNotice(`移动失败: ${(err as Error).message}`);
+  }
 }
 
 async function assign(clid: number) {
   const sgid = assignSel.value[clid];
   const c = clients.value.find((x) => x.clid === clid);
   if (!sgid || !c) return;
-  await api.assignServerGroup(sgid, c.clientDatabaseId);
-  showNotice('已分配权限');
-  await loadAll();
+  try {
+    await api.assignServerGroup(sgid, c.clientDatabaseId);
+    showNotice('已分配权限');
+    await loadAll();
+  } catch (err) {
+    showNotice(`分配权限失败: ${(err as Error).message}`);
+  }
 }
 
 async function unassign(clid: number, sgid: number) {
   const c = clients.value.find((x) => x.clid === clid);
   if (!c) return;
-  await api.removeServerGroup(sgid, c.clientDatabaseId);
-  showNotice('已移除权限');
-  await loadAll();
+  try {
+    await api.removeServerGroup(sgid, c.clientDatabaseId);
+    showNotice('已移除权限');
+    await loadAll();
+  } catch (err) {
+    showNotice(`移除权限失败: ${(err as Error).message}`);
+  }
 }
 
 async function assignCg(c: AdminClient) {
   const cgid = cgSel.value[c.clid];
   if (!cgid) return;
-  await api.assignChannelGroup(cgid, c.channelId, c.clientDatabaseId);
-  showNotice(`已授予「${c.nickname}」频道组`);
-  await loadAll();
+  try {
+    await api.assignChannelGroup(cgid, c.channelId, c.clientDatabaseId);
+    showNotice(`已授予「${c.nickname}」频道组`);
+    await loadAll();
+  } catch (err) {
+    showNotice(`授予频道组失败: ${(err as Error).message}`);
+  }
 }
 
 async function removeCg(c: AdminClient) {
   if (!window.confirm(`确定移除「${c.nickname}」在频道「${c.channelName}」的频道组？`)) return;
-  await api.removeChannelGroup(c.channelId, c.clientDatabaseId);
-  showNotice('已移除频道组');
-  await loadAll();
+  try {
+    await api.removeChannelGroup(c.channelId, c.clientDatabaseId);
+    showNotice('已移除频道组');
+    await loadAll();
+  } catch (err) {
+    showNotice(`移除频道组失败: ${(err as Error).message}`);
+  }
 }
 
 function sgName(sgid: number): string {

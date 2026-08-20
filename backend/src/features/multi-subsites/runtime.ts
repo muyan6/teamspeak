@@ -153,6 +153,18 @@ export class MultiSubsiteRuntimeManager {
     return this.runtimes.get(subsite.id)?.router ?? null;
   }
 
+  getHealthForHost(host: string): { ok: boolean; ts3Connected: boolean; site: string; platform: boolean } | null {
+    const subsite = this.registry.getByHost(host);
+    if (!subsite) return null;
+    const runtime = this.runtimes.get(subsite.id);
+    return {
+      ok: true,
+      ts3Connected: runtime?.ts3.connected ?? false,
+      site: subsite.slug,
+      platform: false,
+    };
+  }
+
   isManagedSubsiteHost(host: string): boolean {
     const normalized = host.toLowerCase().replace(/\.$/, '');
     return this.registry.hasHost(normalized);

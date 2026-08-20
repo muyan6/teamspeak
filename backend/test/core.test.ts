@@ -357,6 +357,55 @@ describe('TS3 监控后端核心链路', () => {
     profileDb.close();
   });
 
+  it('正确统计用户的最长单次会话时长并过滤机器人', () => {
+    const testDb = openDatabase(':memory:');
+    const stats = new StatsService(testDb);
+    const now = Date.now();
+    const nowSec = Math.floor(now / 1000);
+    const channel = { cid: 1, parentId: 0, name: 'Lobby', totalClients: 2, totalClientsFamily: 2, order: 0 };
+
+    const human = {
+      clid: 10,
+      clientDatabaseId: 501,
+      uniqueIdentifier: 'uid-human',
+      nickname: 'RealUser',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: nowSec - 7200, // 2 hours ago
+      clientType: 0,
+    };
+    const bot = {
+      clid: 11,
+      clientDatabaseId: 502,
+      uniqueIdentifier: 'uid-bot',
+      nickname: 'MusicBot',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: nowSec - 7200,
+      clientType: 0,
+    };
+
+    // First sample (snapshot)
+    stats.recordSnapshot([human, bot], [channel], now);
+    // Second sample 30s later
+    stats.recordSnapshot([human, bot], [channel], now + 30_000);
+
+    const longest = stats.getLongestSessions(10);
+    expect(longest).toHaveLength(1);
+    expect(longest[0].nickname).toBe('RealUser');
+    expect(longest[0].seconds).toBeGreaterThanOrEqual(7230);
+
+    // Verify bot is filtered out from top users
+    const top = stats.getTopUsers('all', 10);
+    expect(top.some((u) => u.nickname.toLowerCase() === 'musicbot')).toBe(false);
+
+    testDb.close();
+  });
+
   it('同名用户在榜单中保持独立，周冠军使用榜首的数据库 ID', async () => {
     const championDb = openDatabase(':memory:');
     const stats = new StatsService(championDb);
@@ -424,21 +473,21 @@ describe('TS3 监控后端核心链路', () => {
     expect(calls).toEqual(['add', 'add']);
     expect(champion.getConfig().lastWinnerClientDbId).toBe(100);
 
-    const rollbackCalls: string[] = [];
-    const rollbackChampion = new WeeklyChampionService(championDb, {
+    const handoverCalls: string[] = [];
+    const handoverChampion = new WeeklyChampionService(championDb, {
       addClientToServerGroup: async () => {
-        rollbackCalls.push('add-new');
+        handoverCalls.push('add-new');
         return true;
       },
       removeClientFromServerGroup: async (_groupId: number, clientDbId: number) => {
-        rollbackCalls.push(`remove-${clientDbId}`);
+        handoverCalls.push(`remove-${clientDbId}`);
         return clientDbId !== 100;
       },
     } as never, stats);
-    const result = await rollbackChampion.check();
-    expect(result?.granted).toBe(false);
-    expect(rollbackCalls).toEqual(['add-new', 'remove-100', 'remove-200']);
-    expect(rollbackChampion.getConfig().lastWinnerClientDbId).toBe(100);
+    const result = await handoverChampion.check();
+    expect(result?.granted).toBe(true);
+    expect(handoverCalls).toEqual(['add-new', 'remove-100']);
+    expect(handoverChampion.getConfig().lastWinnerClientDbId).toBe(200);
     championDb.close();
   });
 

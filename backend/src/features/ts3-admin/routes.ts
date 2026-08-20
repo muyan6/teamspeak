@@ -101,7 +101,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     const ok = await deps.ts3.editChannel(cid, {
       name: name ? String(name).trim() : undefined,
       cpid: cpid !== undefined && cpid !== null ? Number.parseInt(String(cpid), 10) : undefined,
-      password: password !== undefined ? password : undefined,
+      password: password !== undefined ? String(password) : undefined,
       maxclients: maxclients !== undefined && maxclients !== null ? Number.parseInt(String(maxclients), 10) : undefined,
     });
     if (!ok) {

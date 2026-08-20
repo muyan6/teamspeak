@@ -90,8 +90,12 @@ export class StatsService {
     this.suspendedOnline.clear();
   }
 
+  private static readonly BOT_REGEX = /^(musicbot|ts3bot|sinusbot|bot|tsbot|serverquery)$|^\[bot\]/i;
+
   isBot(nickname: string): boolean {
-    return nickname.trim().toLowerCase() === 'musicbot';
+    const trimmed = nickname.trim();
+    if (!trimmed) return false;
+    return StatsService.BOT_REGEX.test(trimmed);
   }
 
   private weekStart(): number {
@@ -262,13 +266,14 @@ export class StatsService {
           now,
         });
 
-        // 机器人（Musicbot）只保留实时在线，不累计任何时长/频道/会话统计
+        // 机器人只保留实时在线，不累计任何时长/频道/会话统计
         if (this.isBot(c.nickname)) {
           this.suspendedOnline.delete(dbId);
           continue;
         }
 
         const connectedTimeSec = Math.floor(c.connectedTime);
+        const currentSessionDuration = connectedTimeSec > 0 ? Math.max(0, nowSec - connectedTimeSec) : 0;
 
         if (prev === undefined && suspended === undefined) {
           // 新上线：开启会话
@@ -288,7 +293,7 @@ export class StatsService {
               addDurationStmt.run(
                 initialDelta,
                 initialDelta,
-                initialDelta,
+                currentSessionDuration || initialDelta,
                 c.nickname,
                 c.uniqueIdentifier,
                 now,
@@ -300,7 +305,6 @@ export class StatsService {
           }
         } else if (prev !== undefined) {
           // 持续在线：累计增量
-          const connectedTimeSec = Math.floor(c.connectedTime);
           const sessionChanged = connectedTimeSec > 0 && prev.connectedTime > 0 && connectedTimeSec > prev.connectedTime;
           const deltaStartSec = sessionChanged ? connectedTimeSec : Math.floor(prev.lastSeen / 1000);
           const deltaSec = Math.max(0, nowSec - deltaStartSec);
@@ -308,7 +312,7 @@ export class StatsService {
             addDurationStmt.run(
               deltaSec,
               deltaSec,
-              deltaSec,
+              currentSessionDuration || deltaSec,
               c.nickname,
               c.uniqueIdentifier,
               now,
@@ -323,7 +327,6 @@ export class StatsService {
           }
         } else {
           // 查询连接中断后恢复：只补算断线期间，避免重复累计已结算的历史时长。
-          const connectedTimeSec = Math.floor(c.connectedTime);
           const sameConnection = connectedTimeSec <= 0 || suspended!.connectedTime <= 0 || connectedTimeSec === suspended!.connectedTime;
           const deltaStartSec = sameConnection ? Math.floor(suspended!.lastSeen / 1000) : connectedTimeSec;
           const deltaSec = Math.max(0, nowSec - deltaStartSec);
@@ -339,7 +342,7 @@ export class StatsService {
             addDurationStmt.run(
               deltaSec,
               deltaSec,
-              deltaSec,
+              currentSessionDuration || deltaSec,
               c.nickname,
               c.uniqueIdentifier,
               now,
@@ -386,8 +389,9 @@ export class StatsService {
         if (!currentIds.has(r.client_database_id)) {
           if (!this.isBot(r.nickname)) {
             const deltaSec = Math.max(0, Math.floor((now - r.last_seen) / 1000));
+            const userSessionDuration = r.connected_time > 0 ? Math.max(0, nowSec - Math.floor(r.connected_time)) : deltaSec;
             if (deltaSec > 0) {
-              addDurationStmt.run(deltaSec, deltaSec, deltaSec, r.nickname, r.unique_identifier, now, this.serverKey, r.client_database_id);
+              addDurationStmt.run(deltaSec, deltaSec, userSessionDuration || deltaSec, r.nickname, r.unique_identifier, now, this.serverKey, r.client_database_id);
               addUserDaily(r.client_database_id, r.nickname, Math.floor(r.last_seen / 1000), nowSec);
               if (r.channel_id > 0) {
                 channelStmt.run(this.serverKey, r.channel_id, r.channel_name, null, now);
@@ -724,23 +728,31 @@ export class StatsService {
 
     const selfIntervals = (
       this.db
-        .prepare(`SELECT start_time, end_time FROM sessions WHERE server_key = ? AND client_database_id IN (${placeholders})`)
+        .prepare(`SELECT start_time, end_time FROM sessions WHERE server_key = ? AND client_database_id IN (${placeholders}) ORDER BY start_time ASC`)
         .all(this.serverKey, ...selfDbids) as Array<{ start_time: number; end_time: number | null }>
     ).map((r) => ({ s: r.start_time, e: r.end_time ?? now }));
+
+    if (selfIntervals.length === 0) return [];
+
+    const minSelfStart = selfIntervals[0].s;
+    const maxSelfEnd = Math.max(...selfIntervals.map((i) => i.e));
 
     const otherRows = this.db
       .prepare(
         `SELECT client_database_id AS dbid, nickname, start_time, end_time FROM sessions
-         WHERE server_key = ? AND client_database_id NOT IN (${placeholders}) AND lower(nickname) != 'musicbot'`
+         WHERE server_key = ? AND client_database_id NOT IN (${placeholders})
+           AND start_time <= ? AND (end_time IS NULL OR end_time >= ?)`
       )
-      .all(this.serverKey, ...selfDbids) as Array<{ dbid: number; nickname: string; start_time: number; end_time: number | null }>;
+      .all(this.serverKey, ...selfDbids, maxSelfEnd, minSelfStart) as Array<{ dbid: number; nickname: string; start_time: number; end_time: number | null }>;
 
     const map = new Map<number, { name: string; seconds: number; lastMeet: number }>();
     for (const o of otherRows) {
+      if (this.isBot(o.nickname)) continue;
       const oe = o.end_time ?? now;
       let overlap = 0;
       let lastMeet = 0;
       for (const si of selfIntervals) {
+        if (si.s > oe) break;
         const start = Math.max(si.s, o.start_time);
         const end = Math.min(si.e, oe);
         if (end > start) {
@@ -758,8 +770,8 @@ export class StatsService {
 
     return [...map.entries()]
       .map(([dbid, v]) => ({ dbid, name: v.name, hours: Math.round(v.seconds / 3600), last_meet: v.lastMeet }))
-      .filter((x) => x.hours > 0)
-      .sort((a, b) => b.hours - a.hours)
+      .filter((x) => x.hours > 0 || x.last_meet > 0)
+      .sort((a, b) => b.hours - a.hours || b.last_meet - a.last_meet)
       .slice(0, 10);
   }
 

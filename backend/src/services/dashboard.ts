@@ -94,10 +94,12 @@ export class DashboardService {
     return rows.map((u) => ({ name: u.nickname, value: this.secondsToMinutes(u.seconds) }));
   }
 
-  private buildElastic(channels: Array<{ cid: number; name: string; totalClients: number }>): ElasticChannelData {
+  private buildElastic(channels: Array<{ cid: number; parentId?: number; name: string; totalClients: number }>): ElasticChannelData {
     const groups = this.elastic.listGroups().filter((g) => g.enabled === 1);
     const result = groups.map((g) => {
-      const members = channels.filter((c) => c.name.startsWith(g.namePrefix));
+      const members = channels.filter((c) =>
+        c.name.startsWith(g.namePrefix) && (g.baseChannelId ? c.parentId === g.baseChannelId : true)
+      );
       return {
         group: {
           id: g.id,
