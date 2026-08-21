@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS user_channel_activity (
   PRIMARY KEY (server_key, client_database_id, channel_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_channel_bonds (
+  server_key TEXT NOT NULL DEFAULT 'legacy',
+  user1_dbid INTEGER NOT NULL,
+  user2_dbid INTEGER NOT NULL,
+  user1_name TEXT NOT NULL,
+  user2_name TEXT NOT NULL,
+  seconds INTEGER NOT NULL DEFAULT 0,
+  last_meet INTEGER NOT NULL,
+  PRIMARY KEY (server_key, user1_dbid, user2_dbid)
+);
+CREATE INDEX IF NOT EXISTS idx_bonds_user1 ON user_channel_bonds(server_key, user1_dbid);
+CREATE INDEX IF NOT EXISTS idx_bonds_user2 ON user_channel_bonds(server_key, user2_dbid);
+
 CREATE TABLE IF NOT EXISTS elastic_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -260,7 +273,7 @@ export class AppDatabase {
 }
 
 function cleanupBotData(db: AppDatabase): void {
-  const botUids = "'/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
+  const botUids = "'JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
   try {
     db.exec(`
       DELETE FROM user_daily_activity
@@ -290,6 +303,22 @@ function cleanupBotData(db: AppDatabase): void {
            SELECT 1 FROM user_online_duration bot
            WHERE bot.server_key = user_channel_activity.server_key
              AND bot.client_database_id = user_channel_activity.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         );
+
+      DELETE FROM user_channel_bonds
+      WHERE lower(user1_name) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+         OR lower(user2_name) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+         OR EXISTS (
+           SELECT 1 FROM online_clients bot
+           WHERE bot.server_key = user_channel_bonds.server_key
+             AND (bot.client_database_id = user_channel_bonds.user1_dbid OR bot.client_database_id = user_channel_bonds.user2_dbid)
+             AND bot.unique_identifier IN (${botUids})
+         )
+         OR EXISTS (
+           SELECT 1 FROM user_online_duration bot
+           WHERE bot.server_key = user_channel_bonds.server_key
+             AND (bot.client_database_id = user_channel_bonds.user1_dbid OR bot.client_database_id = user_channel_bonds.user2_dbid)
              AND bot.unique_identifier IN (${botUids})
          );
 
@@ -489,6 +518,7 @@ export function migrateStatsSchema(db: AppDatabase): void {
     'channel_daily_activity',
     'user_daily_activity',
     'user_channel_activity',
+    'user_channel_bonds',
     'elastic_managed_channels',
     'achievement_grants',
     'champion_config',

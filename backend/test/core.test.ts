@@ -887,18 +887,62 @@ describe('TS3 监控后端核心链路', () => {
       duration.run(1, 'uid-self', '发起人', 7200, now);
       duration.run(2, 'uid-friend-1', '同名好友', 7200, now);
       duration.run(3, 'uid-friend-2', '同名好友', 7200, now);
-      const session = bondDb.prepare(
-        `INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds)
-         VALUES ('legacy', ?, ?, ?, ?, ?)`
+      const bond = bondDb.prepare(
+        `INSERT INTO user_channel_bonds (server_key, user1_dbid, user2_dbid, user1_name, user2_name, seconds, last_meet)
+         VALUES ('legacy', ?, ?, ?, ?, ?, ?)`
       );
-      session.run(1, '发起人', now - 7200, now, 7200);
-      session.run(2, '同名好友', now - 7200, now, 7200);
-      session.run(3, '同名好友', now - 7200, now, 7200);
+      bond.run(1, 2, '发起人', '同名好友', 7200, now);
+      bond.run(1, 3, '发起人', '同名好友', 7200, now);
 
       const profile = stats.getUserStats('发起人');
       expect(profile?.bond_friends).toHaveLength(2);
       expect(profile?.bond_friends.map((friend) => friend.dbid)).toEqual(expect.arrayContaining([2, 3]));
       expect(profile?.bond_friends.every((friend) => friend.hours === 2)).toBe(true);
+    } finally {
+      bondDb.close();
+    }
+  });
+
+  it('同一频道在线累积羁绊，不同频道不累积', () => {
+    const bondDb = openDatabase(':memory:');
+    try {
+      const stats = new StatsService(bondDb);
+      const t0 = 1700000000;
+      const channels = [
+        { cid: 100, name: '开黑频道A', parentId: 0 },
+        { cid: 200, name: '开黑频道B', parentId: 0 },
+      ];
+
+      // Tick 1 (t0): 用户1和用户2在频道100，用户3在频道200
+      stats.recordSnapshot(
+        [
+          { clientDatabaseId: 1, uniqueIdentifier: 'uid-1', nickname: '玩家A', serverGroupIds: [], channelId: 100, channelName: '开黑频道A', connectedTime: t0 },
+          { clientDatabaseId: 2, uniqueIdentifier: 'uid-2', nickname: '玩家B', serverGroupIds: [], channelId: 100, channelName: '开黑频道A', connectedTime: t0 },
+          { clientDatabaseId: 3, uniqueIdentifier: 'uid-3', nickname: '玩家C', serverGroupIds: [], channelId: 200, channelName: '开黑频道B', connectedTime: t0 },
+        ],
+        channels,
+        t0 * 1000
+      );
+
+      // Tick 2 (t0 + 7200s = 2小时后): 用户保持在线
+      stats.recordSnapshot(
+        [
+          { clientDatabaseId: 1, uniqueIdentifier: 'uid-1', nickname: '玩家A', serverGroupIds: [], channelId: 100, channelName: '开黑频道A', connectedTime: t0 },
+          { clientDatabaseId: 2, uniqueIdentifier: 'uid-2', nickname: '玩家B', serverGroupIds: [], channelId: 100, channelName: '开黑频道A', connectedTime: t0 },
+          { clientDatabaseId: 3, uniqueIdentifier: 'uid-3', nickname: '玩家C', serverGroupIds: [], channelId: 200, channelName: '开黑频道B', connectedTime: t0 },
+        ],
+        channels,
+        (t0 + 7200) * 1000
+      );
+
+      const profileA = stats.getUserStats('玩家A');
+      expect(profileA?.bond_friends).toHaveLength(1);
+      expect(profileA?.bond_friends[0].dbid).toBe(2);
+      expect(profileA?.bond_friends[0].name).toBe('玩家B');
+      expect(profileA?.bond_friends[0].hours).toBe(2);
+
+      const profileC = stats.getUserStats('玩家C');
+      expect(profileC?.bond_friends).toHaveLength(0);
     } finally {
       bondDb.close();
     }

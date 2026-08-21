@@ -92,6 +92,7 @@ export class StatsService {
   }
 
   public static readonly EXCLUDED_BOT_UIDS = new Set<string>([
+    'JcFykcZk6oyuE0AbyNsy5+/JPho=',
     '/4MNT/c3KE4sXuRGHedmmnFDZYc=',
     '+NEl0Wet9jWYFKwoBGLgV78cAzs=',
     'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
@@ -244,6 +245,15 @@ export class StatsService {
           channel_name = excluded.channel_name,
           seconds = seconds + excluded.seconds
       `);
+      const bondUpsertStmt = this.db.prepare(`
+        INSERT INTO user_channel_bonds (server_key, user1_dbid, user2_dbid, user1_name, user2_name, seconds, last_meet)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(server_key, user1_dbid, user2_dbid) DO UPDATE SET
+          user1_name = excluded.user1_name,
+          user2_name = excluded.user2_name,
+          seconds = seconds + excluded.seconds,
+          last_meet = excluded.last_meet
+      `);
 
       const splitByDay = (startSec: number, endSec: number, add: (day: string, seconds: number) => void): void => {
         let cursor = Math.max(0, startSec);
@@ -265,6 +275,7 @@ export class StatsService {
       };
 
       const currentIds = new Set<number>();
+      const channelClientsMap = new Map<number, Array<{ dbId: number; nickname: string; deltaSec: number }>>();
       const nowSec = Math.floor(now / 1000);
 
       for (const c of clients) {
@@ -291,6 +302,7 @@ export class StatsService {
           this.db.prepare('DELETE FROM user_daily_activity WHERE server_key = ? AND client_database_id = ?').run(this.serverKey, dbId);
           this.db.prepare('DELETE FROM user_online_duration WHERE server_key = ? AND client_database_id = ?').run(this.serverKey, dbId);
           this.db.prepare('DELETE FROM user_channel_activity WHERE server_key = ? AND client_database_id = ?').run(this.serverKey, dbId);
+          this.db.prepare('DELETE FROM user_channel_bonds WHERE server_key = ? AND (user1_dbid = ? OR user2_dbid = ?)').run(this.serverKey, dbId, dbId);
           this.db.prepare('DELETE FROM sessions WHERE server_key = ? AND client_database_id = ?').run(this.serverKey, dbId);
           continue;
         }
@@ -414,6 +426,37 @@ export class StatsService {
             channelAddStmt.run(channelDeltaSec, now, this.serverKey, c.channelId);
             addChannelDaily(c.channelId, c.channelName, channelStartSec, nowSec);
             userChannelStmt.run(this.serverKey, dbId, c.nickname, c.channelId, c.channelName, channelDeltaSec);
+
+            let list = channelClientsMap.get(c.channelId);
+            if (!list) {
+              list = [];
+              channelClientsMap.set(c.channelId, list);
+            }
+            list.push({ dbId, nickname: c.nickname, deltaSec: channelDeltaSec });
+          }
+        }
+      }
+
+      // 同一频道羁绊累加（仅非机器人且两人以上）
+      for (const [, members] of channelClientsMap) {
+        if (members.length < 2) continue;
+        for (let i = 0; i < members.length; i++) {
+          for (let j = i + 1; j < members.length; j++) {
+            const u1 = members[i];
+            const u2 = members[j];
+            if (u1.dbId === u2.dbId) continue;
+            const sharedSec = Math.min(u1.deltaSec, u2.deltaSec);
+            if (sharedSec <= 0) continue;
+            const [first, second] = u1.dbId < u2.dbId ? [u1, u2] : [u2, u1];
+            bondUpsertStmt.run(
+              this.serverKey,
+              first.dbId,
+              second.dbId,
+              first.nickname,
+              second.nickname,
+              sharedSec,
+              nowSec
+            );
           }
         }
       }
@@ -522,11 +565,11 @@ export class StatsService {
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND client_database_id NOT IN (
                SELECT client_database_id FROM user_online_duration
-               WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              )
              AND client_database_id NOT IN (
                SELECT client_database_id FROM online_clients
-               WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              )
            GROUP BY client_database_id
            ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -538,7 +581,7 @@ export class StatsService {
         `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
          FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
@@ -550,7 +593,7 @@ export class StatsService {
       .prepare(
         `SELECT nickname, longest_session_seconds as seconds FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY longest_session_seconds DESC LIMIT ?`
       )
@@ -566,11 +609,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
          GROUP BY client_database_id`
       )
@@ -699,6 +742,12 @@ export class StatsService {
         this.db.prepare(
           'UPDATE sessions SET nickname = ? WHERE server_key = ? AND client_database_id = ?'
         ),
+        this.db.prepare(
+          'UPDATE user_channel_bonds SET user1_name = ? WHERE server_key = ? AND user1_dbid = ?'
+        ),
+        this.db.prepare(
+          'UPDATE user_channel_bonds SET user2_name = ? WHERE server_key = ? AND user2_dbid = ?'
+        ),
       ];
 
       for (const client of clients) {
@@ -708,6 +757,8 @@ export class StatsService {
         updated += statements[2].run(client.nickname, this.serverKey, client.clientDatabaseId).changes;
         updated += statements[3].run(client.nickname, this.serverKey, client.clientDatabaseId).changes;
         updated += statements[4].run(client.nickname, this.serverKey, client.clientDatabaseId).changes;
+        statements[5].run(client.nickname, this.serverKey, client.clientDatabaseId);
+        statements[6].run(client.nickname, this.serverKey, client.clientDatabaseId);
       }
       return updated;
     });
@@ -739,11 +790,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
          GROUP BY client_database_id
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -786,7 +837,7 @@ export class StatsService {
         .prepare(
           `SELECT nickname, unique_identifier as uid FROM user_online_duration
            WHERE server_key = ? AND nickname LIKE ?
-             AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND nickname != ''
            ORDER BY nickname, total_seconds DESC LIMIT ?`
@@ -805,58 +856,39 @@ export class StatsService {
   }
 
   private getBondFriends(clientDatabaseId: number): Array<{ dbid: number; name: string; hours: number; last_meet: number }> {
-    const selfDbids = [clientDatabaseId];
+    const rows = this.db
+      .prepare(`
+        SELECT
+          CASE WHEN b.user1_dbid = ? THEN b.user2_dbid ELSE b.user1_dbid END AS dbid,
+          COALESCE(u.nickname, CASE WHEN b.user1_dbid = ? THEN b.user2_name ELSE b.user1_name END) AS name,
+          b.seconds,
+          b.last_meet
+        FROM user_channel_bonds b
+        LEFT JOIN user_online_duration u
+          ON u.server_key = b.server_key
+         AND u.client_database_id = (CASE WHEN b.user1_dbid = ? THEN b.user2_dbid ELSE b.user1_dbid END)
+        WHERE b.server_key = ? AND (b.user1_dbid = ? OR b.user2_dbid = ?)
+        ORDER BY b.seconds DESC, b.last_meet DESC
+        LIMIT 10
+      `)
+      .all(
+        clientDatabaseId,
+        clientDatabaseId,
+        clientDatabaseId,
+        this.serverKey,
+        clientDatabaseId,
+        clientDatabaseId
+      ) as Array<{ dbid: number; name: string; seconds: number; last_meet: number }>;
 
-    const now = Math.floor(Date.now() / 1000);
-    const placeholders = selfDbids.map(() => '?').join(',');
-
-    const selfIntervals = (
-      this.db
-        .prepare(`SELECT start_time, end_time FROM sessions WHERE server_key = ? AND client_database_id IN (${placeholders}) ORDER BY start_time ASC`)
-        .all(this.serverKey, ...selfDbids) as Array<{ start_time: number; end_time: number | null }>
-    ).map((r) => ({ s: r.start_time, e: r.end_time ?? now }));
-
-    if (selfIntervals.length === 0) return [];
-
-    const minSelfStart = selfIntervals[0].s;
-    const maxSelfEnd = Math.max(...selfIntervals.map((i) => i.e));
-
-    const otherRows = this.db
-      .prepare(
-        `SELECT client_database_id AS dbid, nickname, start_time, end_time FROM sessions
-         WHERE server_key = ? AND client_database_id NOT IN (${placeholders})
-           AND start_time <= ? AND (end_time IS NULL OR end_time >= ?)`
-      )
-      .all(this.serverKey, ...selfDbids, maxSelfEnd, minSelfStart) as Array<{ dbid: number; nickname: string; start_time: number; end_time: number | null }>;
-
-    const map = new Map<number, { name: string; seconds: number; lastMeet: number }>();
-    for (const o of otherRows) {
-      if (this.isBot(o.nickname)) continue;
-      const oe = o.end_time ?? now;
-      let overlap = 0;
-      let lastMeet = 0;
-      for (const si of selfIntervals) {
-        if (si.s > oe) break;
-        const start = Math.max(si.s, o.start_time);
-        const end = Math.min(si.e, oe);
-        if (end > start) {
-          overlap += end - start;
-          lastMeet = Math.max(lastMeet, end);
-        }
-      }
-      if (overlap <= 0) continue;
-      const cur = map.get(o.dbid) ?? { name: o.nickname, seconds: 0, lastMeet: 0 };
-      cur.name = o.nickname;
-      cur.seconds += overlap;
-      cur.lastMeet = Math.max(cur.lastMeet, lastMeet);
-      map.set(o.dbid, cur);
-    }
-
-    return [...map.entries()]
-      .map(([dbid, v]) => ({ dbid, name: v.name, hours: Math.round(v.seconds / 3600), last_meet: v.lastMeet }))
-      .filter((x) => x.hours > 0 || x.last_meet > 0)
-      .sort((a, b) => b.hours - a.hours || b.last_meet - a.last_meet)
-      .slice(0, 10);
+    return rows
+      .filter((r) => !this.isBot(r.name))
+      .map((r) => ({
+        dbid: r.dbid,
+        name: r.name,
+        hours: Math.round(r.seconds / 3600),
+        last_meet: r.last_meet,
+      }))
+      .filter((x) => x.hours > 0 || x.last_meet > 0);
   }
 
   getTopChannels(range: 'week' | 'month' | 'all', limit = 10): Array<{ channelName: string; memberSeconds: number }> {
