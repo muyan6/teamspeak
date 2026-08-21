@@ -176,6 +176,51 @@ describe('TS3 监控后端核心链路', () => {
     }
   });
 
+  it('启动时清理机器人数据不会影响其他服务器相同 DBID 的正常用户', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ts3-bot-cleanup-'));
+    const dbPath = join(dir, 'stats.db');
+    const botUid = 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=';
+    let cleanupDb: AppDatabase | undefined;
+    try {
+      cleanupDb = openDatabase(dbPath);
+      const now = Math.floor(Date.now() / 1000);
+      cleanupDb.prepare(
+        `INSERT INTO online_clients (
+          server_key, client_database_id, unique_identifier, nickname,
+          servergroup_ids, channel_id, channel_name, connected_time, last_seen
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('server-a', 7, botUid, 'CustomMusicPlayer', '1', 1, '大厅', now - 60, now);
+      cleanupDb.prepare(
+        `INSERT INTO user_online_duration (
+          server_key, client_database_id, unique_identifier, nickname,
+          total_seconds, week_seconds, longest_session_seconds, last_updated
+        ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)`
+      ).run('server-b', 7, 'uid-human', '正常用户', 3600, now);
+      cleanupDb.prepare(
+        'INSERT INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)'
+      ).run('server-b', 7, '正常用户', '2026-08-21', 3600);
+      cleanupDb.prepare(
+        'INSERT INTO user_channel_activity (server_key, client_database_id, nickname, channel_id, channel_name, seconds) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run('server-b', 7, '正常用户', 1, '大厅', 3600);
+      cleanupDb.prepare(
+        'INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run('server-b', 7, '正常用户', now - 3600, now, 3600);
+      cleanupDb.prepare(
+        'INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)'
+      ).run('server-b', 7, 1, now);
+      cleanupDb.close();
+      cleanupDb = openDatabase(dbPath);
+
+      expect(cleanupDb.prepare("SELECT COUNT(*) AS count FROM user_daily_activity WHERE server_key = 'server-b'").get()).toEqual({ count: 1 });
+      expect(cleanupDb.prepare("SELECT COUNT(*) AS count FROM user_channel_activity WHERE server_key = 'server-b'").get()).toEqual({ count: 1 });
+      expect(cleanupDb.prepare("SELECT COUNT(*) AS count FROM sessions WHERE server_key = 'server-b'").get()).toEqual({ count: 1 });
+      expect(cleanupDb.prepare("SELECT COUNT(*) AS count FROM achievement_grants WHERE server_key = 'server-b'").get()).toEqual({ count: 1 });
+    } finally {
+      cleanupDb?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('指定虚拟服务器 ID 时按 SID 选择，并隔离统计数据键', async () => {
     const sidMock = new MockTs3Server(10014);
     const sidClient = new Ts3ClientWrapper({
@@ -976,8 +1021,11 @@ describe('TS3 监控后端核心链路', () => {
   });
 
   it('数据归档与转储能正确迁移超期数据至归档库并支持完整恢复', () => {
-    const mainDb = openDatabase(':memory:');
     const archiveDbFile = path.resolve(process.cwd(), 'scratch_test_archive.db');
+    if (fs.existsSync(archiveDbFile)) {
+      try { fs.unlinkSync(archiveDbFile); } catch {}
+    }
+    const mainDb = openDatabase(':memory:');
     const stats = new StatsService(mainDb);
 
     const nowSec = Math.floor(Date.now() / 1000);

@@ -384,44 +384,46 @@ export class AchievementService {
         );
 
         if (qualifies && !alreadyGranted) {
-          let groupGranted = true;
+          let ts3Ok = true;
           if (level.serverGroupId > 0) {
             try {
-              groupGranted = await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
+              ts3Ok = await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
-              groupGranted = false;
               console.warn(`[achievement] 授予 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
+              ts3Ok = false;
             }
           }
-          if (!groupGranted) continue;
 
-          this.db
-            .prepare(
-              `INSERT OR IGNORE INTO achievement_grants
-                (server_key, client_database_id, level_id, granted_at)
-               VALUES (?, ?, ?, ?)`
-            )
-            .run(serverKey, user.clientDatabaseId, level.id, Date.now());
+          if (ts3Ok) {
+            this.db
+              .prepare(
+                `INSERT OR IGNORE INTO achievement_grants
+                  (server_key, client_database_id, level_id, granted_at)
+                 VALUES (?, ?, ?, ?)`
+              )
+              .run(serverKey, user.clientDatabaseId, level.id, Date.now());
 
-          results.push({ nickname: user.nickname, title: level.title, granted: true });
+            results.push({ nickname: user.nickname, title: level.title, granted: true });
+          }
         } else if (!qualifies && alreadyGranted) {
           // 条件提高或不再满足，回收成就
-          let groupRemoved = true;
+          let ts3Ok = true;
           if (level.serverGroupId > 0) {
             try {
-              groupRemoved = await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
+              ts3Ok = await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
-              groupRemoved = false;
               console.warn(`[achievement] 移除 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
+              ts3Ok = false;
             }
           }
-          if (!groupRemoved) continue;
 
-          this.db
-            .prepare(
-              'DELETE FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
-            )
-            .run(serverKey, user.clientDatabaseId, level.id);
+          if (ts3Ok) {
+            this.db
+              .prepare(
+                'DELETE FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
+              )
+              .run(serverKey, user.clientDatabaseId, level.id);
+          }
         }
       }
 
@@ -439,44 +441,46 @@ export class AchievementService {
         );
 
         if (qualifies && !alreadyGranted) {
-          let groupGranted = true;
+          let ts3Ok = true;
           if (badge.serverGroupId > 0) {
             try {
-              groupGranted = await this.ts3.addClientToServerGroup(badge.serverGroupId, user.clientDatabaseId);
+              ts3Ok = await this.ts3.addClientToServerGroup(badge.serverGroupId, user.clientDatabaseId);
             } catch (err) {
-              groupGranted = false;
               console.warn(`[achievement] 授予 TS3 勋章服务器组异常: badge=${badge.name}, dbid=${user.clientDatabaseId}`, err);
+              ts3Ok = false;
             }
           }
-          if (!groupGranted) continue;
 
-          this.db
-            .prepare(
-              `INSERT OR IGNORE INTO badge_grants
-                (server_key, client_database_id, badge_id, granted_at)
-               VALUES (?, ?, ?, ?)`
-            )
-            .run(serverKey, user.clientDatabaseId, badge.id, Date.now());
+          if (ts3Ok) {
+            this.db
+              .prepare(
+                `INSERT OR IGNORE INTO badge_grants
+                  (server_key, client_database_id, badge_id, granted_at)
+                 VALUES (?, ?, ?, ?)`
+              )
+              .run(serverKey, user.clientDatabaseId, badge.id, Date.now());
 
-          results.push({ nickname: user.nickname, title: badge.name, granted: true });
+            results.push({ nickname: user.nickname, title: badge.name, granted: true });
+          }
         } else if (!qualifies && alreadyGranted) {
-          // 条件提高或不再满足，回收勋章与服务器组
-          let groupRemoved = true;
+          // 不再满足条件（如连续在线中断），回收勋章
+          let ts3Ok = true;
           if (badge.serverGroupId > 0) {
             try {
-              groupRemoved = await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
+              ts3Ok = await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
             } catch (err) {
-              groupRemoved = false;
               console.warn(`[achievement] 移除 TS3 勋章服务器组异常: badge=${badge.name}, dbid=${user.clientDatabaseId}`, err);
+              ts3Ok = false;
             }
           }
-          if (!groupRemoved) continue;
 
-          this.db
-            .prepare(
-              'DELETE FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?'
-            )
-            .run(serverKey, user.clientDatabaseId, badge.id);
+          if (ts3Ok) {
+            this.db
+              .prepare(
+                'DELETE FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?'
+              )
+              .run(serverKey, user.clientDatabaseId, badge.id);
+          }
         }
       }
     }
@@ -489,7 +493,8 @@ export class AchievementService {
       `SELECT COUNT(DISTINCT g.client_database_id) as cnt
        FROM achievement_grants g
        JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
-       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')`
+       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')`
     ).get(this.stats.getServerKey()) as {
       cnt: number;
     };
@@ -505,25 +510,27 @@ export class AchievementService {
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
          WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
       .all(this.stats.getServerKey()) as Array<{ nickname: string; title: string; hours: number }>;
   }
 
   /** 获取指定成就等级的已获得成员列表 */
-  getLevelUsers(levelId: number): Array<{ nickname: string; uniqueIdentifier: string; clientDatabaseId: number; hours: number; grantedAt: number }> {
+  getLevelUsers(levelId: number): Array<{ nickname: string; clientDatabaseId: number; uniqueIdentifier: string; hours: number; grantedAt: number }> {
     const serverKey = this.stats.getServerKey();
     return this.db
       .prepare(
-        `SELECT u.nickname as nickname, u.unique_identifier as uniqueIdentifier, u.client_database_id as clientDatabaseId,
+        `SELECT u.nickname as nickname, u.client_database_id as clientDatabaseId, u.unique_identifier as uniqueIdentifier,
                 ROUND(u.total_seconds / 3600.0, 1) as hours, g.granted_at as grantedAt
          FROM achievement_grants g
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY u.total_seconds DESC, g.granted_at ASC`
       )
-      .all(serverKey, levelId) as Array<{ nickname: string; uniqueIdentifier: string; clientDatabaseId: number; hours: number; grantedAt: number }>;
+      .all(serverKey, levelId) as Array<{ nickname: string; clientDatabaseId: number; uniqueIdentifier: string; hours: number; grantedAt: number }>;
   }
 
   /** 主页荣誉殿堂公开汇总数据 */
@@ -537,6 +544,7 @@ export class AchievementService {
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
          WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC
          LIMIT 1`
       )
@@ -545,7 +553,7 @@ export class AchievementService {
     const levels = this.db
       .prepare(
         `SELECT l.id as id, l.title as title, l.hours as hours,
-                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=') THEN g.client_database_id END) as unlockedCount
+                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=') AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery') THEN g.client_database_id END) as unlockedCount
          FROM achievement_levels l
          LEFT JOIN achievement_grants g ON g.level_id = l.id AND g.server_key = ?
          LEFT JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id

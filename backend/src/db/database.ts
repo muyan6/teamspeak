@@ -259,6 +259,78 @@ export class AppDatabase {
   }
 }
 
+function cleanupBotData(db: AppDatabase): void {
+  const botUids = "'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
+  try {
+    db.exec(`
+      DELETE FROM user_daily_activity
+      WHERE lower(nickname) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+         OR EXISTS (
+           SELECT 1 FROM online_clients bot
+           WHERE bot.server_key = user_daily_activity.server_key
+             AND bot.client_database_id = user_daily_activity.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         )
+         OR EXISTS (
+           SELECT 1 FROM user_online_duration bot
+           WHERE bot.server_key = user_daily_activity.server_key
+             AND bot.client_database_id = user_daily_activity.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         );
+
+      DELETE FROM user_channel_activity
+      WHERE lower(nickname) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+         OR EXISTS (
+           SELECT 1 FROM online_clients bot
+           WHERE bot.server_key = user_channel_activity.server_key
+             AND bot.client_database_id = user_channel_activity.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         )
+         OR EXISTS (
+           SELECT 1 FROM user_online_duration bot
+           WHERE bot.server_key = user_channel_activity.server_key
+             AND bot.client_database_id = user_channel_activity.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         );
+
+      DELETE FROM sessions
+      WHERE lower(nickname) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+         OR EXISTS (
+           SELECT 1 FROM online_clients bot
+           WHERE bot.server_key = sessions.server_key
+             AND bot.client_database_id = sessions.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         )
+         OR EXISTS (
+           SELECT 1 FROM user_online_duration bot
+           WHERE bot.server_key = sessions.server_key
+             AND bot.client_database_id = sessions.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         );
+
+      DELETE FROM achievement_grants
+      WHERE EXISTS (
+        SELECT 1 FROM online_clients bot
+        WHERE bot.server_key = achievement_grants.server_key
+          AND bot.client_database_id = achievement_grants.client_database_id
+          AND bot.unique_identifier IN (${botUids})
+      )
+         OR EXISTS (
+           SELECT 1 FROM user_online_duration bot
+           WHERE bot.server_key = achievement_grants.server_key
+             AND bot.client_database_id = achievement_grants.client_database_id
+             AND bot.unique_identifier IN (${botUids})
+         );
+
+      DELETE FROM user_online_duration
+      WHERE unique_identifier IN (${botUids})
+         OR lower(nickname) IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery');
+    `);
+  } catch {
+    // 忽略未初始化时的表错误
+  }
+}
+
 export function openDatabase(dbPath: string): AppDatabase {
   if (dbPath !== ':memory:') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -268,6 +340,7 @@ export function openDatabase(dbPath: string): AppDatabase {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   migrateStatsSchema(db);
+  cleanupBotData(db);
   seedDefaultBadges(db);
   return db;
 }
@@ -594,15 +667,18 @@ export function migrateStatsSchema(db: AppDatabase): void {
   }
 
   db.transaction(() => {
-    db.exec(`DELETE FROM online_samples
-      WHERE id NOT IN (
-        SELECT MIN(id) FROM online_samples GROUP BY server_key, sample_time
-      )`);
-    db.exec(`DELETE FROM sessions
-      WHERE id NOT IN (
+    db.exec(`
+      DELETE FROM online_samples WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM online_samples GROUP BY server_key, sample_time
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_online_samples_server_sample_time
+      ON online_samples (server_key, sample_time);
+
+      DELETE FROM sessions WHERE id NOT IN (
         SELECT MIN(id) FROM sessions GROUP BY server_key, client_database_id, start_time
-      )`);
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_online_samples_server_sample_time ON online_samples(server_key, sample_time)');
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_server_client_start ON sessions(server_key, client_database_id, start_time)');
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_server_client_start
+      ON sessions (server_key, client_database_id, start_time);
+    `);
   })();
 }
