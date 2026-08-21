@@ -260,7 +260,7 @@ export class AppDatabase {
 }
 
 function cleanupBotData(db: AppDatabase): void {
-  const botUids = "'+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
+  const botUids = "'/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
   try {
     db.exec(`
       DELETE FROM user_daily_activity

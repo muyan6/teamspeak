@@ -142,7 +142,7 @@ describe('成就服务', () => {
     insertDuration.run('server-a', 2, 'uid-2', '小周', 367_200, Date.now());
     insertDuration.run('server-a', 3, 'uid-3', '小陈', 201_600, Date.now());
     insertDuration.run('server-b', 4, 'uid-4', '其他服务器用户', 999_999, Date.now());
-    insertDuration.run('server-a', 5, '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'MusicBot', 600_000, Date.now());
+    insertDuration.run('server-a', 5, '/4MNT/c3KE4sXuRGHedmmnFDZYc=', 'MusicBot', 600_000, Date.now());
 
     const dayKey = (daysAgo: number): string => {
       const date = new Date();

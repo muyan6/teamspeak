@@ -92,6 +92,7 @@ export class StatsService {
   }
 
   public static readonly EXCLUDED_BOT_UIDS = new Set<string>([
+    '/4MNT/c3KE4sXuRGHedmmnFDZYc=',
     '+NEl0Wet9jWYFKwoBGLgV78cAzs=',
     'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
   ]);
@@ -521,11 +522,11 @@ export class StatsService {
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND client_database_id NOT IN (
                SELECT client_database_id FROM user_online_duration
-               WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              )
              AND client_database_id NOT IN (
                SELECT client_database_id FROM online_clients
-               WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              )
            GROUP BY client_database_id
            ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -537,7 +538,7 @@ export class StatsService {
         `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
          FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
@@ -549,7 +550,7 @@ export class StatsService {
       .prepare(
         `SELECT nickname, longest_session_seconds as seconds FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY longest_session_seconds DESC LIMIT ?`
       )
@@ -565,11 +566,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
          GROUP BY client_database_id`
       )
@@ -738,11 +739,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            )
          GROUP BY client_database_id
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -785,7 +786,7 @@ export class StatsService {
         .prepare(
           `SELECT nickname, unique_identifier as uid FROM user_online_duration
            WHERE server_key = ? AND nickname LIKE ?
-             AND unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             AND unique_identifier NOT IN ('/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND nickname != ''
            ORDER BY nickname, total_seconds DESC LIMIT ?`

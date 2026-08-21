@@ -179,7 +179,7 @@ describe('TS3 监控后端核心链路', () => {
   it('启动时清理机器人数据不会影响其他服务器相同 DBID 的正常用户', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ts3-bot-cleanup-'));
     const dbPath = join(dir, 'stats.db');
-    const botUid = '+NEl0Wet9jWYFKwoBGLgV78cAzs=';
+    const botUid = '/4MNT/c3KE4sXuRGHedmmnFDZYc=';
     let cleanupDb: AppDatabase | undefined;
     try {
       cleanupDb = openDatabase(dbPath);
@@ -448,7 +448,7 @@ describe('TS3 监控后端核心链路', () => {
     const bot = {
       clid: 11,
       clientDatabaseId: 502,
-      uniqueIdentifier: '+NEl0Wet9jWYFKwoBGLgV78cAzs=',
+      uniqueIdentifier: '/4MNT/c3KE4sXuRGHedmmnFDZYc=',
       nickname: 'CustomMusicPlayer',
       serverGroupIds: [1],
       channelId: 1,
