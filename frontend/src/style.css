@@ -521,62 +521,60 @@ button {
 
 .connect-actions-group {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.625rem;
   flex-shrink: 0;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .connect-actions-group {
+    width: auto;
+    min-width: 170px;
+  }
 }
 
 .quick-connect-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.875rem;
+  gap: 0.75rem;
   background: #ffffff;
   color: #0a0a0a;
-  padding: 0.875rem 1.625rem;
-  border-radius: 1rem;
+  padding: 0.6875rem 1.25rem;
+  border-radius: 0.875rem;
   font-weight: 800;
   border: 1px solid transparent;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
   cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+}
+
+@media (max-width: 767px) {
+  .quick-connect-btn {
+    justify-content: center;
+  }
 }
 
 .quick-connect-btn:hover {
   background: var(--primary);
   color: #ffffff;
-  box-shadow: 0 12px 35px rgba(244, 63, 94, 0.4);
+  box-shadow: 0 10px 28px rgba(244, 63, 94, 0.4);
   transform: translateY(-2px) scale(1.02);
-}
-
-.quick-connect-btn.musicbot-btn {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-}
-
-.quick-connect-btn.musicbot-btn .quick-connect-icon {
-  color: #ec4899;
 }
 
 .quick-connect-btn.musicbot-btn:hover {
-  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-  border-color: transparent;
+  background: linear-gradient(135deg, #f43f5e 0%, #ec4899 100%);
   color: #ffffff;
-  box-shadow: 0 12px 35px rgba(236, 72, 153, 0.4);
+  box-shadow: 0 10px 28px rgba(244, 63, 94, 0.4);
   transform: translateY(-2px) scale(1.02);
 }
 
-.quick-connect-btn.musicbot-btn:hover .quick-connect-icon {
-  color: #ffffff;
-}
-
 .quick-connect-icon {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   transition: transform 0.3s ease;
 }
 
@@ -585,17 +583,17 @@ button {
 }
 
 .quick-connect-kicker {
-  font-size: 0.625rem;
+  font-size: 0.5625rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.7;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
   font-weight: 800;
   line-height: 1;
 }
 
 .quick-connect-title {
-  font-size: 1.125rem;
-  line-height: 1.1;
+  font-size: 1rem;
+  line-height: 1.15;
   font-weight: 800;
 }
 
