@@ -2,6 +2,10 @@ import type { AppDatabase } from '../../db/database.js';
 import { Ts3ClientWrapper } from '../../ts3/client.js';
 import { StatsService } from '../../services/stats.js';
 
+const MIN_CHECK_INTERVAL_HOURS = 1;
+const MAX_CHECK_INTERVAL_HOURS = 168;
+const DEFAULT_CHECK_INTERVAL_HOURS = 24;
+
 export interface ChampionConfig {
   id: number;
   enabled: number;
@@ -26,7 +30,7 @@ export class WeeklyChampionService {
       id: 1,
       enabled: 0,
       serverGroupId: null,
-      checkIntervalHours: 24,
+      checkIntervalHours: DEFAULT_CHECK_INTERVAL_HOURS,
       lastCheckTime: null,
       lastWinnerClientDbId: null,
       lastWinnerNickname: null,
@@ -62,7 +66,9 @@ export class WeeklyChampionService {
       id: 1,
       enabled: row.enabled,
       serverGroupId: row.serverGroupId,
-      checkIntervalHours: row.checkIntervalHours,
+      checkIntervalHours: this.isValidCheckIntervalHours(row.checkIntervalHours)
+        ? row.checkIntervalHours
+        : DEFAULT_CHECK_INTERVAL_HOURS,
       lastCheckTime: row.lastCheckTime,
       lastWinnerClientDbId: row.lastWinnerClientDbId,
       lastWinnerNickname: row.lastWinnerNickname,
@@ -78,6 +84,9 @@ export class WeeklyChampionService {
     serverGroupId: number | null;
     checkIntervalHours: number;
   }): ChampionConfig {
+    if (!this.isValidCheckIntervalHours(data.checkIntervalHours)) {
+      throw new Error(`周冠军检查周期需为 ${MIN_CHECK_INTERVAL_HOURS} 到 ${MAX_CHECK_INTERVAL_HOURS} 小时的整数`);
+    }
     const serverKey = this.stats.getServerKey();
     const cfg = this.getConfigForServer(serverKey);
     this.db
@@ -101,6 +110,12 @@ export class WeeklyChampionService {
         Date.now()
       );
     return this.getConfigForServer(serverKey);
+  }
+
+  private isValidCheckIntervalHours(value: number): boolean {
+    return Number.isInteger(value)
+      && value >= MIN_CHECK_INTERVAL_HOURS
+      && value <= MAX_CHECK_INTERVAL_HOURS;
   }
 
   /** 检测本周活跃榜第一名并授予奖励 */
@@ -132,11 +147,13 @@ export class WeeklyChampionService {
         return { nickname: top.nickname, seconds: top.seconds, granted: false };
       }
 
-      // 先确认新冠军已获得权限，再尝试移除旧冠军；若旧冠军已退服或不在组内，记录告警并继续完成交接。
+      // 先确认新冠军已获得权限，再移除旧冠军；移除失败时保留旧状态，以便下一轮重试。
       if (cfg.lastWinnerClientDbId) {
         const removed = await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
         if (!removed) {
-          console.warn(`[champion] 移除旧周冠军权限未成功（用户可能已退服或已不在组内）: dbid=${cfg.lastWinnerClientDbId}`);
+          console.warn(`[champion] 移除旧周冠军权限未成功，将在下一轮重试: dbid=${cfg.lastWinnerClientDbId}`);
+          this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
+          return { nickname: top.nickname, seconds: top.seconds, granted: true };
         }
       }
     }
@@ -148,6 +165,11 @@ export class WeeklyChampionService {
          WHERE server_key = ?`
       )
       .run(Date.now(), clientDbId, top.nickname, serverKey);
+
+    if (typeof this.stats.recordChampionWinner === 'function') {
+      const weekStart = typeof this.stats.weekStartKey === 'function' ? this.stats.weekStartKey() : undefined;
+      this.stats.recordChampionWinner(clientDbId, top.nickname, weekStart);
+    }
 
     return { nickname: top.nickname, seconds: top.seconds, granted };
   }

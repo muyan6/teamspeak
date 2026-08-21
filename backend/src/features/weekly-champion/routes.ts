@@ -15,8 +15,9 @@ export function registerWeeklyChampionRoutes(router: Router, deps: ApiDeps, admi
     const needsGroup = parsedEnabled === 1;
     if (
       ![0, 1].includes(parsedEnabled)
-      || !Number.isFinite(parsedInterval)
-      || parsedInterval <= 0
+      || !Number.isInteger(parsedInterval)
+      || parsedInterval < 1
+      || parsedInterval > 168
       || (needsGroup && (!Number.isInteger(parsedGroupId) || parsedGroupId <= 0))
     ) {
       res.status(400).json({ error: '周冠军配置无效' });

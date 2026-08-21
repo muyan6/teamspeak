@@ -188,6 +188,25 @@ describe('管理接口与配置回归', () => {
     expect((await fetch(`${baseUrl}/auth/check`, { headers: { Authorization: `Bearer ${replacementToken}` } })).status).toBe(200);
   });
 
+  it('登录接口限制密码长度、异步校验密码并限制连续失败次数', async () => {
+    const { baseUrl } = await startRouter();
+    const request = (password: unknown) => fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+
+    expect((await request('short')).status).toBe(401);
+    expect((await request('x'.repeat(257))).status).toBe(401);
+    expect((await request('wrong-password')).status).toBe(401);
+    expect((await request('wrong-password')).status).toBe(401);
+    expect((await request('wrong-password')).status).toBe(401);
+
+    const limited = await request('test-password');
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+
   it('弹性频道接口要求管理员凭证，避免泄露频道密码', async () => {
     const { baseUrl, token } = await startRouter();
 
@@ -250,6 +269,18 @@ describe('管理接口与配置回归', () => {
     });
     expect(response.status).toBe(200);
     expect(savedChampionConfigs).toEqual([{ enabled: 0, serverGroupId: null, checkIntervalHours: 24 }]);
+  });
+
+  it('周冠军检查周期仅允许 1 到 168 小时的整数', async () => {
+    const { baseUrl, token } = await startRouter();
+    for (const checkIntervalHours of [0, 0.001, 169]) {
+      const response = await fetch(`${baseUrl}/champion/config`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: 0, serverGroupId: 0, checkIntervalHours }),
+      });
+      expect(response.status).toBe(400);
+    }
   });
 
   it('周冠军配置读取接口要求管理员凭证', async () => {
@@ -334,6 +365,13 @@ describe('管理接口与配置回归', () => {
     });
     expect(invalidTutorial.status).toBe(400);
 
+    const unsafeDownload = await fetch(`${baseUrl}/tutorial-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientDownload: { officialUrl: 'javascript:alert(1)' } }),
+    });
+    expect(unsafeDownload.status).toBe(400);
+
     const fallbackTutorial = buildTutorial(
       loadConfig({ TS3_PUBLIC_HOST: 'localhost' }),
       { basic: 123 } as never
@@ -353,6 +391,13 @@ describe('管理接口与配置回归', () => {
     });
     expect(savedSiteInfo.status).toBe(200);
     expect(await savedSiteInfo.json()).toEqual(siteInfoPayload);
+
+    const unsafeContact = await fetch(`${baseUrl}/site-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...siteInfoPayload, adminSteam: 'javascript:alert(1)' }),
+    });
+    expect(unsafeContact.status).toBe(400);
 
     const loadedSiteInfo = await fetch(`${baseUrl}/site-config`);
     expect(await loadedSiteInfo.json()).toEqual(siteInfoPayload);

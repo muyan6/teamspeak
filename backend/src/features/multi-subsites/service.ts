@@ -154,6 +154,7 @@ export class MultiSubsiteRegistry {
 
   saveBaseDomain(value: unknown): MultiSubsiteSettings {
     const baseDomain = validateBaseDomain(value);
+    if (this.hasHost(baseDomain)) throw new Error('根域名已被分站占用，请先修改或删除该分站');
     this.db.prepare(`INSERT INTO multi_subsite_settings (key, value, updated_at)
       VALUES ('base_domain', ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
@@ -188,6 +189,7 @@ export class MultiSubsiteRegistry {
     if (!displayName || displayName.length > 80) throw new Error('分站昵称不能为空，且不能超过 80 个字符');
     if (!this.baseDomain && !asText(input.domain)) throw new Error('请先在统一分站后台保存根域名，再生成子域名');
     const domain = validateDomain(normalizeHost(input.domain) || `${slug}.${this.baseDomain}`);
+    if (domain === this.baseDomain) throw new Error('分站域名不能与平台根域名相同');
     const ts3Host = asText(input.ts3Host);
     const username = asText(input.username) || 'serveradmin';
     const password = String(input.password ?? '');

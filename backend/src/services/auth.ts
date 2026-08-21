@@ -1,10 +1,18 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import jwt from 'jsonwebtoken';
+import { promisify } from 'node:util';
 
 const PASSWORD_HASH_PREFIX = 'scrypt';
 const CREDENTIAL_PREFIX = 'enc:v1';
+const scryptAsync = promisify(scrypt);
+
+async function deriveScrypt(password: string, salt: Buffer, keyLength: number): Promise<Buffer> {
+  const digest = await scryptAsync(password, salt, keyLength);
+  if (!Buffer.isBuffer(digest)) throw new Error('scrypt 返回了无效摘要');
+  return digest;
+}
 
 export interface AdminTokenPayload {
   role: 'admin';
@@ -51,6 +59,10 @@ export class AuthService {
     return Boolean(this.adminPasswordHash) && verifyAdminPasswordHash(this.adminPasswordHash, password);
   }
 
+  async verifyAdminPasswordAsync(password: string): Promise<boolean> {
+    return Boolean(this.adminPasswordHash) && await verifyAdminPasswordHashAsync(this.adminPasswordHash, password);
+  }
+
   setAdminPasswordHash(passwordHash: string): void {
     if (!isAdminPasswordHash(passwordHash)) throw new Error('管理员密码哈希格式无效');
     this.adminPasswordHash = passwordHash;
@@ -90,6 +102,12 @@ export function hashAdminPassword(password: string): string {
   return [PASSWORD_HASH_PREFIX, salt.toString('base64url'), digest.toString('base64url')].join('$');
 }
 
+export async function hashAdminPasswordAsync(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const digest = await deriveScrypt(password, salt, 64);
+  return [PASSWORD_HASH_PREFIX, salt.toString('base64url'), digest.toString('base64url')].join('$');
+}
+
 export function isAdminPasswordHash(value: string): boolean {
   const [prefix, salt, digest, ...rest] = value.split('$');
   return prefix === PASSWORD_HASH_PREFIX && Boolean(salt) && Boolean(digest) && rest.length === 0;
@@ -101,6 +119,18 @@ function verifyAdminPasswordHash(stored: string, password: string): boolean {
   try {
     const expected = Buffer.from(digestValue, 'base64url');
     const actual = scryptSync(password, Buffer.from(saltValue, 'base64url'), expected.length);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
+}
+
+async function verifyAdminPasswordHashAsync(stored: string, password: string): Promise<boolean> {
+  if (!isAdminPasswordHash(stored)) return false;
+  const [, saltValue, digestValue] = stored.split('$');
+  try {
+    const expected = Buffer.from(digestValue, 'base64url');
+    const actual = await deriveScrypt(password, Buffer.from(saltValue, 'base64url'), expected.length);
     return expected.length === actual.length && timingSafeEqual(expected, actual);
   } catch {
     return false;

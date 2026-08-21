@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useDashboard } from './composables/dashboard';
 
 const { data, refresh } = useDashboard();
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const title = computed(() => data.value?.site.serverName || 'TS3 语音服务器');
+
+watch(
+  title,
+  (t) => {
+    if (typeof document !== 'undefined' && t) {
+      document.title = t;
+    }
+  },
+  { immediate: true }
+);
 
 onMounted(() => {
   void refresh();

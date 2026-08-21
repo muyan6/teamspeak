@@ -263,21 +263,6 @@ export class Ts3ClientWrapper extends EventEmitter {
     for (const ch of channels) channelNames.set(parseInt(ch.cid, 10), ch.name);
 
     const regular = clients.filter((c) => c.type === 0);
-    const clids = regular.map((c) => parseInt(c.clid, 10));
-    const channelGroupByDbid = new Map<number, number>();
-    try {
-      if (clids.length > 0) {
-        const infos = await this.executeQuery(() => this.requireTs3().clientInfo(clids.map(String)));
-        for (const info of infos) {
-          channelGroupByDbid.set(
-            Number(info.clientDatabaseId),
-            parseInt(info.clientChannelGroupId, 10) || 0
-          );
-        }
-      }
-    } catch {
-      /* ignore */
-    }
 
     return regular.map((c) => ({
       clid: parseInt(c.clid, 10),
@@ -287,7 +272,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       serverGroupIds: (c.servergroups || []).map((n) => parseInt(n, 10)),
       channelId: parseInt(c.cid, 10),
       channelName: channelNames.get(parseInt(c.cid, 10)) || '',
-      channelGroupId: channelGroupByDbid.get(parseInt(c.databaseId, 10)) ?? 0,
+      channelGroupId: parseInt(c.channelGroupId, 10) || 0,
       connectedTime: c.lastconnected,
       clientType: c.type,
     }));

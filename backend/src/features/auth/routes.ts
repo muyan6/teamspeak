@@ -1,17 +1,65 @@
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
-import { hashAdminPassword } from '../../services/auth.js';
+import { hashAdminPasswordAsync } from '../../services/auth.js';
 
 const MIN_ADMIN_PASSWORD_LENGTH = 8;
 const MAX_ADMIN_PASSWORD_LENGTH = 256;
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+interface LoginAttempt {
+  count: number;
+  firstFailureAt: number;
+}
+
+function loginClientKey(req: { ip?: string; socket: { remoteAddress?: string } }): string {
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
 
 export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
-  router.post('/auth/login', (req, res) => {
+  const failedLogins = new Map<string, LoginAttempt>();
+
+  const getRetryAfterSeconds = (clientKey: string): number => {
+    const attempt = failedLogins.get(clientKey);
+    if (!attempt) return 0;
+    const remaining = LOGIN_WINDOW_MS - (Date.now() - attempt.firstFailureAt);
+    if (remaining <= 0) {
+      failedLogins.delete(clientKey);
+      return 0;
+    }
+    return attempt.count >= LOGIN_MAX_FAILURES ? Math.ceil(remaining / 1000) : 0;
+  };
+
+  const recordFailedLogin = (clientKey: string): void => {
+    const now = Date.now();
+    const attempt = failedLogins.get(clientKey);
+    if (!attempt || now - attempt.firstFailureAt >= LOGIN_WINDOW_MS) {
+      failedLogins.set(clientKey, { count: 1, firstFailureAt: now });
+      return;
+    }
+    attempt.count += 1;
+  };
+
+  router.post('/auth/login', async (req, res) => {
+    const clientKey = loginClientKey(req);
+    const retryAfterSeconds = getRetryAfterSeconds(clientKey);
+    if (retryAfterSeconds > 0) {
+      res.set('Retry-After', String(retryAfterSeconds));
+      res.status(429).json({ error: '登录尝试次数过多，请稍后再试' });
+      return;
+    }
+
     const { password } = req.body ?? {};
-    if (!password || !deps.auth.verifyAdminPassword(String(password))) {
+    const validPassword = typeof password === 'string'
+      && password.length >= MIN_ADMIN_PASSWORD_LENGTH
+      && password.length <= MAX_ADMIN_PASSWORD_LENGTH
+      && await deps.auth.verifyAdminPasswordAsync(password);
+    if (!validPassword) {
+      recordFailedLogin(clientKey);
       res.status(401).json({ error: '管理密码错误' });
       return;
     }
+    failedLogins.delete(clientKey);
     res.json({ token: deps.auth.signToken() });
   });
 
@@ -19,7 +67,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     res.json({ admin: true });
   });
 
-  router.post('/auth/password', admin, (req, res) => {
+  router.post('/auth/password', admin, async (req, res) => {
     const { currentPassword, newPassword } = req.body ?? {};
     if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
       res.status(400).json({ error: '请填写当前密码和新密码' });
@@ -33,7 +81,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
       res.status(400).json({ error: '新密码不能与当前密码相同' });
       return;
     }
-    if (!deps.auth.verifyAdminPassword(currentPassword)) {
+    if (!await deps.auth.verifyAdminPasswordAsync(currentPassword)) {
       res.status(400).json({ error: '当前管理密码错误' });
       return;
     }
@@ -43,7 +91,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     }
 
     try {
-      const passwordHash = hashAdminPassword(newPassword);
+      const passwordHash = await hashAdminPasswordAsync(newPassword);
       deps.persistAdminPasswordHash(passwordHash);
       deps.auth.setAdminPasswordHash(passwordHash);
       res.json({ token: deps.auth.signToken() });

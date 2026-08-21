@@ -120,7 +120,7 @@ export class StatsService {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   }
 
-  private weekStartKey(): string {
+  weekStartKey(): string {
     const d = new Date();
     const day = d.getDay() === 0 ? 7 : d.getDay();
     const start = new Date(d);
@@ -276,8 +276,15 @@ export class StatsService {
         const connectedTimeSec = Math.floor(c.connectedTime);
         const currentSessionDuration = connectedTimeSec > 0 ? Math.max(0, nowSec - connectedTimeSec) : 0;
 
+        let channelDeltaSec = 0;
+        let channelStartSec = nowSec;
+
         if (prev === undefined && suspended === undefined) {
-          // 新上线：开启会话
+          // 新上线或服务重启后首次观察到该用户
+          const existing = this.db
+            .prepare('SELECT last_updated FROM user_online_duration WHERE server_key = ? AND client_database_id = ?')
+            .get(this.serverKey, dbId) as { last_updated: number } | undefined;
+
           const sessionStart = connectedTimeSec > 0 ? connectedTimeSec : Math.floor(now / 1000);
           openSessionStmt.run(this.serverKey, dbId, c.nickname, sessionStart);
           durationUpsert.run({
@@ -287,23 +294,42 @@ export class StatsService {
             nickname: c.nickname,
             lastUpdated: now,
           });
-          // 首次采集：计入从连接时刻到现在的时长，避免新用户首段在线时间丢失
-          if (connectedTimeSec > 0) {
-            const initialDelta = Math.max(0, Math.floor(now / 1000) - connectedTimeSec);
-            if (initialDelta > 0) {
-              addDurationStmt.run(
-                initialDelta,
-                initialDelta,
-                currentSessionDuration || initialDelta,
-                c.nickname,
-                c.uniqueIdentifier,
-                now,
-                this.serverKey,
-                dbId
-              );
-              addUserDaily(dbId, c.nickname, connectedTimeSec, nowSec);
+
+          // 计算增量：若用户已有历史统计记录且保持同一连接，仅补算上次更新到现在的增量，防止服务重启将历史全长重复累加
+          let initialDelta = 0;
+          let deltaStartSec = nowSec;
+          if (existing && existing.last_updated > 0) {
+            const lastUpdatedSec = Math.floor(existing.last_updated / 1000);
+            if (connectedTimeSec > 0 && connectedTimeSec > lastUpdatedSec) {
+              // 在服务离线期间重新连入的新会话
+              initialDelta = Math.max(0, nowSec - connectedTimeSec);
+              deltaStartSec = connectedTimeSec;
+            } else {
+              // 跨服务重启的持续会话：仅计入自上次记录以来的差额
+              initialDelta = Math.max(0, nowSec - lastUpdatedSec);
+              deltaStartSec = lastUpdatedSec;
             }
+          } else if (connectedTimeSec > 0) {
+            // 全新用户：计入本次建连以来的时长
+            initialDelta = Math.max(0, nowSec - connectedTimeSec);
+            deltaStartSec = connectedTimeSec;
           }
+
+          if (initialDelta > 0) {
+            addDurationStmt.run(
+              initialDelta,
+              initialDelta,
+              currentSessionDuration || initialDelta,
+              c.nickname,
+              c.uniqueIdentifier,
+              now,
+              this.serverKey,
+              dbId
+            );
+            addUserDaily(dbId, c.nickname, deltaStartSec, nowSec);
+          }
+          channelDeltaSec = initialDelta;
+          channelStartSec = deltaStartSec;
         } else if (prev !== undefined) {
           // 持续在线：累计增量
           const sessionChanged = connectedTimeSec > 0 && prev.connectedTime > 0 && connectedTimeSec > prev.connectedTime;
@@ -326,6 +352,8 @@ export class StatsService {
             closeSessionStmt.run(Math.floor(prev.lastSeen / 1000), Math.floor(prev.lastSeen / 1000), this.serverKey, dbId);
             openSessionStmt.run(this.serverKey, dbId, c.nickname, connectedTimeSec);
           }
+          channelDeltaSec = deltaSec;
+          channelStartSec = deltaStartSec;
         } else {
           // 查询连接中断后恢复：只补算断线期间，避免重复累计已结算的历史时长。
           const sameConnection = connectedTimeSec <= 0 || suspended!.connectedTime <= 0 || connectedTimeSec === suspended!.connectedTime;
@@ -353,33 +381,17 @@ export class StatsService {
             addUserDaily(dbId, c.nickname, deltaStartSec, nowSec);
           }
           this.suspendedOnline.delete(dbId);
+          channelDeltaSec = deltaSec;
+          channelStartSec = deltaStartSec;
         }
 
         // 频道活跃累计（人·秒）+ 用户频道停留
         if (c.channelId > 0) {
           channelStmt.run(this.serverKey, c.channelId, c.channelName, null, now);
-          const deltaSec = prev === undefined
-            ? (suspended !== undefined
-              ? Math.max(0, nowSec - (connectedTimeSec > 0 && suspended.connectedTime > 0 && connectedTimeSec !== suspended.connectedTime
-                ? connectedTimeSec
-                : Math.floor(suspended.lastSeen / 1000)))
-              : (connectedTimeSec > 0 ? Math.max(0, nowSec - connectedTimeSec) : 0))
-            : Math.max(0, nowSec - (connectedTimeSec > 0 && prev.connectedTime > 0 && connectedTimeSec > prev.connectedTime
-              ? connectedTimeSec
-              : Math.floor(prev.lastSeen / 1000)));
-          if (deltaSec > 0) {
-            channelAddStmt.run(deltaSec, now, this.serverKey, c.channelId);
-            const startSec = prev === undefined
-              ? (suspended !== undefined
-                ? (connectedTimeSec > 0 && suspended.connectedTime > 0 && connectedTimeSec !== suspended.connectedTime
-                  ? connectedTimeSec
-                  : Math.floor(suspended.lastSeen / 1000))
-                : connectedTimeSec)
-              : (connectedTimeSec > 0 && prev.connectedTime > 0 && connectedTimeSec > prev.connectedTime
-                ? connectedTimeSec
-                : Math.floor(prev.lastSeen / 1000));
-            addChannelDaily(c.channelId, c.channelName, startSec, nowSec);
-            userChannelStmt.run(this.serverKey, dbId, c.nickname, c.channelId, c.channelName, deltaSec);
+          if (channelDeltaSec > 0) {
+            channelAddStmt.run(channelDeltaSec, now, this.serverKey, c.channelId);
+            addChannelDaily(c.channelId, c.channelName, channelStartSec, nowSec);
+            userChannelStmt.run(this.serverKey, dbId, c.nickname, c.channelId, c.channelName, channelDeltaSec);
           }
         }
       }
@@ -656,7 +668,7 @@ export class StatsService {
     return tx();
   }
 
-  private prevWeekStartKey(): string {
+  prevWeekStartKey(): string {
     const d = new Date();
     const day = d.getDay() === 0 ? 7 : d.getDay();
     const thisMonday = new Date(d);
@@ -668,7 +680,7 @@ export class StatsService {
     return `${thisMonday.getFullYear()}-${mm}-${dd}`;
   }
 
-  private getTopUsersByRange(
+  getTopUsersByRange(
     startKey: string,
     endKey: string,
     limit = 500
@@ -897,6 +909,24 @@ export class StatsService {
         AND (
           CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5
           OR (end_time IS NOT NULL AND CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5)
+          OR (
+            CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) < 2
+            AND (
+              end_time IS NULL
+              OR CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) > 5
+              OR strftime('%Y-%m-%d', datetime(end_time, 'unixepoch', 'localtime')) > strftime('%Y-%m-%d', datetime(start_time, 'unixepoch', 'localtime'))
+            )
+            AND (end_time IS NULL OR end_time - start_time >= 7200)
+          )
+          OR (
+            CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) >= 20
+            AND (
+              end_time IS NULL
+              OR CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) >= 2
+              OR strftime('%Y-%m-%d', datetime(end_time, 'unixepoch', 'localtime')) > strftime('%Y-%m-%d', datetime(start_time, 'unixepoch', 'localtime'))
+            )
+            AND (end_time IS NULL OR end_time - start_time >= 18000)
+          )
         )
       LIMIT 1
     `).get(this.serverKey, clientDatabaseId);
@@ -926,12 +956,27 @@ export class StatsService {
   }
 
   isWeeklyChampionWinner(clientDatabaseId: number): boolean {
-    const row = this.db.prepare(`
+    const fromConfig = this.db.prepare(`
       SELECT 1 FROM champion_config
       WHERE server_key = ? AND last_winner_client_db_id = ?
       LIMIT 1
     `).get(this.serverKey, clientDatabaseId);
-    return Boolean(row);
+    if (fromConfig) return true;
+
+    const fromHistory = this.db.prepare(`
+      SELECT 1 FROM champion_history
+      WHERE server_key = ? AND client_database_id = ?
+      LIMIT 1
+    `).get(this.serverKey, clientDatabaseId);
+    return Boolean(fromHistory);
+  }
+
+  recordChampionWinner(clientDatabaseId: number, nickname: string, weekStart?: string): void {
+    const ws = weekStart || this.weekStartKey();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO champion_history (server_key, client_database_id, nickname, won_at, week_start)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(this.serverKey, clientDatabaseId, nickname, Date.now(), ws);
   }
 
   archiveOldData(
@@ -1069,8 +1114,7 @@ export class StatsService {
         online_count: number;
       }>;
       const insSample = this.db.prepare('INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)');
-      for (const s of samples) insSample.run(s.server_key, s.sample_time, s.online_count);
-      restoredSamples = samples.length;
+      for (const s of samples) restoredSamples += insSample.run(s.server_key, s.sample_time, s.online_count).changes;
 
       const sessions = archiveDb.prepare('SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions').all() as Array<{
         server_key: string;
@@ -1081,8 +1125,7 @@ export class StatsService {
         duration_seconds: number;
       }>;
       const insSession = this.db.prepare('INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)');
-      for (const s of sessions) insSession.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
-      restoredSessions = sessions.length;
+      for (const s of sessions) restoredSessions += insSession.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds).changes;
 
       const channelDays = archiveDb.prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity').all() as Array<{
         server_key: string;
@@ -1092,8 +1135,7 @@ export class StatsService {
         member_seconds: number;
       }>;
       const insChannel = this.db.prepare('INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)');
-      for (const c of channelDays) insChannel.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
-      restoredChannelDays = channelDays.length;
+      for (const c of channelDays) restoredChannelDays += insChannel.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds).changes;
 
       const userDays = archiveDb.prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity').all() as Array<{
         server_key: string;
@@ -1103,8 +1145,7 @@ export class StatsService {
         active_seconds: number;
       }>;
       const insUser = this.db.prepare('INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)');
-      for (const u of userDays) insUser.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
-      restoredUserDays = userDays.length;
+      for (const u of userDays) restoredUserDays += insUser.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds).changes;
     } finally {
       archiveDb.close();
     }

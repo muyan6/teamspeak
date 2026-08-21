@@ -39,6 +39,22 @@ describe('统一分站注册表', () => {
     db.close();
   });
 
+  it('拒绝让分站域名占用平台根域名，或将根域名改为既有分站域名', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com');
+    expect(() => registry.create({
+      displayName: 'Root',
+      slug: 'root',
+      domain: 'example.com',
+      ts3Host: '127.0.0.1',
+      adminPassword: 'password-123',
+    })).toThrow('不能与平台根域名相同');
+
+    registry.create({ displayName: 'Alpha', slug: 'alpha', ts3Host: '127.0.0.1', adminPassword: 'password-123' });
+    expect(() => registry.saveBaseDomain('alpha.example.com')).toThrow('根域名已被分站占用');
+    db.close();
+  });
+
   it('根域名配置会持久化到总站数据库', () => {
     const db = openDatabase(':memory:');
     new MultiSubsiteRegistry(db, '').saveBaseDomain('voice.example.com');

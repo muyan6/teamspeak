@@ -221,7 +221,20 @@ https://example.com
 
 ## 11. 后续更新
 
-每次更新代码后执行：
+### 方式一：一键脚本更新（推荐）
+
+在项目根目录下直接运行：
+
+```bash
+cd /opt/ts3-monitor
+bash update.sh
+```
+
+该脚本会自动完成：**拉取 Git 最新代码 -> 编译后端 -> 编译前端 -> 重启 PM2 进程**。
+
+---
+
+### 方式二：手动分步更新
 
 ```bash
 cd /opt/ts3-monitor

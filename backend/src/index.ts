@@ -231,7 +231,7 @@ function scheduleChampionCheck(champion: WeeklyChampionService): void {
       console.error('[champion] 检测失败:', (err as Error).message);
     }
     const hours = champion.getConfig().checkIntervalHours;
-    const interval = (hours > 0 ? hours : 24) * 3600 * 1000;
+    const interval = (Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24) * 3600 * 1000;
     const timer = setTimeout(() => {
       void run();
     }, interval);

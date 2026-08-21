@@ -65,6 +65,66 @@ describe('成就服务', () => {
     db.close();
   });
 
+  it('TS3 授予失败时不写入本地成就记录，并在下一轮重试', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    let grantCalls = 0;
+    const ts3 = {
+      addClientToServerGroup: async () => {
+        grantCalls += 1;
+        return grantCalls > 1;
+      },
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+    const level = service.addLevel({ hours: 1, serverGroupId: 9, title: '在线一小时' });
+    db.prepare(
+      `INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)`
+    ).run('server-a', 7, 'uid-a', '当前服务器用户', 3_600, Date.now());
+
+    await service.check();
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 0 });
+
+    await service.check();
+    expect(grantCalls).toBe(2);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 1 });
+    db.close();
+  });
+
+  it('TS3 撤销失败时保留本地成就记录，并在下一轮重试', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    let removeCalls = 0;
+    const ts3 = {
+      addClientToServerGroup: async () => true,
+      removeClientFromServerGroup: async () => {
+        removeCalls += 1;
+        return removeCalls > 1;
+      },
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+    const level = service.addLevel({ hours: 1, serverGroupId: 9, title: '在线一小时' });
+    db.prepare(
+      `INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?)`
+    ).run('server-a', 7, 'uid-a', '当前服务器用户', 3_600, Date.now());
+
+    await service.check();
+    db.prepare('UPDATE user_online_duration SET total_seconds = 0 WHERE server_key = ? AND client_database_id = ?').run('server-a', 7);
+
+    await service.check();
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 1 });
+
+    await service.check();
+    expect(removeCalls).toBe(2);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 0 });
+    db.close();
+  });
+
   it('为主页汇总最高荣誉、连续在线前三与各成就解锁人数', async () => {
     const db = openDatabase(':memory:');
     const stats = new StatsService(db, 'server-a');

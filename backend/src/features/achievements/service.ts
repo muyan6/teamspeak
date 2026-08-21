@@ -384,13 +384,16 @@ export class AchievementService {
         );
 
         if (qualifies && !alreadyGranted) {
+          let groupGranted = true;
           if (level.serverGroupId > 0) {
             try {
-              await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
+              groupGranted = await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
+              groupGranted = false;
               console.warn(`[achievement] 授予 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
             }
           }
+          if (!groupGranted) continue;
 
           this.db
             .prepare(
@@ -403,13 +406,16 @@ export class AchievementService {
           results.push({ nickname: user.nickname, title: level.title, granted: true });
         } else if (!qualifies && alreadyGranted) {
           // 条件提高或不再满足，回收成就
+          let groupRemoved = true;
           if (level.serverGroupId > 0) {
             try {
-              await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
+              groupRemoved = await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
+              groupRemoved = false;
               console.warn(`[achievement] 移除 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
             }
           }
+          if (!groupRemoved) continue;
 
           this.db
             .prepare(
@@ -433,13 +439,16 @@ export class AchievementService {
         );
 
         if (qualifies && !alreadyGranted) {
+          let groupGranted = true;
           if (badge.serverGroupId > 0) {
             try {
-              await this.ts3.addClientToServerGroup(badge.serverGroupId, user.clientDatabaseId);
+              groupGranted = await this.ts3.addClientToServerGroup(badge.serverGroupId, user.clientDatabaseId);
             } catch (err) {
+              groupGranted = false;
               console.warn(`[achievement] 授予 TS3 勋章服务器组异常: badge=${badge.name}, dbid=${user.clientDatabaseId}`, err);
             }
           }
+          if (!groupGranted) continue;
 
           this.db
             .prepare(
@@ -452,13 +461,16 @@ export class AchievementService {
           results.push({ nickname: user.nickname, title: badge.name, granted: true });
         } else if (!qualifies && alreadyGranted) {
           // 条件提高或不再满足，回收勋章与服务器组
+          let groupRemoved = true;
           if (badge.serverGroupId > 0) {
             try {
-              await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
+              groupRemoved = await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
             } catch (err) {
+              groupRemoved = false;
               console.warn(`[achievement] 移除 TS3 勋章服务器组异常: badge=${badge.name}, dbid=${user.clientDatabaseId}`, err);
             }
           }
+          if (!groupRemoved) continue;
 
           this.db
             .prepare(

@@ -152,6 +152,30 @@ describe('TS3 监控后端核心链路', () => {
     }
   });
 
+  it('统计迁移会去重历史样本与会话，并建立恢复幂等所需的唯一约束', () => {
+    const legacyDb = new AppDatabase(':memory:');
+    try {
+      legacyDb.exec(SCHEMA);
+      legacyDb.exec(`INSERT INTO online_samples (server_key, sample_time, online_count) VALUES
+        ('legacy', 100, 1), ('legacy', 100, 2)`);
+      legacyDb.exec(`INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES
+        ('legacy', 7, '用户', 100, 200, 100), ('legacy', 7, '用户', 100, 200, 100)`);
+
+      migrateStatsSchema(legacyDb);
+
+      expect(legacyDb.prepare('SELECT COUNT(*) AS count FROM online_samples').get()).toEqual({ count: 1 });
+      expect(legacyDb.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 1 });
+      expect(() => legacyDb.prepare(
+        'INSERT INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)'
+      ).run('legacy', 100, 3)).toThrow();
+      expect(() => legacyDb.prepare(
+        'INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run('legacy', 7, '用户', 100, 200, 100)).toThrow();
+    } finally {
+      legacyDb.close();
+    }
+  });
+
   it('指定虚拟服务器 ID 时按 SID 选择，并隔离统计数据键', async () => {
     const sidMock = new MockTs3Server(10014);
     const sidClient = new Ts3ClientWrapper({
@@ -474,6 +498,7 @@ describe('TS3 监控后端核心链路', () => {
     expect(champion.getConfig().lastWinnerClientDbId).toBe(100);
 
     const handoverCalls: string[] = [];
+    let removeAttempts = 0;
     const handoverChampion = new WeeklyChampionService(championDb, {
       addClientToServerGroup: async () => {
         handoverCalls.push('add-new');
@@ -481,12 +506,18 @@ describe('TS3 监控后端核心链路', () => {
       },
       removeClientFromServerGroup: async (_groupId: number, clientDbId: number) => {
         handoverCalls.push(`remove-${clientDbId}`);
-        return clientDbId !== 100;
+        removeAttempts += 1;
+        return clientDbId !== 100 || removeAttempts > 1;
       },
     } as never, stats);
-    const result = await handoverChampion.check();
-    expect(result?.granted).toBe(true);
+    const firstHandover = await handoverChampion.check();
+    expect(firstHandover?.granted).toBe(true);
     expect(handoverCalls).toEqual(['add-new', 'remove-100']);
+    expect(handoverChampion.getConfig().lastWinnerClientDbId).toBe(100);
+
+    const secondHandover = await handoverChampion.check();
+    expect(secondHandover?.granted).toBe(true);
+    expect(handoverCalls).toEqual(['add-new', 'remove-100', 'add-new', 'remove-100']);
     expect(handoverChampion.getConfig().lastWinnerClientDbId).toBe(200);
     championDb.close();
   });
@@ -967,6 +998,12 @@ describe('TS3 监控后端核心链路', () => {
     const restoredSamples = mainDb.prepare('SELECT * FROM online_samples').all();
     expect(restoredSamples).toHaveLength(2);
 
+    const repeatedRestoreRes = stats.restoreArchivedData(archiveDbFile);
+    expect(repeatedRestoreRes.restoredSamples).toBe(0);
+    expect(repeatedRestoreRes.restoredSessions).toBe(0);
+    expect(mainDb.prepare('SELECT * FROM online_samples').all()).toHaveLength(2);
+    expect(mainDb.prepare('SELECT * FROM sessions').all()).toHaveLength(2);
+
     mainDb.close();
     try {
       if (fs.existsSync(archiveDbFile)) fs.unlinkSync(archiveDbFile);
@@ -1016,5 +1053,98 @@ describe('TS3 监控后端核心链路', () => {
     expect(unlockedList.length).toBeGreaterThanOrEqual(3);
 
     testDb.close();
+  });
+
+  it('服务重启后已在线用户不会重复累加整段历史连接时长', () => {
+    const restartDb = openDatabase(':memory:');
+    const now = Date.now();
+    const connectTimeSec = Math.floor(now / 1000) - 7200; // 2 hours ago
+    const client = {
+      clid: 101,
+      clientDatabaseId: 101,
+      uniqueIdentifier: 'uid-restart',
+      nickname: 'RestartUser',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: connectTimeSec,
+      clientType: 0,
+    };
+    const channel = { cid: 1, parentId: 0, name: 'Lobby', totalClients: 1, totalClientsFamily: 1, order: 0 };
+
+    // 第一次运行记录时长（7200 秒）
+    const stats1 = new StatsService(restartDb);
+    stats1.recordSnapshot([client], [channel], now);
+    const beforeSeconds = stats1.getTopUsers('all').find((u) => u.clientDatabaseId === 101)?.seconds;
+    expect(beforeSeconds).toBe(7200);
+
+    // 模拟进程重启：新建 StatsService 实例且清空内存中的 suspendedOnline
+    const stats2 = new StatsService(restartDb);
+    stats2.recordSnapshot([client], [channel], now + 15_000); // 15秒后采集
+
+    const afterSeconds = stats2.getTopUsers('all').find((u) => u.clientDatabaseId === 101)?.seconds;
+    // 重启后应仅增加 15 秒差额，而不是再次重复灌入 7200 秒
+    expect(afterSeconds).toBe(7215);
+
+    restartDb.close();
+  });
+
+  it('夜猫子判定支持识别通宵跨夜的长时段深度在线会话', () => {
+    const nightDb = openDatabase(':memory:');
+    const stats = new StatsService(nightDb);
+
+    // 构造一个从凌晨 01:00 到 06:00 (跨越 02:00~05:00) 的会话
+    const nightDate = new Date();
+    nightDate.setHours(1, 0, 0, 0);
+    const startSec = Math.floor(nightDate.getTime() / 1000);
+    const endSec = startSec + 5 * 3600; // 5 hours later = 06:00
+
+    nightDb.prepare(`
+      INSERT INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds)
+      VALUES ('legacy', 808, 'OvernightUser', ?, ?, ?)
+    `).run(startSec, endSec, 5 * 3600);
+
+    expect(stats.hasNightOwlSessions(808)).toBe(true);
+
+    nightDb.close();
+  });
+
+  it('历史周冠军在下一周新冠军产生后仍永久保留勋章与资格', async () => {
+    const historyDb = openDatabase(':memory:');
+    const stats = new StatsService(historyDb);
+    const mockTs3 = {
+      addClientToServerGroup: async () => true,
+      removeClientFromServerGroup: async () => true,
+    } as never;
+    const champion = new WeeklyChampionService(historyDb, mockTs3, stats);
+    const achievement = new AchievementService(historyDb, mockTs3, stats);
+
+    // 第 1 周：用户 1 获得周冠军
+    champion.saveConfig({ enabled: 1, serverGroupId: 10, checkIntervalHours: 24 });
+    stats.recordChampionWinner(111, 'Winner1', '2026-08-10');
+    historyDb.prepare("UPDATE champion_config SET last_winner_client_db_id = 111, last_winner_nickname = 'Winner1' WHERE server_key = 'legacy'").run();
+
+    // 此时用户 1 解锁周冠军勋章
+    let badges1 = achievement.getUserBadges(111);
+    const champBadge1 = badges1.find((b) => b.name === '荣誉周魁首');
+    expect(champBadge1?.unlocked).toBe(true);
+
+    // 授予勋章
+    await achievement.check();
+
+    // 第 2 周：用户 2 成为新周冠军，覆盖 champion_config
+    stats.recordChampionWinner(222, 'Winner2', '2026-08-17');
+    historyDb.prepare("UPDATE champion_config SET last_winner_client_db_id = 222, last_winner_nickname = 'Winner2' WHERE server_key = 'legacy'").run();
+
+    // 重新运行全员成就检测
+    await achievement.check();
+
+    // 验证用户 1 作为老冠军仍然保持周冠军勋章资格，不被剥夺
+    expect(stats.isWeeklyChampionWinner(111)).toBe(true);
+    badges1 = achievement.getUserBadges(111);
+    expect(badges1.find((b) => b.name === '荣誉周魁首')?.unlocked).toBe(true);
+
+    historyDb.close();
   });
 });

@@ -26,6 +26,30 @@ function normalizeText(value: unknown, maxLength: number, fieldName: string): st
   return text;
 }
 
+function normalizeHttpUrl(value: unknown, fieldName: string): string | undefined {
+  const text = normalizeText(value, MAX_DOWNLOAD_VALUE_LENGTH, fieldName);
+  if (!text) return text;
+  try {
+    const url = new URL(text);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return text;
+  } catch {
+    // 统一返回字段错误，避免泄漏运行时细节。
+  }
+  throw new Error(`${fieldName} 仅支持 HTTP 或 HTTPS 地址`);
+}
+
+function sanitizeHttpUrl(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text || text.length > MAX_DOWNLOAD_VALUE_LENGTH) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? text : '';
+  } catch {
+    return '';
+  }
+}
+
 function normalizeTutorial(value: unknown): NonNullable<TutorialConfigPayload['tutorial']> {
   if (value === undefined) return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('tutorial 必须是对象');
@@ -43,9 +67,20 @@ function normalizeClientDownload(value: unknown): NonNullable<TutorialConfigPayl
   const download = value as Record<string, unknown>;
   return {
     version: normalizeText(download.version, MAX_DOWNLOAD_VALUE_LENGTH, '客户端版本'),
-    officialUrl: normalizeText(download.officialUrl, MAX_DOWNLOAD_VALUE_LENGTH, '官方下载地址'),
-    mirrorUrl: normalizeText(download.mirrorUrl, MAX_DOWNLOAD_VALUE_LENGTH, '镜像下载地址'),
-    translationUrl: normalizeText(download.translationUrl, MAX_DOWNLOAD_VALUE_LENGTH, '汉化下载地址'),
+    officialUrl: normalizeHttpUrl(download.officialUrl, '官方下载地址'),
+    mirrorUrl: normalizeHttpUrl(download.mirrorUrl, '镜像下载地址'),
+    translationUrl: normalizeHttpUrl(download.translationUrl, '汉化下载地址'),
+  };
+}
+
+function sanitizeClientDownload(value: unknown): NonNullable<TutorialConfigPayload['clientDownload']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const download = value as Record<string, unknown>;
+  return {
+    version: typeof download.version === 'string' ? download.version.trim().slice(0, MAX_DOWNLOAD_VALUE_LENGTH) : '',
+    officialUrl: sanitizeHttpUrl(download.officialUrl),
+    mirrorUrl: sanitizeHttpUrl(download.mirrorUrl),
+    translationUrl: sanitizeHttpUrl(download.translationUrl),
   };
 }
 
@@ -57,7 +92,7 @@ function loadTutorialConfig(deps: ApiDeps): TutorialConfigPayload {
       ...tutorial,
       ...(legacyGuide && !tutorial.download ? { download: legacyGuide } : {}),
     },
-    clientDownload: normalizeClientDownload(deps.configStore.getJson<unknown>('clientDownload', {})),
+    clientDownload: sanitizeClientDownload(deps.configStore.getJson<unknown>('clientDownload', {})),
   };
 }
 

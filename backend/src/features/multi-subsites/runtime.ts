@@ -21,6 +21,8 @@ class ManagedSubsiteRuntime {
   readonly db: AppDatabase;
   readonly ts3: Ts3ClientWrapper;
   readonly router: ReturnType<typeof createRouter>;
+  private readonly stats: StatsService;
+  private readonly dbPath: string;
   private readonly monitor: MonitorService;
   private readonly elastic: ElasticChannelService;
   private readonly champion: WeeklyChampionService;
@@ -35,7 +37,8 @@ class ManagedSubsiteRuntime {
     wsHub: WsHub,
     credentialCipher: CredentialCipher
   ) {
-    this.db = openDatabase(path.resolve(path.dirname(rootConfig.dbPath), 'subsites', `${subsite.slug}.db`));
+    this.dbPath = path.resolve(path.dirname(rootConfig.dbPath), 'subsites', `${subsite.slug}.db`);
+    this.db = openDatabase(this.dbPath);
     const config: AppConfig = {
       ...rootConfig,
       ts3: { host: subsite.ts3Host, queryPort: subsite.queryPort, serverPort: subsite.serverPort, serverId: subsite.serverId, username: subsite.username, password: subsite.password },
@@ -43,17 +46,17 @@ class ManagedSubsiteRuntime {
       site: { ...rootConfig.site, title: subsite.displayName, serverName: subsite.displayName, slug: subsite.slug, domain: subsite.domain },
     };
     const store = new SiteConfigStore(this.db);
-    const stats = new StatsService(this.db);
-    stats.setServerKey(getTs3ServerKey(config.ts3), true);
+    this.stats = new StatsService(this.db);
+    this.stats.setServerKey(getTs3ServerKey(config.ts3), true);
     this.ts3 = new Ts3ClientWrapper(config.ts3);
     const auth = new AuthService(subsite.adminPassword, createHmac('sha256', rootConfig.jwtSecret).update(`subsite:${subsite.id}`).digest('hex'));
-    this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher, () => stats.getServerKey());
-    this.champion = new WeeklyChampionService(this.db, this.ts3, stats);
-    this.achievement = new AchievementService(this.db, this.ts3, stats);
-    this.monitor = new MonitorService(this.ts3, stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
-    const dashboard = new DashboardService(config, this.ts3, stats, store, this.elastic, this.achievement);
+    this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher, () => this.stats.getServerKey());
+    this.champion = new WeeklyChampionService(this.db, this.ts3, this.stats);
+    this.achievement = new AchievementService(this.db, this.ts3, this.stats);
+    this.monitor = new MonitorService(this.ts3, this.stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
+    const dashboard = new DashboardService(config, this.ts3, this.stats, store, this.elastic, this.achievement);
     const deps: ApiDeps = {
-      auth, configStore: store, stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer, credentialCipher,
+      auth, configStore: store, stats: this.stats, elastic: this.elastic, champion: this.champion, achievement: this.achievement, dashboard, ts3: this.ts3, publicServer: config.publicServer, credentialCipher,
       persistTs3Config: (next) => registry.updateTs3Config(subsite.id, next),
       persistAdminPasswordHash: (passwordHash) => registry.updateAdminPasswordHash(subsite.id, passwordHash),
     };
@@ -68,9 +71,19 @@ class ManagedSubsiteRuntime {
     if (this.ts3.getConfig().host) void this.ts3.start();
     const elasticTimer = setInterval(() => void this.safeRun(() => this.runElastic()), 60_000);
     const achievementTimer = setInterval(() => void this.safeRun(() => this.runAchievement()), 6 * 3600 * 1000);
+    const archiveDbPath = path.resolve(path.dirname(this.dbPath), `${this.subsite.slug}_archive.db`);
+    const archiveTimer = setInterval(() => {
+      void this.safeRun(async () => {
+        const res = this.stats.archiveOldData(archiveDbPath, 180, 365);
+        if (res.archivedSamples > 0 || res.archivedSessions > 0 || res.archivedChannelDays > 0 || res.archivedUserDays > 0) {
+          console.log(`[archive:${this.subsite.slug}] 历史数据已归档: samples=${res.archivedSamples}, sessions=${res.archivedSessions}`);
+        }
+      });
+    }, 24 * 3600 * 1000);
     elasticTimer.unref();
     achievementTimer.unref();
-    this.timers.push(elasticTimer, achievementTimer);
+    archiveTimer.unref();
+    this.timers.push(elasticTimer, achievementTimer, archiveTimer);
     void this.runChampionAndSchedule();
   }
 

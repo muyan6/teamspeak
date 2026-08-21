@@ -15,7 +15,6 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "socket.io-client": "^4.8.3",
     "ts3-nodejs-library": "^3.5.3",
     "ws": "^8.18.0"
   },

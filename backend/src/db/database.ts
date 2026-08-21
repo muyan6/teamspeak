@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS champion_config (
   updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS champion_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_key TEXT NOT NULL DEFAULT 'legacy',
+  client_database_id INTEGER NOT NULL,
+  nickname TEXT NOT NULL,
+  won_at INTEGER NOT NULL,
+  week_start TEXT,
+  UNIQUE(server_key, client_database_id, week_start)
+);
+
+
 CREATE TABLE IF NOT EXISTS guestbook_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nickname TEXT NOT NULL,
@@ -581,4 +592,17 @@ export function migrateStatsSchema(db: AppDatabase): void {
       db.exec(`ALTER TABLE ${migration.table}__new RENAME TO ${migration.table}`);
     })();
   }
+
+  db.transaction(() => {
+    db.exec(`DELETE FROM online_samples
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM online_samples GROUP BY server_key, sample_time
+      )`);
+    db.exec(`DELETE FROM sessions
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM sessions GROUP BY server_key, client_database_id, start_time
+      )`);
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_online_samples_server_sample_time ON online_samples(server_key, sample_time)');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_server_client_start ON sessions(server_key, client_database_id, start_time)');
+  })();
 }

@@ -132,6 +132,7 @@ async function move(clid: number) {
   const password = window.prompt('目标频道密码（无密码请留空）：');
   try {
     await api.moveClient(clid, cid, password && password.trim() !== '' ? password.trim() : undefined);
+    moveSel.value[clid] = 0;
     showNotice('已移动');
     await loadAll();
   } catch (err) {
@@ -145,6 +146,7 @@ async function assign(clid: number) {
   if (!sgid || !c) return;
   try {
     await api.assignServerGroup(sgid, c.clientDatabaseId);
+    assignSel.value[clid] = 0;
     showNotice('已分配权限');
     await loadAll();
   } catch (err) {
@@ -169,6 +171,7 @@ async function assignCg(c: AdminClient) {
   if (!cgid) return;
   try {
     await api.assignChannelGroup(cgid, c.channelId, c.clientDatabaseId);
+    cgSel.value[c.clid] = 0;
     showNotice(`已授予「${c.nickname}」频道组`);
     await loadAll();
   } catch (err) {

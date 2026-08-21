@@ -36,17 +36,31 @@ const tutorialSection = computed(() => {
 });
 const tutorialHtml = computed(() => (tutorialSection.value ? renderMarkdown(tutorialSection.value.content) : ''));
 
+function safeHttpUrl(value: string | undefined): string {
+  const urlText = value?.trim() ?? '';
+  if (!urlText) return '';
+  try {
+    const url = new URL(urlText);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? urlText : '';
+  } catch {
+    return '';
+  }
+}
+
 const adminQqContact = computed(() => (data.value?.site.adminQq || data.value?.site.adminSteam || '').trim());
 const adminQqLink = computed(() => {
   const c = adminQqContact.value;
   if (!c) return '';
   if (/^https?:\/\//i.test(c) || /^tencent:\/\//i.test(c) || /^mqqwpa:\/\//i.test(c)) return c;
-  const num = c.replace(/[^0-9]/g, '');
-  if (num) {
-    return `tencent://message/?uin=${num}&Site=TeamSpeak&Menu=yes`;
+  if (/^[1-9]\d{4,11}$/.test(c)) {
+    return `tencent://message/?uin=${c}&Site=TeamSpeak&Menu=yes`;
   }
-  return c;
+  return '';
 });
+const hasAdminQqContact = computed(() => Boolean(adminQqLink.value));
+const clientDownloadUrl = computed(() => safeHttpUrl(data.value?.site.clientDownload));
+const mirrorDownloadUrl = computed(() => safeHttpUrl(data.value?.site.mirrorDownload));
+const translationDownloadUrl = computed(() => safeHttpUrl(data.value?.site.translationDownload));
 const adminQqDisplay = computed(() => {
   const c = adminQqContact.value;
   if (!c) return 'QQ';
@@ -203,12 +217,12 @@ onMounted(() => void loadHomeModules());
                 </button>
               </template>
             </div>
-            <div class="connect-admin-row" v-if="data.site.adminName || adminQqContact">
+            <div class="connect-admin-row" v-if="data.site.adminName || hasAdminQqContact">
               <template v-if="data.site.adminName">
                 <i class="ph-bold ph-user-gear"></i>
                 <span>需私人频道联系 <span class="connect-admin-highlight">{{ data.site.adminName }}</span></span>
               </template>
-              <template v-if="adminQqContact">
+              <template v-if="hasAdminQqContact">
                 <span v-if="data.site.adminName" class="sublink-sep">|</span>
                 <span class="sublink-item">
                   <i class="ph-bold ph-chat-circle-dots"></i> 若不在请联系
@@ -238,7 +252,7 @@ onMounted(() => void loadHomeModules());
           <p class="download-card-subtitle">推荐使用 v3.6.2 稳定版</p>
         </div>
 
-        <a class="download-main-btn" :href="data.site.clientDownload" target="_blank" rel="noopener">
+        <a v-if="clientDownloadUrl" class="download-main-btn" :href="clientDownloadUrl" target="_blank" rel="noopener">
           <div style="display: flex; align-items: center; gap: 0.625rem">
             <div class="download-icon-box">
               <i class="ph-bold ph-download-simple"></i>
@@ -250,17 +264,28 @@ onMounted(() => void loadHomeModules());
           </div>
           <i class="ph-bold ph-arrow-right download-arrow"></i>
         </a>
+        <div v-else class="download-main-btn" aria-disabled="true">
+          <div style="display: flex; align-items: center; gap: 0.625rem">
+            <div class="download-icon-box">
+              <i class="ph-bold ph-download-simple"></i>
+            </div>
+            <div>
+              <div class="download-name">暂未配置下载</div>
+              <div class="download-tag">请联系管理员</div>
+            </div>
+          </div>
+        </div>
 
         <div class="download-sublinks">
-          <a class="sublink-item" :href="data.site.mirrorDownload" target="_blank" rel="noopener">
+          <a v-if="mirrorDownloadUrl" class="sublink-item" :href="mirrorDownloadUrl" target="_blank" rel="noopener">
             <i class="ph-bold ph-cloud-arrow-down"></i> 备用下载
           </a>
-          <span class="sublink-sep">|</span>
-          <a class="sublink-item translation" :href="data.site.translationDownload" target="_blank" rel="noopener">
+          <span v-if="mirrorDownloadUrl && translationDownloadUrl" class="sublink-sep">|</span>
+          <a v-if="translationDownloadUrl" class="sublink-item translation" :href="translationDownloadUrl" target="_blank" rel="noopener">
             <i class="ph-bold ph-translate"></i> 汉化包
           </a>
           <template v-if="data.tutorial.enabled">
-            <span class="sublink-sep">|</span>
+            <span v-if="mirrorDownloadUrl || translationDownloadUrl" class="sublink-sep">|</span>
             <button class="sublink-item guide" style="background: none; border: none; font-size: inherit; font-family: inherit" @click="showTutorial = true">
               <i class="ph-bold ph-book-open"></i> 使用教程
             </button>
@@ -458,7 +483,7 @@ onMounted(() => void loadHomeModules());
                 <div class="champion-info-box">
                   <div class="champion-kicker-row">
                     <span class="champion-kicker-dot"></span>
-                    <span class="champion-kicker-text">活跃大佬本周魁首</span>
+                    <span class="champion-kicker-text">全服最高荣誉勋位</span>
                   </div>
                   <div class="champion-user-name">
                     {{ achievements.featured ? achievements.featured.nickname : '虚位以待' }}

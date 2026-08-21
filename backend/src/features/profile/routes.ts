@@ -100,12 +100,17 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       createdAt = '';
     }
     const { dbid: _dbid, ...profile } = stats;
+    const ts3LastDate = formatTs3Date(client.lastConnected);
+    const resolvedLastOnline = profile.streak.last_online && ts3LastDate
+      ? (profile.streak.last_online >= ts3LastDate ? profile.streak.last_online : ts3LastDate)
+      : (profile.streak.last_online || ts3LastDate || '');
+
     res.json({
       ...profile,
       server_groups: serverGroups,
       badges,
       total_time: { ...profile.total_time, first_seen: createdAt || profile.total_time.first_seen },
-      streak: { ...profile.streak, last_online: formatTs3Date(client.lastConnected) || profile.streak.last_online },
+      streak: { ...profile.streak, last_online: resolvedLastOnline },
     });
   }));
 
