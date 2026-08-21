@@ -493,7 +493,7 @@ export class AchievementService {
       `SELECT COUNT(DISTINCT g.client_database_id) as cnt
        FROM achievement_grants g
        JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
-       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
          AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')`
     ).get(this.stats.getServerKey()) as {
       cnt: number;
@@ -509,7 +509,7 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
@@ -526,7 +526,7 @@ export class AchievementService {
          FROM achievement_grants g
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
-         WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY u.total_seconds DESC, g.granted_at ASC`
       )
@@ -543,7 +543,7 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC
          LIMIT 1`
@@ -553,7 +553,7 @@ export class AchievementService {
     const levels = this.db
       .prepare(
         `SELECT l.id as id, l.title as title, l.hours as hours,
-                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=') AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery') THEN g.client_database_id END) as unlockedCount
+                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=') AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery') THEN g.client_database_id END) as unlockedCount
          FROM achievement_levels l
          LEFT JOIN achievement_grants g ON g.level_id = l.id AND g.server_key = ?
          LEFT JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
