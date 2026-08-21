@@ -14,6 +14,7 @@ export interface SiteData {
   adminQq: string;
   adminSteam: string;
   globalServer: string;
+  musicBotUrl: string;
 }
 
 export interface TutorialSection {
@@ -43,12 +44,14 @@ export interface SiteInfoConfig {
   adminName?: string;
   adminQq?: string;
   adminSteam?: string;
+  musicBotUrl?: string;
 }
 
 export interface TutorialConfig {
   download?: string;
   basic?: string;
   advanced?: string;
+  music?: string;
 }
 
 function safeText(value: unknown): string {
@@ -62,7 +65,13 @@ export const DOWNLOAD_LINKS = {
     'https://cloud.nanodesu.net/d/teamspeak/%E6%B1%89%E5%8C%96%E6%96%87%E4%BB%B6.ts3_translation',
 };
 
-export function buildSiteData(config: AppConfig, serverName: string, download?: DownloadConfig, siteInfo?: SiteInfoConfig): SiteData {
+export function buildSiteData(
+  config: AppConfig,
+  serverName: string,
+  download?: DownloadConfig,
+  siteInfo?: SiteInfoConfig,
+  musicBotUrl?: string
+): SiteData {
   const host = config.publicServer.host;
   const port = config.publicServer.port;
   const defaultAddress = port === 9987 ? host : `${host}:${port}`;
@@ -82,6 +91,7 @@ export function buildSiteData(config: AppConfig, serverName: string, download?: 
     adminQq: adminContact,
     adminSteam: adminContact,
     globalServer: config.site.globalServer,
+    musicBotUrl: safeText(siteInfo?.musicBotUrl) || safeText(musicBotUrl),
   };
 }
 
@@ -125,6 +135,46 @@ const ADVANCED_TUTORIAL = `### 1. 配置多服务器（书签）
 
 ![自动连接](https://bee-reg-ab.imagency.cn/p/8307045b654b6c51b6752743028fcdec.jpg)`;
 
+const MUSIC_TUTORIAL = `### 音乐机器人指令
+双击机器人，目前有以下指令（把[xxx]替换成对应信息，不要带上中括号，前面的英文感叹号也要输）
+
+1. **立即播放音乐（默认网易云）**：\`!play [歌名]\`
+2. **从网易云音乐搜索并播放**：\`!play -n [歌名]\`
+3. **从 QQ 音乐搜索并播放**：\`!play -q [歌名]\`
+4. **从酷狗音乐搜索并播放**：\`!play -k [歌名]\`
+5. **搜索歌曲列表（挑选同名歌曲，可加 -n/-q/-k 切换音源）**：\`!search [歌名]\`
+6. **播放上一次搜索结果中的指定序号歌曲**：\`!play #[序号]\`
+7. **按歌曲 id 或链接精确播放**：\`!play id [歌曲id或链接]\`
+8. **添加音乐到播放队列**：\`!add [歌名]\`
+9. **暂停播放**：\`!pause\`
+10. **恢复播放**：\`!resume\`
+11. **播放列表中的下一首**：\`!next\`
+12. **播放列表中的上一首**：\`!prev\`
+13. **停止播放并清空队列**：\`!stop\`
+14. **设置音量【0-100】**：\`!vol [音量]\`
+15. **查看当前播放队列**：\`!queue\`
+16. **从队列中删除指定位置的歌曲（位置从 1 开始）**：\`!remove [位置]\`
+17. **播放模式选择【seq=顺序播放 loop=循环播放 random=随机播放 rloop=随机循环】**：\`!mode [模式]\`
+18. **播放网易云歌单（支持歌单名或歌单ID）**：\`!playlist [歌单名或ID]\`
+19. **从 QQ 音乐搜索并播放歌单**：\`!playlist -q [歌单名]\`
+20. **播放专辑（支持专辑名或专辑ID）**：\`!album [专辑名或ID]\`
+21. **按歌手循环播放（支持 -n/-q/-k）**：\`!artist [歌手名]\`
+22. **网易云私人 FM（自动续播）**：\`!fm\`
+23. **QQ 音乐雷达 / 猜你喜欢 FM（自动续播）**：\`!fm -q\`
+24. **酷狗私人电台 FM（自动续播）**：\`!fm -k\`
+25. **显示当前完整歌词**：\`!lyrics\`
+26. **显示当前播放信息**：\`!now\`
+27. **投票跳过当前歌曲**：\`!vote\`
+28. **移动到指定频道**：\`!move [频道名]\`
+29. **保存当前队列为清单**：\`!save [清单名称]\`
+30. **加载已保存清单（加 -a 追加到队列末尾）**：\`!load [清单名称]\`
+31. **列出所有已保存清单**：\`!queues\`
+32. **显示帮助信息**：\`!help\`
+
+### 歌单/歌曲 ID 示例
+以下例子加粗的就是音乐或者歌单id：
+https://music.163.com/#/my/m/music/playlist?id=**2139305008**`;
+
 export function buildTutorial(config: AppConfig, tutorialOverride?: TutorialConfig, updatedAtMs?: number, legacyGuide?: string): TutorialData {
   const host = config.publicServer.host;
   const port = config.publicServer.port;
@@ -166,6 +216,7 @@ export function buildTutorial(config: AppConfig, tutorialOverride?: TutorialConf
       { key: 'download', title: '下载教程', content: downloadContent },
       { key: 'basic', title: '基础教程', content: safeText(tutorialOverride?.basic) || BASIC_TUTORIAL },
       { key: 'advanced', title: '进阶教程', content: safeText(tutorialOverride?.advanced) || ADVANCED_TUTORIAL },
+      { key: 'music', title: '音乐教程', content: safeText(tutorialOverride?.music) || MUSIC_TUTORIAL },
     ],
     updatedAt: formatTimestamp(updatedAtMs ?? Date.now()),
   };

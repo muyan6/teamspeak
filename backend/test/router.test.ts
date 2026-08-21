@@ -324,6 +324,7 @@ describe('管理接口与配置回归', () => {
         download: '下载教程内容',
         basic: '基础教程内容',
         advanced: '进阶教程内容',
+        music: '音乐教程内容',
       },
       clientDownload: {
         version: '3.6.2',
@@ -331,6 +332,7 @@ describe('管理接口与配置回归', () => {
         mirrorUrl: 'https://example.com/mirror.exe',
         translationUrl: 'https://example.com/zh.ts3_translation',
       },
+      musicBotUrl: 'https://music.example.com',
     };
     const siteInfoPayload = {
       title: 'Voice',

@@ -12,6 +12,7 @@ export interface SiteInfo {
   adminQq?: string;
   adminSteam?: string;
   globalServer: string;
+  musicBotUrl?: string;
 }
 
 export type BadgeConditionType =
@@ -221,8 +222,10 @@ export interface TutorialConfig {
     download?: string;
     basic?: string;
     advanced?: string;
+    music?: string;
   };
   clientDownload?: ClientDownloadConfig;
+  musicBotUrl?: string;
 }
 
 export interface Ts3ConnectionInfo {

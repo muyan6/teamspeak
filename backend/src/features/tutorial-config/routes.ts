@@ -6,6 +6,7 @@ interface TutorialConfigPayload {
     download?: string;
     basic?: string;
     advanced?: string;
+    music?: string;
   };
   clientDownload?: {
     version?: string;
@@ -13,6 +14,7 @@ interface TutorialConfigPayload {
     mirrorUrl?: string;
     translationUrl?: string;
   };
+  musicBotUrl?: string;
 }
 
 const MAX_TUTORIAL_CONTENT_LENGTH = 100_000;
@@ -58,6 +60,7 @@ function normalizeTutorial(value: unknown): NonNullable<TutorialConfigPayload['t
     download: normalizeText(tutorial.download, MAX_TUTORIAL_CONTENT_LENGTH, '下载教程'),
     basic: normalizeText(tutorial.basic, MAX_TUTORIAL_CONTENT_LENGTH, '基础教程'),
     advanced: normalizeText(tutorial.advanced, MAX_TUTORIAL_CONTENT_LENGTH, '进阶教程'),
+    music: normalizeText(tutorial.music, MAX_TUTORIAL_CONTENT_LENGTH, '音乐教程'),
   };
 }
 
@@ -93,6 +96,7 @@ function loadTutorialConfig(deps: ApiDeps): TutorialConfigPayload {
       ...(legacyGuide && !tutorial.download ? { download: legacyGuide } : {}),
     },
     clientDownload: sanitizeClientDownload(deps.configStore.getJson<unknown>('clientDownload', {})),
+    musicBotUrl: sanitizeHttpUrl(deps.configStore.get('musicBotUrl')),
   };
 }
 
@@ -106,6 +110,9 @@ export function registerTutorialConfigRoutes(router: Router, deps: ApiDeps, admi
     try {
       if (body.tutorial !== undefined) deps.configStore.setJson('tutorial', normalizeTutorial(body.tutorial));
       if (body.clientDownload !== undefined) deps.configStore.setJson('clientDownload', normalizeClientDownload(body.clientDownload));
+      if (body.musicBotUrl !== undefined) {
+        deps.configStore.set('musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot Web 链接') ?? '');
+      }
       res.json(loadTutorialConfig(deps));
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });

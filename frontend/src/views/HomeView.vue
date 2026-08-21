@@ -63,12 +63,8 @@ const hasAdminQqContact = computed(() => Boolean(adminQqLink.value));
 const clientDownloadUrl = computed(() => safeHttpUrl(data.value?.site.clientDownload));
 const mirrorDownloadUrl = computed(() => safeHttpUrl(data.value?.site.mirrorDownload));
 const translationDownloadUrl = computed(() => safeHttpUrl(data.value?.site.translationDownload));
-const adminQqDisplay = computed(() => {
-  const c = adminQqContact.value;
-  if (!c) return 'QQ';
-  if (/^https?:\/\//i.test(c)) return 'QQ 联系方式';
-  return c.startsWith('QQ') ? c : `QQ: ${c}`;
-});
+const musicBotUrl = computed(() => safeHttpUrl(data.value?.site.musicBotUrl));
+const adminQqDisplay = computed(() => 'QQ');
 
 async function copyText(text: string) {
   if (!text) return;
@@ -84,6 +80,15 @@ async function copyText(text: string) {
 function quickConnect() {
   if (data.value?.site.connectUrl) {
     window.open(data.value.site.connectUrl, '_blank');
+  }
+}
+
+function openMusicBot() {
+  if (musicBotUrl.value) {
+    window.open(musicBotUrl.value, '_blank');
+  } else {
+    showTutorial.value = true;
+    tutorialTab.value = 'music';
   }
 }
 
@@ -272,13 +277,27 @@ onMounted(() => void loadHomeModules());
             </div>
           </div>
 
-          <button class="quick-connect-btn" @click="quickConnect">
-            <i class="ph-bold ph-plug quick-connect-icon"></i>
-            <div>
-              <div class="quick-connect-kicker">Quick Connect</div>
-              <div class="quick-connect-title">Connect</div>
-            </div>
-          </button>
+          <div class="connect-actions-group">
+            <button class="quick-connect-btn" @click="quickConnect">
+              <i class="ph-bold ph-plug quick-connect-icon"></i>
+              <div>
+                <div class="quick-connect-kicker">Quick Connect</div>
+                <div class="quick-connect-title">Connect</div>
+              </div>
+            </button>
+
+            <button
+              class="quick-connect-btn musicbot-btn"
+              @click="openMusicBot"
+              :title="musicBotUrl ? '打开 TSMusicBot WebUI' : '查看音乐机器人教程'"
+            >
+              <i class="ph-bold ph-music-notes-simple quick-connect-icon"></i>
+              <div>
+                <div class="quick-connect-kicker">TSMusicBot</div>
+                <div class="quick-connect-title">WebUI</div>
+              </div>
+            </button>
+          </div>
         </div>
       </div>
 
