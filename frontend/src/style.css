@@ -726,13 +726,6 @@ button {
   order: 5;
 }
 
-@media (max-width: 1023px) {
-  .realtime-monitor-card {
-    position: static;
-    max-height: 480px;
-  }
-}
-
 @media (min-width: 1024px) {
   .main-dashboard-grid {
     display: grid;
@@ -1654,11 +1647,18 @@ button {
 
 /* ========== Right Column: Realtime Live Monitor (实时在线) ========== */
 .realtime-monitor-card {
-  position: sticky;
-  top: 1.5rem;
-  max-height: calc(100vh - 3rem);
+  position: static;
+  max-height: none;
   display: flex;
   flex-direction: column;
+}
+
+@media (min-width: 1024px) {
+  .realtime-monitor-card {
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+  }
 }
 
 .realtime-header {
@@ -1696,11 +1696,17 @@ button {
 
 .realtime-list-scroll {
   flex: 1;
-  overflow-y: auto;
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-y: visible;
+}
+
+@media (min-width: 1024px) {
+  .realtime-list-scroll {
+    overflow-y: auto;
+  }
 }
 
 .realtime-user-card {
