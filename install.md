@@ -5,7 +5,7 @@
 部署后的结构如下：
 
 ```text
-浏览器 -> https://example.com -> Nginx -> Node.js (127.0.0.1:3001)
+浏览器 -> https://example.com -> Nginx -> Node.js (127.0.0.1:4321)
                                               -> TeamSpeak 3 ServerQuery (TCP 10011)
 ```
 
@@ -18,7 +18,7 @@
 - 可 SSH 登录服务器的账户（需要 `sudo` 权限）。
 - 可从网站服务器访问的 TS3 ServerQuery 服务；默认端口为 `10011`。
 
-在云服务商安全组和服务器防火墙中开放 TCP `22`、`80`、`443`。不要对公网开放应用的 `3001` 端口。
+在云服务商安全组和服务器防火墙中开放 TCP `22`、`80`、`443`。不要对公网开放应用的 `4321` 端口。
 
 ## 2. 配置域名解析
 
@@ -77,7 +77,7 @@ nano .env
 填入至少以下配置：
 
 ```env
-PORT=3001
+PORT=4321
 
 # 仅首次启动时用于初始化后台密码
 ADMIN_PASSWORD=<高强度后台密码>
@@ -142,7 +142,7 @@ pm2 startup
 检查应用是否运行：
 
 ```bash
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:4321/api/health
 pm2 status
 pm2 logs ts3-monitor
 ```
@@ -163,7 +163,7 @@ server {
     server_name example.com www.example.com;
 
     location /ws {
-        proxy_pass http://127.0.0.1:3001;
+        proxy_pass http://127.0.0.1:4321;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header Upgrade $http_upgrade;
@@ -172,7 +172,7 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:3001;
+        proxy_pass http://127.0.0.1:4321;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -213,7 +213,7 @@ https://example.com
 
 按顺序确认：
 
-1. `curl http://127.0.0.1:3001/api/health` 返回 JSON，且 `ok` 为 `true`。
+1. `curl http://127.0.0.1:4321/api/health` 返回 JSON，且 `ok` 为 `true`。
 2. 浏览器访问 `http://example.com` 能被 Nginx 正确转发。
 3. 浏览器访问 `https://example.com` 显示有效 HTTPS 证书。
 4. 网站首页能加载实时数据；浏览器开发者工具中 `/ws` 连接正常。
@@ -277,7 +277,7 @@ npm run build
 
 ```bash
 pm2 logs ts3-monitor --lines 100
-curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:4321/api/health
 ```
 
 ## 12. 数据备份

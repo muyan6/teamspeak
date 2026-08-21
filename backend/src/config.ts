@@ -49,7 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const adminQqVal = env.SITE_ADMIN_QQ || env.SITE_ADMIN_STEAM || '';
 
   return {
-    port: intEnv(env, 'PORT', 3001),
+    port: intEnv(env, 'PORT', 4321),
     ts3: {
       host: ts3Host,
       queryPort,

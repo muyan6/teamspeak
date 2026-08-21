@@ -57,7 +57,29 @@ onMounted(() => { void loadAdminScope(); });
           <h2>后台管理</h2>
           <p>服务器与站点设置</p>
         </div>
-        <button v-if="authed" class="btn sm" @click="logout">退出登录</button>
+        <div class="admin-heading-actions">
+          <a
+            href="http://150.158.129.222:1234/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="ext-link-btn"
+            title="跳转 TS Manager"
+          >
+            <i class="ph-bold ph-arrow-square-out"></i>
+            <span>TS Manager</span>
+          </a>
+          <a
+            href="http://150.158.129.222:3000/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="ext-link-btn"
+            title="跳转 TSMusicBot"
+          >
+            <i class="ph-bold ph-arrow-square-out"></i>
+            <span>TSMusicBot</span>
+          </a>
+          <button v-if="authed" class="btn sm" @click="logout">退出登录</button>
+        </div>
       </div>
 
       <div v-if="!authed" class="admin-login">
@@ -108,13 +130,18 @@ onMounted(() => { void loadAdminScope(); });
 .admin-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .admin-page-heading h2 { margin: 0; color: var(--text); font-size: 20px; font-weight: 800; }
 .admin-page-heading p { margin: 5px 0 0; color: var(--text-faint); font-size: 13px; }
+.admin-heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ext-link-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-hover); color: var(--text-dim); font-size: 12px; font-weight: 600; text-decoration: none; transition: all 0.15s ease; line-height: 1.4; }
+.ext-link-btn:hover { color: var(--text); border-color: var(--primary); background: rgba(244, 63, 94, 0.12); }
+.ext-link-btn i { font-size: 14px; }
 .tab-panel { overflow-x: auto; }
 .tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); gap: 8px; margin-bottom: 20px; padding: 6px; border: 1px solid var(--border); border-radius: 14px; background: rgba(9, 9, 11, 0.4); }
 .tabs .btn { width: 100%; min-height: 38px; }
 
 @media (max-width: 640px) {
   .admin-surface { padding: 16px; }
-  .admin-page-heading { align-items: flex-start; }
+  .admin-page-heading { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .admin-heading-actions { width: 100%; justify-content: flex-start; }
   .tab-panel :deep(.tbl) { min-width: 640px; }
 }
 </style>
