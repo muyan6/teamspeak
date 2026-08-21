@@ -3,6 +3,15 @@ import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
 
 export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
+  router.get('/achievements/levels/:id/users', (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: '无效的成就等级 ID' });
+      return;
+    }
+    res.json(deps.achievement.getLevelUsers(id));
+  });
+
   router.get('/achievements/levels', admin, (_req, res) => {
     res.json(deps.achievement.listLevels());
   });

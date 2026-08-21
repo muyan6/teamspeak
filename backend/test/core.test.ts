@@ -403,8 +403,8 @@ describe('TS3 监控后端核心链路', () => {
     const bot = {
       clid: 11,
       clientDatabaseId: 502,
-      uniqueIdentifier: 'uid-bot',
-      nickname: 'MusicBot',
+      uniqueIdentifier: 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
+      nickname: 'CustomMusicPlayer',
       serverGroupIds: [1],
       channelId: 1,
       channelName: 'Lobby',
@@ -417,15 +417,27 @@ describe('TS3 监控后端核心链路', () => {
     stats.recordSnapshot([human, bot], [channel], now);
     // Second sample 30s later
     stats.recordSnapshot([human, bot], [channel], now + 30_000);
+    testDb.prepare(
+      `INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+    ).run('legacy', 503, 'uid-legacy-bot', 'MusicBot', 999_999, 999_999, now);
 
     const longest = stats.getLongestSessions(10);
     expect(longest).toHaveLength(1);
     expect(longest[0].nickname).toBe('RealUser');
     expect(longest[0].seconds).toBeGreaterThanOrEqual(7230);
 
-    // Verify bot is filtered out from top users
+    // Verify both the UID blacklist and legacy MusicBot records stay out of statistics.
     const top = stats.getTopUsers('all', 10);
-    expect(top.some((u) => u.nickname.toLowerCase() === 'musicbot')).toBe(false);
+    expect(top.some((u) => u.nickname === 'CustomMusicPlayer')).toBe(false);
+    expect(top.some((u) => u.nickname === 'MusicBot')).toBe(false);
+    expect(stats.suggestNicknames('MusicBot')).toEqual([]);
+
+    // Keep legacy nickname-only callers filtering conventional bot names.
+    expect(stats.isBot('MusicBot')).toBe(true);
+    expect(stats.isBot('uid-regular-bot', 'MusicBot')).toBe(true);
 
     testDb.close();
   });

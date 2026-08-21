@@ -91,12 +91,25 @@ export class StatsService {
     this.suspendedOnline.clear();
   }
 
+  public static readonly EXCLUDED_BOT_UIDS = new Set<string>([
+    'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
+  ]);
+
   private static readonly BOT_REGEX = /^(musicbot|ts3bot|sinusbot|bot|tsbot|serverquery)$|^\[bot\]/i;
 
-  isBot(nickname: string): boolean {
-    const trimmed = nickname.trim();
-    if (!trimmed) return false;
-    return StatsService.BOT_REGEX.test(trimmed);
+  isBot(uniqueIdentifierOrNickname?: string, nickname?: string): boolean {
+    const uniqueIdentifier = nickname === undefined ? undefined : uniqueIdentifierOrNickname;
+    const resolvedNickname = nickname ?? uniqueIdentifierOrNickname;
+    if (uniqueIdentifier && StatsService.EXCLUDED_BOT_UIDS.has(uniqueIdentifier.trim())) {
+      return true;
+    }
+    if (resolvedNickname) {
+      const trimmed = resolvedNickname.trim();
+      if (trimmed && StatsService.BOT_REGEX.test(trimmed)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private weekStart(): number {
@@ -268,7 +281,7 @@ export class StatsService {
         });
 
         // 机器人只保留实时在线，不累计任何时长/频道/会话统计
-        if (this.isBot(c.nickname)) {
+        if (this.isBot(c.uniqueIdentifier, c.nickname)) {
           this.suspendedOnline.delete(dbId);
           continue;
         }
@@ -400,7 +413,7 @@ export class StatsService {
       const removeStmt = this.db.prepare('DELETE FROM online_clients WHERE server_key = ? AND client_database_id = ?');
       for (const r of prevRows) {
         if (!currentIds.has(r.client_database_id)) {
-          if (!this.isBot(r.nickname)) {
+          if (!this.isBot(r.unique_identifier, r.nickname)) {
             const deltaSec = Math.max(0, Math.floor((now - r.last_seen) / 1000));
             const userSessionDuration = r.connected_time > 0 ? Math.max(0, nowSec - Math.floor(r.connected_time)) : deltaSec;
             if (deltaSec > 0) {
@@ -496,17 +509,26 @@ export class StatsService {
         .prepare(
           `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
            FROM user_daily_activity
-           WHERE server_key = ? AND day >= ? AND lower(nickname) != 'musicbot'
+           WHERE server_key = ? AND day >= ?
+             AND client_database_id NOT IN (
+               SELECT client_database_id FROM user_online_duration
+                WHERE server_key = ? AND (
+                  unique_identifier IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+                  OR lower(nickname) = 'musicbot'
+                )
+              )
            GROUP BY client_database_id
            ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
         )
-        .all(this.serverKey, startKey, limit) as TopUser[];
+        .all(this.serverKey, startKey, this.serverKey, limit) as TopUser[];
     }
     return this.db
       .prepare(
-        `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
-         FROM user_online_duration
-         WHERE server_key = ? AND lower(nickname) != 'musicbot'
+         `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
+          FROM user_online_duration
+          WHERE server_key = ?
+            AND unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+            AND lower(nickname) != 'musicbot'
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
       .all(this.serverKey, limit) as TopUser[];
@@ -515,7 +537,11 @@ export class StatsService {
   getLongestSessions(limit = 5): Array<{ nickname: string; seconds: number }> {
     return this.db
       .prepare(
-        'SELECT nickname, longest_session_seconds as seconds FROM user_online_duration WHERE server_key = ? ORDER BY longest_session_seconds DESC LIMIT ?'
+        `SELECT nickname, longest_session_seconds as seconds FROM user_online_duration
+          WHERE server_key = ?
+            AND unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+            AND lower(nickname) != 'musicbot'
+         ORDER BY longest_session_seconds DESC LIMIT ?`
       )
       .all(this.serverKey, limit) as Array<{ nickname: string; seconds: number }>;
   }
@@ -525,10 +551,17 @@ export class StatsService {
       .prepare(
         `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, GROUP_CONCAT(day, ',') as days
          FROM user_daily_activity
-         WHERE server_key = ? AND lower(nickname) != 'musicbot'
+          WHERE server_key = ?
+            AND client_database_id NOT IN (
+              SELECT client_database_id FROM user_online_duration
+              WHERE server_key = ? AND (
+                unique_identifier IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+                OR lower(nickname) = 'musicbot'
+              )
+            )
          GROUP BY client_database_id`
       )
-      .all(this.serverKey) as Array<{ clientDatabaseId: number; nickname: string; days: string }>;
+      .all(this.serverKey, this.serverKey) as Array<{ clientDatabaseId: number; nickname: string; days: string }>;
 
     return rows
       .map((row) => ({
@@ -689,11 +722,18 @@ export class StatsService {
       .prepare(
         `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
          FROM user_daily_activity
-         WHERE server_key = ? AND day >= ? AND day < ? AND lower(nickname) != 'musicbot'
+          WHERE server_key = ? AND day >= ? AND day < ?
+            AND client_database_id NOT IN (
+              SELECT client_database_id FROM user_online_duration
+              WHERE server_key = ? AND (
+                unique_identifier IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+                OR lower(nickname) = 'musicbot'
+              )
+            )
          GROUP BY client_database_id
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
-      .all(this.serverKey, startKey, endKey, limit) as TopUser[];
+      .all(this.serverKey, startKey, endKey, this.serverKey, limit) as TopUser[];
   }
 
   private computeStreak(daySet: string[]): { current: number; max: number } {
@@ -730,7 +770,10 @@ export class StatsService {
       this.db
         .prepare(
           `SELECT nickname, unique_identifier as uid FROM user_online_duration
-           WHERE server_key = ? AND nickname LIKE ? AND lower(nickname) != 'musicbot' AND nickname != ''
+           WHERE server_key = ? AND nickname LIKE ?
+             AND unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             AND lower(nickname) != 'musicbot'
+             AND nickname != ''
            ORDER BY nickname, total_seconds DESC LIMIT ?`
         )
         .all(this.serverKey, `%${q}%`, limit) as Array<{ nickname: string; uid: string }>

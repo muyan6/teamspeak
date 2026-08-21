@@ -486,11 +486,14 @@ export class AchievementService {
   /** 已解锁成就的用户数（用于荣誉殿堂时长成就榜） */
   getUnlockedCount(): number {
     const row = this.db.prepare(
-      'SELECT COUNT(DISTINCT client_database_id) as cnt FROM achievement_grants WHERE server_key = ?'
+      `SELECT COUNT(DISTINCT g.client_database_id) as cnt
+       FROM achievement_grants g
+       JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
+       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')`
     ).get(this.stats.getServerKey()) as {
       cnt: number;
     };
-    return row.cnt;
+    return row?.cnt || 0;
   }
 
   getUnlockedUsers(): Array<{ nickname: string; title: string; hours: number }> {
@@ -501,10 +504,26 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ?
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
       .all(this.stats.getServerKey()) as Array<{ nickname: string; title: string; hours: number }>;
+  }
+
+  /** 获取指定成就等级的已获得成员列表 */
+  getLevelUsers(levelId: number): Array<{ nickname: string; uniqueIdentifier: string; clientDatabaseId: number; hours: number; grantedAt: number }> {
+    const serverKey = this.stats.getServerKey();
+    return this.db
+      .prepare(
+        `SELECT u.nickname as nickname, u.unique_identifier as uniqueIdentifier, u.client_database_id as clientDatabaseId,
+                ROUND(u.total_seconds / 3600.0, 1) as hours, g.granted_at as grantedAt
+         FROM achievement_grants g
+         JOIN user_online_duration u
+           ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
+         WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         ORDER BY u.total_seconds DESC, g.granted_at ASC`
+      )
+      .all(serverKey, levelId) as Array<{ nickname: string; uniqueIdentifier: string; clientDatabaseId: number; hours: number; grantedAt: number }>;
   }
 
   /** 主页荣誉殿堂公开汇总数据 */
@@ -517,7 +536,7 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ?
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
          ORDER BY l.hours DESC, g.granted_at ASC
          LIMIT 1`
       )
@@ -526,9 +545,10 @@ export class AchievementService {
     const levels = this.db
       .prepare(
         `SELECT l.id as id, l.title as title, l.hours as hours,
-                COUNT(DISTINCT g.client_database_id) as unlockedCount
+                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('O9VvvRMdK9B6YMDBbwi0j3L1Avs=') THEN g.client_database_id END) as unlockedCount
          FROM achievement_levels l
          LEFT JOIN achievement_grants g ON g.level_id = l.id AND g.server_key = ?
+         LEFT JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          WHERE l.enabled = 1
          GROUP BY l.id
          ORDER BY l.hours DESC, l.id ASC`

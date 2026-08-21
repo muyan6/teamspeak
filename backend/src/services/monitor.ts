@@ -75,7 +75,7 @@ export class MonitorService extends EventEmitter {
       const now = Date.now();
       const sampleInterval = this.sampleIntervalMs;
       if (now - this.lastSampleTime * 1000 >= sampleInterval) {
-        const humanCount = clients.filter((c) => !this.stats.isBot(c.nickname)).length;
+        const humanCount = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname)).length;
         this.stats.sampleOnline(humanCount, now);
       }
 

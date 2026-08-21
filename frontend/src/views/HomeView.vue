@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
+import { api } from '../api';
 import { useDashboard } from '../composables/dashboard';
 import type { RankEntry, TrendData } from '../types';
 import { renderMarkdown } from '../utils';
@@ -52,8 +53,9 @@ const adminQqLink = computed(() => {
   const c = adminQqContact.value;
   if (!c) return '';
   if (/^https?:\/\//i.test(c) || /^tencent:\/\//i.test(c) || /^mqqwpa:\/\//i.test(c)) return c;
-  if (/^[1-9]\d{4,11}$/.test(c)) {
-    return `tencent://message/?uin=${c}&Site=TeamSpeak&Menu=yes`;
+  const num = c.replace(/[^0-9]/g, '');
+  if (/^[1-9]\d{4,11}$/.test(num)) {
+    return `tencent://message/?uin=${num}&Site=TeamSpeak&Menu=yes`;
   }
   return '';
 });
@@ -163,6 +165,44 @@ const ACHIEVEMENT_ICONS = [
 
 function getAchievementIcon(idx: number): string {
   return ACHIEVEMENT_ICONS[idx % ACHIEVEMENT_ICONS.length];
+}
+
+interface LevelUserItem {
+  nickname: string;
+  uniqueIdentifier: string;
+  clientDatabaseId: number;
+  hours: number;
+  grantedAt: number;
+}
+
+const showLevelModal = ref(false);
+const selectedLevel = ref<{ id: number; title: string; hours: number; unlockedCount: number; iconIndex?: number } | null>(null);
+const levelUsers = ref<LevelUserItem[]>([]);
+const levelUsersLoading = ref(false);
+
+async function openLevelModal(level: { id: number; title: string; hours: number; unlockedCount: number }, idx: number) {
+  selectedLevel.value = { ...level, iconIndex: idx };
+  showLevelModal.value = true;
+  levelUsersLoading.value = true;
+  levelUsers.value = [];
+  try {
+    levelUsers.value = await api.getAchievementLevelUsers(level.id);
+  } catch (err) {
+    console.error('获取成就成员列表失败:', err);
+  } finally {
+    levelUsersLoading.value = false;
+  }
+}
+
+function formatGrantedTime(timestamp: number): string {
+  if (!timestamp) return '达成时间未知';
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${h}:${min}`;
 }
 
 onMounted(() => void loadHomeModules());
@@ -377,7 +417,13 @@ onMounted(() => void loadHomeModules());
                       <i v-else-if="i === 2" class="ph-fill ph-medal" style="color: #d97706; font-size: 0.9375rem"></i>
                       <span v-else class="rank-index-num">{{ i + 1 }}</span>
                     </div>
-                    <span class="rank-name-text">{{ u.name }}</span>
+                    <router-link
+                      :to="{ path: '/profile', query: { nickname: u.name } }"
+                      class="rank-name-text rank-name-link"
+                      :title="`查看「${u.name}」的个人数据`"
+                    >
+                      {{ u.name }}
+                    </router-link>
                     <div v-if="u.badges && u.badges.length" class="rank-user-badges">
                       <span
                         v-for="b in u.badges.slice(0, 3)"
@@ -486,7 +532,15 @@ onMounted(() => void loadHomeModules());
                     <span class="champion-kicker-text">全服最高荣誉勋位</span>
                   </div>
                   <div class="champion-user-name">
-                    {{ achievements.featured ? achievements.featured.nickname : '虚位以待' }}
+                    <router-link
+                      v-if="achievements.featured"
+                      :to="{ path: '/profile', query: { nickname: achievements.featured.nickname } }"
+                      class="champion-user-link"
+                      :title="`查看「${achievements.featured.nickname}」的个人数据`"
+                    >
+                      {{ achievements.featured.nickname }}
+                    </router-link>
+                    <span v-else>虚位以待</span>
                   </div>
                   <div class="champion-group-badge">
                     <i class="ph-bold ph-map-pin" style="font-size: 0.6875rem"></i>
@@ -519,7 +573,15 @@ onMounted(() => void loadHomeModules());
                         <i v-else class="ph-fill ph-user" style="color: #737373; font-size: 0.875rem"></i>
                       </div>
                       <div>
-                        <div class="streak-user-nickname">{{ member.nickname }}</div>
+                        <div class="streak-user-nickname">
+                          <router-link
+                            :to="{ path: '/profile', query: { nickname: member.nickname } }"
+                            class="streak-user-link"
+                            :title="`查看「${member.nickname}」的个人数据`"
+                          >
+                            {{ member.nickname }}
+                          </router-link>
+                        </div>
                         <div class="streak-val-row">
                           <span class="streak-val-num" :class="{ 'is-top': index === 0 }">{{ member.days }}</span>
                           <span class="streak-val-unit">天</span>
@@ -549,8 +611,10 @@ onMounted(() => void loadHomeModules());
                   <div
                     v-for="(level, index) in visibleAchievementLevels"
                     :key="level.id"
-                    class="achievement-level-card"
+                    class="achievement-level-card is-clickable"
                     :class="{ 'is-top': index === 0 }"
+                    @click="openLevelModal(level, index)"
+                    :title="`点击查看已获得「${level.title}」的成员列表`"
                   >
                     <div
                       class="achievement-badge-box"
@@ -785,6 +849,73 @@ onMounted(() => void loadHomeModules());
               更新时间：{{ data.tutorial.updatedAt }}
             </span>
             <button class="btn green" @click="showTutorial = false">我知道了</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 时长成就已获得成员弹窗 -->
+    <Teleport to="body">
+      <div v-if="showLevelModal && selectedLevel" class="modal-backdrop-wrap" @click.self="showLevelModal = false">
+        <div class="modal-dialog-box level-users-dialog">
+          <div class="modal-head-row">
+            <div class="modal-title-left">
+              <div class="section-icon-box" style="background: rgba(251, 191, 36, 0.15); color: #fbbf24">
+                <i :class="getAchievementIcon(selectedLevel.iconIndex ?? 0)"></i>
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.5rem">
+                  <h3 style="font-size: 1.125rem; font-weight: 800; color: #ffffff">{{ selectedLevel.title }}</h3>
+                  <span class="badge-count-pill" style="font-size: 0.6875rem">{{ levelUsers.length }} 人获得</span>
+                </div>
+                <p class="section-subtitle-text">累计在线需达 {{ formatAchievementHours(selectedLevel.hours) }} 小时</p>
+              </div>
+            </div>
+            <button class="modal-close-x" @click="showLevelModal = false" title="关闭">
+              <i class="ph-bold ph-x"></i>
+            </button>
+          </div>
+
+          <div v-if="levelUsersLoading" class="empty-box" style="padding: 3rem 1rem">
+            <i class="ph-duotone ph-spinner-gap ph-spin empty-icon" style="font-size: 2rem; color: #fbbf24"></i>
+            <span>正在加载获得者列表...</span>
+          </div>
+          <div v-else-if="levelUsers.length === 0" class="empty-box" style="padding: 3rem 1rem">
+            <i class="ph-duotone ph-trophy empty-icon"></i>
+            <p style="font-weight: 700; color: #d4d4d4; font-size: 0.875rem">虚位以待</p>
+            <p style="font-size: 0.75rem; color: var(--text-faint); margin-top: 0.25rem">暂无成员解锁该成就，快去连入语音累计时长吧！</p>
+          </div>
+          <div v-else class="modal-body-scroll level-users-list-scroll">
+            <div v-for="(user, uIdx) in levelUsers" :key="user.nickname + uIdx" class="level-user-row">
+              <div class="level-user-left">
+                <div class="level-user-avatar">
+                  <i :class="getUserIcon(user.nickname)"></i>
+                </div>
+                <div>
+                  <router-link
+                    :to="{ path: '/profile', query: { nickname: user.nickname, uid: user.uniqueIdentifier } }"
+                    class="level-user-name"
+                    :title="`查看「${user.nickname}」的个人数据`"
+                    @click="showLevelModal = false"
+                  >
+                    {{ user.nickname }}
+                  </router-link>
+                  <div class="level-user-granted-time">
+                    达成于 {{ formatGrantedTime(user.grantedAt) }}
+                  </div>
+                </div>
+              </div>
+              <div class="level-user-right">
+                <span class="level-user-hours-val">累计 {{ user.hours }} 小时</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-foot-row">
+            <span style="font-size: 0.75rem; color: var(--text-faint)">点击成员昵称可查询个人数据</span>
+            <button class="btn primary" style="background: rgba(251, 191, 36, 0.2); border-color: rgba(251, 191, 36, 0.4); color: #fbbf24" @click="showLevelModal = false">
+              我知道了
+            </button>
           </div>
         </div>
       </div>

@@ -64,6 +64,7 @@ export const api = {
 
   listAchievementLevels: () => request<AchievementLevel[]>('/achievements/levels'),
   listUnlockedAchievements: () => request<UnlockedAchievement[]>('/achievements/unlocked'),
+  getAchievementLevelUsers: (levelId: number) => request<Array<{ nickname: string; uniqueIdentifier: string; clientDatabaseId: number; hours: number; grantedAt: number }>>(`/achievements/levels/${levelId}/users`),
   addAchievementLevel: (data: Record<string, unknown>) => request<AchievementLevel>('/achievements/levels', { method: 'POST', body: JSON.stringify(data) }),
   updateAchievementLevel: (id: number, data: Record<string, unknown>) => request<{ success: boolean }>(`/achievements/levels/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAchievementLevel: (id: number) => request<{ success: boolean }>(`/achievements/levels/${id}`, { method: 'DELETE' }),
