@@ -230,27 +230,48 @@ cd /opt/ts3-monitor
 bash update.sh
 ```
 
-该脚本会自动完成：**拉取 Git 最新代码 -> 编译后端 -> 编译前端 -> 重启 PM2 进程**。
+脚本会先检查 Git 工作区是否干净，再拉取快进更新，并按实际变更范围执行必要操作：
+
+| 变更内容 | 脚本操作 |
+|----------|----------|
+| `backend/src/`、后端 TypeScript 配置 | 构建后端并重启 `ts3-monitor` |
+| `frontend/src/`、`public/`、Vite 或前端 TypeScript 配置 | 构建前端，无需重启 PM2 |
+| 对应项目的 `package.json` 或 `package-lock.json` | 对应项目运行 `npm ci`，再执行所需构建 |
+| 仅 `.md` 文档或 `update.sh` | 不安装依赖、不构建、不重启 |
+
+后端在生产模式直接托管 `frontend/dist`，所以前端构建完成后，下一次网页请求就会使用新文件，不需要重启 Node.js 服务。
+
+需要强制安装两端依赖、构建两端并重启后端时，运行：
+
+```bash
+bash update.sh --full
+```
+
+`--full` 适合首次在已有代码目录中部署、构建产物丢失或需要排查部署状态时使用。
 
 ---
 
-### 方式二：手动分步更新
+### 方式二：手动按需更新
 
 ```bash
 cd /opt/ts3-monitor
-git pull
+git pull --ff-only
 
+# 仅后端源码或后端依赖发生变更时执行
 cd backend
+# package.json 或 package-lock.json 变更时，先运行 npm ci
 npm ci
 npm run build
+pm2 restart ts3-monitor --update-env
 
+# 仅前端源码或前端依赖发生变更时执行
 cd ../frontend
+# package.json 或 package-lock.json 变更时，先运行 npm ci
 npm ci
 npm run build
-
-cd ../backend
-pm2 restart ts3-monitor
 ```
+
+只更新文档、部署脚本等不影响运行产物的文件时，拉取代码后无需执行构建或重启命令。
 
 更新后再次检查：
 
