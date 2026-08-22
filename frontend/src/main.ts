@@ -1,6 +1,10 @@
 import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 import App from './App.vue';
+import '@phosphor-icons/web/regular';
+import '@phosphor-icons/web/bold';
+import '@phosphor-icons/web/fill';
+import '@phosphor-icons/web/duotone';
 import './style.css';
 
 import HomeView from './views/HomeView.vue';
