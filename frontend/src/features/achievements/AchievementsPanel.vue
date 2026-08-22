@@ -12,8 +12,11 @@ const groups = ref<ServerGroup[]>([]);
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
-// 时长成就表单
+// 时长成就表单与编辑模态框
+const showLevelModal = ref(false);
+const editingLevelId = ref<number | null>(null);
 const levelForm = ref({ title: '', hours: 1, serverGroupId: 0 });
+const levelEditForm = ref({ title: '', hours: 1, serverGroupId: 0 });
 
 // 勋章编辑模态框与表单
 const showBadgeModal = ref(false);
@@ -104,6 +107,57 @@ async function load(): Promise<void> {
 }
 
 // 时长成就管理
+function openAddLevelModal(): void {
+  editingLevelId.value = null;
+  levelEditForm.value = { title: '', hours: 1, serverGroupId: 0 };
+  showLevelModal.value = true;
+}
+
+function openEditLevelModal(lvl: AchievementLevel): void {
+  editingLevelId.value = lvl.id;
+  levelEditForm.value = {
+    title: lvl.title,
+    hours: lvl.hours,
+    serverGroupId: lvl.serverGroupId || 0,
+  };
+  showLevelModal.value = true;
+}
+
+async function saveLevel(): Promise<void> {
+  if (!levelEditForm.value.title.trim()) {
+    showNotice('请输入成就等级名称');
+    return;
+  }
+  if (levelEditForm.value.hours < 0) {
+    showNotice('所需在线时长不能为负数');
+    return;
+  }
+
+  const payload = {
+    title: levelEditForm.value.title.trim(),
+    hours: Number(levelEditForm.value.hours),
+    serverGroupId: Number(levelEditForm.value.serverGroupId || 0),
+  };
+
+  try {
+    if (editingLevelId.value) {
+      const current = levels.value.find((l) => l.id === editingLevelId.value);
+      await api.updateAchievementLevel(editingLevelId.value, {
+        ...payload,
+        enabled: current ? current.enabled : 1,
+      });
+      showNotice('时长成就等级已修改并自动全员匹配');
+    } else {
+      await api.addAchievementLevel(payload);
+      showNotice('在线时长成就已添加并自动匹配授予');
+    }
+    showLevelModal.value = false;
+    await load();
+  } catch (error) {
+    showNotice((error as Error).message);
+  }
+}
+
 async function addLevel(): Promise<void> {
   if (!levelForm.value.title.trim() || levelForm.value.hours < 0) return;
   try {
@@ -301,6 +355,9 @@ onMounted(() => { void load(); });
         <button v-if="activeTab === 'badges'" class="btn sm primary" @click="openAddBadgeModal">
           <i class="ph-bold ph-plus"></i> 新增勋章
         </button>
+        <button v-else-if="activeTab === 'levels'" class="btn sm primary" @click="openAddLevelModal">
+          <i class="ph-bold ph-plus"></i> 新增时长等级
+        </button>
       </div>
     </div>
 
@@ -391,7 +448,10 @@ onMounted(() => { void load(); });
               </button>
             </td>
             <td style="text-align: right">
-              <button class="btn sm danger" @click="removeLevel(level.id)">删除</button>
+              <div style="display: inline-flex; gap: 6px">
+                <button class="btn sm" @click="openEditLevelModal(level)">编辑</button>
+                <button class="btn sm danger" @click="removeLevel(level.id)">删除</button>
+              </div>
             </td>
           </tr>
           <tr class="tbl-form-row">
@@ -551,6 +611,41 @@ onMounted(() => { void load(); });
         <div class="modal-foot">
           <button class="btn" @click="showBadgeModal = false">取消</button>
           <button class="btn primary" @click="saveBadge">保存并全员匹配</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模态框：新增/编辑时长成就等级 -->
+    <div v-if="showLevelModal" class="badge-modal-mask" @click.self="showLevelModal = false">
+      <div class="badge-modal-card" style="max-width: 480px">
+        <div class="modal-head">
+          <h3>{{ editingLevelId ? '编辑时长成就等级与条件' : '新增时长成就等级' }}</h3>
+          <button class="modal-close" @click="showLevelModal = false">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group">
+            <label>成就等级名称 *</label>
+            <input v-model="levelEditForm.title" class="input" placeholder="例如：百小时老兵、千小时宗师" />
+          </div>
+
+          <div class="form-group">
+            <label>达成条件：所需累计在线时长 (小时) *</label>
+            <input v-model.number="levelEditForm.hours" class="input" type="number" min="0" placeholder="例如：100" />
+          </div>
+
+          <div class="form-group">
+            <label>奖励服务器组 (可选)</label>
+            <select v-model.number="levelEditForm.serverGroupId" class="input">
+              <option :value="0">无（仅勋章徽章与荣誉殿堂）</option>
+              <option v-for="group in groups" :key="group.sgid" :value="group.sgid">{{ group.name }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button class="btn" @click="showLevelModal = false">取消</button>
+          <button class="btn primary" @click="saveLevel">保存并全员匹配</button>
         </div>
       </div>
     </div>
