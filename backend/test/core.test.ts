@@ -1149,19 +1149,20 @@ describe('TS3 监控后端核心链路', () => {
     }
 
     const badges = achievement.getUserBadges(777);
-    expect(badges.length).toBeGreaterThanOrEqual(6);
+    expect(badges.length).toBeGreaterThanOrEqual(5);
 
-    const level10 = badges.find((b) => b.name === '初出茅庐');
-    expect(level10?.unlocked).toBe(true);
-
+    // 里程碑成就仅展示最高等级（资深成员 50h）
     const level50 = badges.find((b) => b.name === '资深成员');
     expect(level50?.unlocked).toBe(true);
+
+    const level10 = badges.find((b) => b.name === '初出茅庐');
+    expect(level10).toBeUndefined();
 
     const streakBadge = badges.find((b) => b.name === '连击达人');
     expect(streakBadge?.unlocked).toBe(true);
 
     const unlockedList = achievement.getUnlockedBadges(777);
-    expect(unlockedList.length).toBeGreaterThanOrEqual(3);
+    expect(unlockedList.length).toBeGreaterThanOrEqual(2);
 
     testDb.close();
   });

@@ -370,60 +370,59 @@ export class AchievementService {
       .all(serverKey) as Array<{ clientDatabaseId: number; nickname: string; totalSeconds: number }>;
 
     for (const user of users) {
-      // 1. 检测并授予/回收时长里程碑成就 (Milestone Levels)
+      // 1. 检测并授予/回收时长里程碑成就 (Milestone Levels) - 仅保留与授予最高等级
+      const qualifyingLevels = levels.filter((l) => user.totalSeconds >= l.hours * 3600);
+      const highestLevel = qualifyingLevels.length > 0
+        ? [...qualifyingLevels].sort((a, b) => b.hours - a.hours || b.id - a.id)[0]
+        : null;
+
+      const existingGrants = this.db
+        .prepare('SELECT level_id FROM achievement_grants WHERE server_key = ? AND client_database_id = ?')
+        .all(serverKey, user.clientDatabaseId) as Array<{ level_id: number }>;
+      const existingLevelIds = new Set(existingGrants.map((g) => g.level_id));
+
+      // 回收非最高等级（或不再满足条件）的 grants 及 TS3 组
       for (const level of levels) {
-        const requiredSeconds = level.hours * 3600;
-        const qualifies = user.totalSeconds >= requiredSeconds;
-
-        const alreadyGranted = Boolean(
-          this.db
-            .prepare(
-              'SELECT 1 FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
-            )
-            .get(serverKey, user.clientDatabaseId, level.id)
-        );
-
-        if (qualifies && !alreadyGranted) {
+        if (level.id !== highestLevel?.id && existingLevelIds.has(level.id)) {
           let ts3Ok = true;
-          if (level.serverGroupId > 0) {
-            try {
-              ts3Ok = await this.ts3.addClientToServerGroup(level.serverGroupId, user.clientDatabaseId);
-            } catch (err) {
-              console.warn(`[achievement] 授予 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
-              ts3Ok = false;
-            }
-          }
-
-          if (ts3Ok) {
-            this.db
-              .prepare(
-                `INSERT OR IGNORE INTO achievement_grants
-                  (server_key, client_database_id, level_id, granted_at)
-                 VALUES (?, ?, ?, ?)`
-              )
-              .run(serverKey, user.clientDatabaseId, level.id, Date.now());
-
-            results.push({ nickname: user.nickname, title: level.title, granted: true });
-          }
-        } else if (!qualifies && alreadyGranted) {
-          // 条件提高或不再满足，回收成就
-          let ts3Ok = true;
-          if (level.serverGroupId > 0) {
+          if (level.serverGroupId > 0 && level.serverGroupId !== highestLevel?.serverGroupId) {
             try {
               ts3Ok = await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
-              console.warn(`[achievement] 移除 TS3 服务器组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
+              console.warn(`[achievement] 移除旧 TS3 成就组异常: level=${level.title}, dbid=${user.clientDatabaseId}`, err);
               ts3Ok = false;
             }
           }
-
           if (ts3Ok) {
             this.db
-              .prepare(
-                'DELETE FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?'
-              )
+              .prepare('DELETE FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?')
               .run(serverKey, user.clientDatabaseId, level.id);
           }
+        }
+      }
+
+      // 授予最高等级
+      if (highestLevel && !existingLevelIds.has(highestLevel.id)) {
+        let ts3Ok = true;
+        if (highestLevel.serverGroupId > 0) {
+          try {
+            ts3Ok = await this.ts3.addClientToServerGroup(highestLevel.serverGroupId, user.clientDatabaseId);
+          } catch (err) {
+            console.warn(`[achievement] 授予 TS3 服务器组异常: level=${highestLevel.title}, dbid=${user.clientDatabaseId}`, err);
+            ts3Ok = false;
+          }
+        }
+
+        if (ts3Ok) {
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO achievement_grants
+                (server_key, client_database_id, level_id, granted_at)
+               VALUES (?, ?, ?, ?)`
+            )
+            .run(serverKey, user.clientDatabaseId, highestLevel.id, Date.now());
+
+          results.push({ nickname: user.nickname, title: highestLevel.title, granted: true });
         }
       }
 
@@ -575,8 +574,8 @@ export class AchievementService {
     const serverKey = this.stats.getServerKey();
     const badges: UserBadge[] = [];
 
-    // 1. 时长里程碑成就 (Milestone Badges)
-    const levels = this.listLevels().filter((l) => l.enabled === 1);
+    // 1. 时长里程碑成就 (Milestone Badges) - 仅显示当前最高达成等级与下一阶段目标
+    const levels = this.listLevels().filter((l) => l.enabled === 1).sort((a, b) => a.hours - b.hours);
     const userDurationRow = this.db
       .prepare('SELECT total_seconds as totalSeconds FROM user_online_duration WHERE server_key = ? AND client_database_id = ?')
       .get(serverKey, clientDatabaseId) as { totalSeconds: number } | undefined;
@@ -588,28 +587,53 @@ export class AchievementService {
     const grantMap = new Map<number, number>();
     for (const g of grants) grantMap.set(g.level_id, g.granted_at);
 
-    for (const level of levels) {
-      const isGranted = totalHours >= level.hours;
-      const grantedAt = isGranted ? (grantMap.get(level.id) ?? Date.now()) : undefined;
+    // 最高已达成等级
+    const highestLevel = [...levels].filter((l) => totalHours >= l.hours).sort((a, b) => b.hours - a.hours || b.id - a.id)[0] ?? null;
+    // 下一阶段目标等级
+    const nextLevel = [...levels].filter((l) => totalHours < l.hours).sort((a, b) => a.hours - b.hours || a.id - b.id)[0] ?? null;
 
+    if (highestLevel) {
       let color = '#34d399';
-      if (level.hours >= 500) color = '#ec4899';
-      else if (level.hours >= 200) color = '#a855f7';
-      else if (level.hours >= 100) color = '#fbbf24';
-      else if (level.hours >= 50) color = '#38bdf8';
+      if (highestLevel.hours >= 500) color = '#ec4899';
+      else if (highestLevel.hours >= 200) color = '#a855f7';
+      else if (highestLevel.hours >= 100) color = '#fbbf24';
+      else if (highestLevel.hours >= 50) color = '#38bdf8';
 
       badges.push({
-        id: `milestone_${level.id}`,
-        name: level.title,
+        id: `milestone_${highestLevel.id}`,
+        name: highestLevel.title,
         category: 'milestone',
-        icon: level.hours >= 100 ? 'ph-crown' : 'ph-trophy',
+        icon: highestLevel.hours >= 100 ? 'ph-crown' : 'ph-trophy',
         color,
-        description: `累计在线时长达 ${level.hours} 小时`,
-        unlocked: isGranted,
-        unlockedAt: grantedAt,
+        description: `累计在线时长达 ${highestLevel.hours} 小时`,
+        unlocked: true,
+        unlockedAt: grantMap.get(highestLevel.id) ?? Date.now(),
         progress: {
-          current: Math.min(level.hours, Math.floor(totalHours)),
-          total: level.hours,
+          current: Math.min(highestLevel.hours, Math.floor(totalHours)),
+          total: highestLevel.hours,
+          unit: '小时',
+        },
+      });
+    }
+
+    if (nextLevel) {
+      let color = '#34d399';
+      if (nextLevel.hours >= 500) color = '#ec4899';
+      else if (nextLevel.hours >= 200) color = '#a855f7';
+      else if (nextLevel.hours >= 100) color = '#fbbf24';
+      else if (nextLevel.hours >= 50) color = '#38bdf8';
+
+      badges.push({
+        id: `milestone_${nextLevel.id}`,
+        name: nextLevel.title,
+        category: 'milestone',
+        icon: nextLevel.hours >= 100 ? 'ph-crown' : 'ph-trophy',
+        color,
+        description: `累计在线时长达 ${nextLevel.hours} 小时（下一阶段目标）`,
+        unlocked: false,
+        progress: {
+          current: Math.floor(totalHours),
+          total: nextLevel.hours,
           unit: '小时',
         },
       });

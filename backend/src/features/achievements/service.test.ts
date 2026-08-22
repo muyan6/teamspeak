@@ -279,4 +279,53 @@ describe('成就服务', () => {
 
     db.close();
   });
+
+  it('用户跨越多个成就等级时仅授予最高等级并自动撤销较低等级 TS3 组', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    const grantedGroups: number[] = [];
+    const removedGroups: number[] = [];
+    const ts3 = {
+      addClientToServerGroup: async (sgid: number) => {
+        grantedGroups.push(sgid);
+        return true;
+      },
+      removeClientFromServerGroup: async (sgid: number) => {
+        removedGroups.push(sgid);
+        return true;
+      },
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+
+    const l1 = service.addLevel({ hours: 10, serverGroupId: 101, title: '青铜等级' });
+    const l2 = service.addLevel({ hours: 50, serverGroupId: 102, title: '白银等级' });
+    const l3 = service.addLevel({ hours: 100, serverGroupId: 103, title: '黄金等级' });
+
+    // 用户初始在线 60 小时 (已达成 l1 和 l2，最高为 l2)
+    db.prepare(`
+      INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES ('server-a', 1, 'uid-1', '测试玩家', 216000, 0, 0, ?)
+    `).run(Date.now());
+
+    await service.check();
+
+    // 应该只授予 l2 (sg=102)，而不授予 l1 (sg=101)
+    expect(grantedGroups).toEqual([102]);
+    expect(removedGroups).toEqual([]);
+    expect(db.prepare('SELECT level_id FROM achievement_grants WHERE server_key = ? AND client_database_id = ?').all('server-a', 1)).toEqual([{ level_id: l2.id }]);
+
+    // 用户在线时间增加到 120 小时 (达成 l3，最高变为 l3)
+    db.prepare('UPDATE user_online_duration SET total_seconds = 432000 WHERE server_key = ? AND client_database_id = ?').run('server-a', 1);
+
+    await service.check();
+
+    // 应该移除 l2 (sg=102)，并授予 l3 (sg=103)
+    expect(removedGroups).toEqual([102]);
+    expect(grantedGroups).toEqual([102, 103]);
+    expect(db.prepare('SELECT level_id FROM achievement_grants WHERE server_key = ? AND client_database_id = ?').all('server-a', 1)).toEqual([{ level_id: l3.id }]);
+
+    db.close();
+  });
 });
