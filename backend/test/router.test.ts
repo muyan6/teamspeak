@@ -341,6 +341,7 @@ describe('管理接口与配置回归', () => {
       serverAddress: '996',
       adminName: '管理员',
       adminSteam: 'https://steamcommunity.com/id/example',
+      excludedBotUids: '',
     };
 
     expect((await fetch(`${baseUrl}/tutorial-config`, {

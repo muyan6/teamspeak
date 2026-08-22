@@ -1,4 +1,4 @@
-import { openDatabase, type AppDatabase } from '../db/database.js';
+import { openDatabase, getEffectiveExcludedBotUids, DEFAULT_EXCLUDED_BOT_UIDS, type AppDatabase } from '../db/database.js';
 import type { OnlineClientData, ChannelData } from '../ts3/client.js';
 
 export interface OnlineRecord {
@@ -91,19 +91,28 @@ export class StatsService {
     this.suspendedOnline.clear();
   }
 
-  public static readonly EXCLUDED_BOT_UIDS = new Set<string>([
-    'JcFykcZk6oyuE0AbyNsy5+/JPho=',
-    '/4MNT/c3KE4sXuRGHedmmnFDZYc=',
-    '+NEl0Wet9jWYFKwoBGLgV78cAzs=',
-    'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
-  ]);
+  getDatabase(): AppDatabase {
+    return this.db;
+  }
+
+  getExcludedBotUids(): Set<string> {
+    return new Set(getEffectiveExcludedBotUids(this.db));
+  }
+
+  getExcludedBotUidsInSql(): string {
+    const uids = getEffectiveExcludedBotUids(this.db);
+    return uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ');
+  }
+
+  public static readonly DEFAULT_EXCLUDED_BOT_UIDS = DEFAULT_EXCLUDED_BOT_UIDS;
+  public static readonly EXCLUDED_BOT_UIDS = new Set<string>(DEFAULT_EXCLUDED_BOT_UIDS);
 
   private static readonly BOT_REGEX = /^(musicbot|ts3bot|sinusbot|bot|tsbot|serverquery)$|^\[bot\]/i;
 
   isBot(uniqueIdentifierOrNickname?: string, nickname?: string): boolean {
     if (!uniqueIdentifierOrNickname) return false;
     const trimmed1 = uniqueIdentifierOrNickname.trim();
-    if (StatsService.EXCLUDED_BOT_UIDS.has(trimmed1)) {
+    if (this.getExcludedBotUids().has(trimmed1)) {
       return true;
     }
     if (StatsService.BOT_REGEX.test(trimmed1)) {
@@ -555,6 +564,7 @@ export class StatsService {
   }
 
   getTopUsers(range: 'week' | 'month' | 'all', limit = 10): TopUser[] {
+    const botInSql = this.getExcludedBotUidsInSql();
     if (range === 'week' || range === 'month') {
       const startKey = range === 'week' ? this.weekStartKey() : this.monthStartKey();
       return this.db
@@ -565,11 +575,11 @@ export class StatsService {
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND client_database_id NOT IN (
                SELECT client_database_id FROM user_online_duration
-               WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN (${botInSql})
              )
              AND client_database_id NOT IN (
                SELECT client_database_id FROM online_clients
-               WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+               WHERE server_key = ? AND unique_identifier IN (${botInSql})
              )
            GROUP BY client_database_id
            ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -581,7 +591,7 @@ export class StatsService {
         `SELECT client_database_id as clientDatabaseId, nickname, total_seconds as seconds
          FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN (${botInSql})
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
       )
@@ -589,11 +599,12 @@ export class StatsService {
   }
 
   getLongestSessions(limit = 5): Array<{ nickname: string; seconds: number }> {
+    const botInSql = this.getExcludedBotUidsInSql();
     return this.db
       .prepare(
         `SELECT nickname, longest_session_seconds as seconds FROM user_online_duration
          WHERE server_key = ?
-           AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+           AND unique_identifier NOT IN (${botInSql})
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY longest_session_seconds DESC LIMIT ?`
       )
@@ -601,6 +612,7 @@ export class StatsService {
   }
 
   getCurrentStreakRankings(limit = 3): Array<{ nickname: string; days: number }> {
+    const botInSql = this.getExcludedBotUidsInSql();
     const rows = this.db
       .prepare(
         `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, GROUP_CONCAT(day, ',') as days
@@ -609,11 +621,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN (${botInSql})
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN (${botInSql})
            )
          GROUP BY client_database_id`
       )
@@ -782,6 +794,7 @@ export class StatsService {
     endKey: string,
     limit = 500
   ): TopUser[] {
+    const botInSql = this.getExcludedBotUidsInSql();
     return this.db
       .prepare(
         `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
@@ -790,11 +803,11 @@ export class StatsService {
            AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
            AND client_database_id NOT IN (
              SELECT client_database_id FROM user_online_duration
-             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN (${botInSql})
            )
            AND client_database_id NOT IN (
              SELECT client_database_id FROM online_clients
-             WHERE server_key = ? AND unique_identifier IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             WHERE server_key = ? AND unique_identifier IN (${botInSql})
            )
          GROUP BY client_database_id
          ORDER BY seconds DESC, client_database_id ASC LIMIT ?`
@@ -832,12 +845,13 @@ export class StatsService {
   }
 
   suggestNicknames(q: string, limit = 8): Array<{ nickname: string; uid: string }> {
+    const botInSql = this.getExcludedBotUidsInSql();
     return (
       this.db
         .prepare(
           `SELECT nickname, unique_identifier as uid FROM user_online_duration
            WHERE server_key = ? AND nickname LIKE ?
-             AND unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+             AND unique_identifier NOT IN (${botInSql})
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND nickname != ''
            ORDER BY nickname, total_seconds DESC LIMIT ?`

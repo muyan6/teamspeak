@@ -1,5 +1,6 @@
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
+import { cleanupBotData } from '../../db/database.js';
 
 interface SiteConfigPayload {
   title?: string;
@@ -9,6 +10,7 @@ interface SiteConfigPayload {
   adminName?: string;
   adminQq?: string;
   adminSteam?: string;
+  excludedBotUids?: string;
 }
 
 const MAX_ADMIN_CONTACT_LENGTH = 2_000;
@@ -47,6 +49,7 @@ function loadSiteConfig(deps: ApiDeps): SiteConfigPayload {
     serverAddress: info.serverAddress ?? '',
     adminName: info.adminName ?? '',
     adminSteam: sanitizeAdminContact(info.adminSteam || info.adminQq || ''),
+    excludedBotUids: typeof info.excludedBotUids === 'string' ? info.excludedBotUids : '',
   };
   if (info.adminQq !== undefined) {
     res.adminQq = sanitizeAdminContact(info.adminQq);
@@ -72,11 +75,15 @@ export function registerSiteConfigRoutes(router: Router, deps: ApiDeps, admin: R
         serverAddress: typeof body.serverAddress === 'string' ? body.serverAddress : '',
         adminName: typeof body.adminName === 'string' ? body.adminName : '',
         adminSteam,
+        excludedBotUids: typeof body.excludedBotUids === 'string' ? body.excludedBotUids.trim() : '',
       };
       if (typeof body.adminQq === 'string') {
         siteInfo.adminQq = normalizeAdminContact(body.adminQq);
       }
       deps.configStore.setJson('siteInfo', siteInfo);
+      if (deps.stats?.getDatabase) {
+        cleanupBotData(deps.stats.getDatabase());
+      }
       res.json(loadSiteConfig(deps));
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });

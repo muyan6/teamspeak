@@ -489,11 +489,12 @@ export class AchievementService {
 
   /** 已解锁成就的用户数（用于荣誉殿堂时长成就榜） */
   getUnlockedCount(): number {
+    const botInSql = this.stats.getExcludedBotUidsInSql();
     const row = this.db.prepare(
       `SELECT COUNT(DISTINCT g.client_database_id) as cnt
        FROM achievement_grants g
        JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
-       WHERE g.server_key = ? AND u.unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+       WHERE g.server_key = ? AND u.unique_identifier NOT IN (${botInSql})
          AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')`
     ).get(this.stats.getServerKey()) as {
       cnt: number;
@@ -502,6 +503,7 @@ export class AchievementService {
   }
 
   getUnlockedUsers(): Array<{ nickname: string; title: string; hours: number }> {
+    const botInSql = this.stats.getExcludedBotUidsInSql();
     return this.db
       .prepare(
         `SELECT u.nickname as nickname, l.title as title, l.hours as hours
@@ -509,7 +511,7 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN (${botInSql})
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC`
       )
@@ -519,6 +521,7 @@ export class AchievementService {
   /** 获取指定成就等级的已获得成员列表 */
   getLevelUsers(levelId: number): Array<{ nickname: string; clientDatabaseId: number; uniqueIdentifier: string; hours: number; grantedAt: number }> {
     const serverKey = this.stats.getServerKey();
+    const botInSql = this.stats.getExcludedBotUidsInSql();
     return this.db
       .prepare(
         `SELECT u.nickname as nickname, u.client_database_id as clientDatabaseId, u.unique_identifier as uniqueIdentifier,
@@ -526,7 +529,7 @@ export class AchievementService {
          FROM achievement_grants g
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
-         WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND g.level_id = ? AND u.unique_identifier NOT IN (${botInSql})
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY u.total_seconds DESC, g.granted_at ASC`
       )
@@ -536,6 +539,7 @@ export class AchievementService {
   /** 主页荣誉殿堂公开汇总数据 */
   getHallOfFame(): HallOfFameData {
     const serverKey = this.stats.getServerKey();
+    const botInSql = this.stats.getExcludedBotUidsInSql();
     const featured = this.db
       .prepare(
         `SELECT u.nickname as nickname, l.title as title, l.hours as hours
@@ -543,7 +547,7 @@ export class AchievementService {
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
          JOIN achievement_levels l ON l.id = g.level_id
-         WHERE g.server_key = ? AND u.unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=')
+         WHERE g.server_key = ? AND u.unique_identifier NOT IN (${botInSql})
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY l.hours DESC, g.granted_at ASC
          LIMIT 1`
@@ -553,7 +557,7 @@ export class AchievementService {
     const levels = this.db
       .prepare(
         `SELECT l.id as id, l.title as title, l.hours as hours,
-                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN ('JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs=') AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery') THEN g.client_database_id END) as unlockedCount
+                COUNT(DISTINCT CASE WHEN u.unique_identifier NOT IN (${botInSql}) AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery') THEN g.client_database_id END) as unlockedCount
          FROM achievement_levels l
          LEFT JOIN achievement_grants g ON g.level_id = l.id AND g.server_key = ?
          LEFT JOIN user_online_duration u ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id

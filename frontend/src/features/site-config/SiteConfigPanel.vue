@@ -9,6 +9,7 @@ const site = ref({
   serverAddress: '',
   adminName: '',
   adminQq: '',
+  excludedBotUids: '',
 });
 const notice = ref('');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -29,6 +30,7 @@ async function load(): Promise<void> {
       serverAddress: config.serverAddress ?? '',
       adminName: config.adminName ?? '',
       adminQq: config.adminQq ?? config.adminSteam ?? '',
+      excludedBotUids: config.excludedBotUids ?? '',
     };
   } catch (error) {
     showNotice((error as Error).message);
@@ -76,6 +78,18 @@ onMounted(() => { void load(); });
     <div class="field">
       <label>管理员 QQ (QQ号或加好友链接)</label>
       <input v-model="site.adminQq" class="input" placeholder="例如：12345678 或 QQ加好友链接" />
+    </div>
+    <div class="field">
+      <label>排除机器人 UID (多个 UID 可用逗号、分号或换行分隔)</label>
+      <textarea
+        v-model="site.excludedBotUids"
+        class="input"
+        rows="3"
+        placeholder="例如：LAGEsRxRDiUge8unI5aK/S77C28=, JcFykcZk6oyuE0AbyNsy5+/JPho="
+      ></textarea>
+      <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+        配置后将自动在在线时长统计、排行榜、荣誉殿堂及活跃分析中排除这些机器人。
+      </div>
     </div>
     <div class="modal-actions"><button class="btn primary" @click="save">保存</button></div>
   </div>

@@ -483,6 +483,13 @@ describe('TS3 监控后端核心链路', () => {
     // Keep legacy nickname-only callers filtering conventional bot names.
     expect(stats.isBot('MusicBot')).toBe(true);
     expect(stats.isBot('uid-regular-bot', 'MusicBot')).toBe(true);
+    expect(stats.isBot('LAGEsRxRDiUge8unI5aK/S77C28=')).toBe(true);
+
+    // Test dynamic site_config exclusion
+    testDb.prepare('INSERT INTO site_config (key, value, updated_at) VALUES (?, ?, ?)')
+      .run('siteInfo', JSON.stringify({ excludedBotUids: 'dynamic-bot-uid-123\ncustom-bot-uid-456' }), now);
+    expect(stats.isBot('dynamic-bot-uid-123')).toBe(true);
+    expect(stats.isBot('custom-bot-uid-456')).toBe(true);
 
     testDb.close();
   });

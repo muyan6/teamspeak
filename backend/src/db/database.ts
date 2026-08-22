@@ -272,8 +272,48 @@ export class AppDatabase {
   }
 }
 
-function cleanupBotData(db: AppDatabase): void {
-  const botUids = "'JcFykcZk6oyuE0AbyNsy5+/JPho=', '/4MNT/c3KE4sXuRGHedmmnFDZYc=', '+NEl0Wet9jWYFKwoBGLgV78cAzs=', 'O9VvvRMdK9B6YMDBbwi0j3L1Avs='";
+export const DEFAULT_EXCLUDED_BOT_UIDS: string[] = [
+  'LAGEsRxRDiUge8unI5aK/S77C28=',
+  'JcFykcZk6oyuE0AbyNsy5+/JPho=',
+  '/4MNT/c3KE4sXuRGHedmmnFDZYc=',
+  '+NEl0Wet9jWYFKwoBGLgV78cAzs=',
+  'O9VvvRMdK9B6YMDBbwi0j3L1Avs=',
+];
+
+export function parseExcludedBotUids(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((s) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(/[\r\n,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+export function getEffectiveExcludedBotUids(db: AppDatabase): string[] {
+  const set = new Set<string>(DEFAULT_EXCLUDED_BOT_UIDS);
+  try {
+    const row = db
+      .prepare('SELECT value FROM site_config WHERE key = ?')
+      .get('siteInfo') as { value: string } | undefined;
+    if (row?.value) {
+      const parsed = JSON.parse(row.value) as { excludedBotUids?: unknown };
+      for (const uid of parseExcludedBotUids(parsed.excludedBotUids)) {
+        set.add(uid);
+      }
+    }
+  } catch {
+    // 忽略未初始化或格式异常
+  }
+  return Array.from(set);
+}
+
+export function cleanupBotData(db: AppDatabase): void {
+  const uids = getEffectiveExcludedBotUids(db);
+  const botUids = uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ');
   try {
     db.exec(`
       DELETE FROM user_daily_activity

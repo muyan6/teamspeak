@@ -215,6 +215,7 @@ export interface SiteConfig {
   adminName?: string;
   adminQq?: string;
   adminSteam?: string;
+  excludedBotUids?: string;
 }
 
 export interface TutorialConfig {
