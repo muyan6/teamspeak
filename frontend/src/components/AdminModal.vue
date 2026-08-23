@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, ref } from 'vue';
 import { api, authState } from '../api';
+import { toast } from '../composables/useToast';
 
 type AdminTab = 'elastic' | 'champion' | 'achievement' | 'server' | 'site' | 'tutorial' | 'ts3' | 'modules' | 'subsites';
 
@@ -20,17 +21,26 @@ const WeeklyChampionPanel = defineAsyncComponent(() => import('../features/weekl
 const MultiSubsitesPanel = defineAsyncComponent(() => import('../features/multi-subsites/MultiSubsitesPanel.vue'));
 
 async function login(): Promise<void> {
+  if (!password.value.trim()) {
+    loginError.value = '请输入管理密码';
+    toast.warning('请输入管理密码');
+    return;
+  }
   loginError.value = '';
   try {
     await api.login(password.value);
+    toast.success('登录成功，欢迎使用管理后台');
   } catch (error) {
-    loginError.value = (error as Error).message;
+    const msg = (error as Error).message || '密码错误或网络异常';
+    loginError.value = msg;
+    toast.error(`登录失败：${msg}`);
   }
 }
 
 function logout(): void {
   api.logout();
   password.value = '';
+  toast.info('已安全退出登录');
 }
 
 async function loadAdminScope(): Promise<void> {

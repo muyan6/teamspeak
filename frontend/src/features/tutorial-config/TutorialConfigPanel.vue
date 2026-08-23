@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../../api';
+import { toast } from '../../composables/useToast';
 
 const tutorial = ref({ download: '', basic: '', advanced: '', music: '' });
 const download = ref({ version: '3.6.2', officialUrl: '', mirrorUrl: '', translationUrl: '' });
 const musicBotUrl = ref('');
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else toast.warning(message);
+
   if (noticeTimer) clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { notice.value = ''; }, 3000);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, 3500);
 }
 
 async function load(): Promise<void> {
@@ -31,7 +38,7 @@ async function load(): Promise<void> {
     };
     musicBotUrl.value = config.musicBotUrl ?? '';
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`加载教程配置失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -42,9 +49,9 @@ async function save(): Promise<void> {
       clientDownload: download.value,
       musicBotUrl: musicBotUrl.value,
     });
-    showNotice('教程配置已保存');
+    showNotice('教程配置保存成功', 'success');
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`教程配置保存失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -53,7 +60,7 @@ onMounted(() => { void load(); });
 
 <template>
   <div>
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <div class="field">
       <label>下载教程（Markdown，留空使用默认教程）</label>
       <textarea v-model="tutorial.download" class="input" rows="8" placeholder="留空使用默认教程"></textarea>

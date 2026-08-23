@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useDashboard } from './composables/dashboard';
+import ToastContainer from './components/ToastContainer.vue';
 
 const { data, refresh } = useDashboard();
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -28,6 +29,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <ToastContainer />
   <div class="noise-bg"></div>
   <div class="bg-blob bg-blob-tl"></div>
   <div class="bg-blob bg-blob-br"></div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../../api';
+import { toast } from '../../composables/useToast';
 import type { AchievementLevel, BadgeConditionType, BadgeDefinition, ServerGroup, UnlockedAchievement } from '../../types';
 
 const activeTab = ref<'badges' | 'levels'>('badges');
@@ -10,6 +11,7 @@ const badges = ref<BadgeDefinition[]>([]);
 const unlocked = ref<UnlockedAchievement[]>([]);
 const groups = ref<ServerGroup[]>([]);
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 时长成就表单与编辑模态框
@@ -83,8 +85,13 @@ const COLOR_PRESETS = [
   { color: '#f43f5e', label: '珊瑚红' },
 ];
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else toast.warning(message);
+
   if (noticeTimer) clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { notice.value = ''; }, 3500);
 }
@@ -102,7 +109,7 @@ async function load(): Promise<void> {
     unlocked.value = unlockedAchievements;
     groups.value = serverGroups;
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`加载成就数据失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -125,11 +132,11 @@ function openEditLevelModal(lvl: AchievementLevel): void {
 
 async function saveLevel(): Promise<void> {
   if (!levelEditForm.value.title.trim()) {
-    showNotice('请输入成就等级名称');
+    showNotice('保存失败：请输入成就等级名称', 'warning');
     return;
   }
   if (levelEditForm.value.hours < 0) {
-    showNotice('所需在线时长不能为负数');
+    showNotice('保存失败：所需在线时长不能为负数', 'warning');
     return;
   }
 
@@ -146,46 +153,59 @@ async function saveLevel(): Promise<void> {
         ...payload,
         enabled: current ? current.enabled : 1,
       });
-      showNotice('时长成就等级已修改并自动全员匹配');
+      showNotice('时长成就等级修改成功，已自动全员匹配', 'success');
     } else {
       await api.addAchievementLevel(payload);
-      showNotice('在线时长成就已添加并自动匹配授予');
+      showNotice('在线时长成就添加成功，已自动匹配全员', 'success');
     }
     showLevelModal.value = false;
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`保存时长成就等级失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function addLevel(): Promise<void> {
-  if (!levelForm.value.title.trim() || levelForm.value.hours < 0) return;
+  if (!levelForm.value.title.trim()) {
+    showNotice('添加失败：请输入成就等级名称', 'warning');
+    return;
+  }
+  if (levelForm.value.hours < 0) {
+    showNotice('添加失败：所需在线时长不能为负数', 'warning');
+    return;
+  }
   try {
     await api.addAchievementLevel({ ...levelForm.value, title: levelForm.value.title.trim() });
     levelForm.value = { title: '', hours: 1, serverGroupId: 0 };
-    showNotice('在线时长成就已添加并自动匹配授予');
+    showNotice('在线时长成就添加成功，已自动匹配全员', 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`添加时长成就等级失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function toggleLevel(level: AchievementLevel): Promise<void> {
   try {
-    await api.updateAchievementLevel(level.id, { ...level, enabled: level.enabled ? 0 : 1 });
+    const willEnable = !level.enabled;
+    await api.updateAchievementLevel(level.id, { ...level, enabled: willEnable ? 1 : 0 });
+    showNotice(willEnable ? '时长成就已启用，已全员重新计算' : '时长成就已停用', 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`切换时长成就状态失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function removeLevel(id: number): Promise<void> {
+  const target = levels.value.find((l) => l.id === id);
+  const name = target ? target.title : `#${id}`;
+  if (!window.confirm(`确定删除时长成就「${name}」？`)) return;
+
   try {
     await api.deleteAchievementLevel(id);
-    showNotice('时长成就已删除');
+    showNotice(`时长成就「${name}」删除成功`, 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`删除时长成就失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -225,7 +245,7 @@ function openEditBadgeModal(b: BadgeDefinition): void {
 
 async function saveBadge(): Promise<void> {
   if (!badgeForm.value.name.trim()) {
-    showNotice('请输入勋章名称');
+    showNotice('保存失败：请输入勋章名称', 'warning');
     return;
   }
 
@@ -233,7 +253,12 @@ async function saveBadge(): Promise<void> {
   if (badgeForm.value.conditionType === 'night_owl') {
     conditionParams = { start_hour: 2, end_hour: 5 };
   } else {
-    conditionParams = { threshold: Number(badgeForm.value.threshold || 1) };
+    const threshold = Number(badgeForm.value.threshold || 1);
+    if (threshold <= 0) {
+      showNotice('保存失败：达成阈值必须大于 0', 'warning');
+      return;
+    }
+    conditionParams = { threshold };
   }
 
   const payload = {
@@ -252,35 +277,40 @@ async function saveBadge(): Promise<void> {
   try {
     if (editingBadgeId.value) {
       await api.updateBadge(editingBadgeId.value, payload);
-      showNotice('勋章已修改并自动全员匹配');
+      showNotice('勋章修改成功，已自动全员重新匹配', 'success');
     } else {
       await api.addBadge(payload);
-      showNotice('新勋章已添加并自动全员匹配');
+      showNotice('新勋章添加成功，已自动全员匹配', 'success');
     }
     showBadgeModal.value = false;
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`保存勋章失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function toggleBadge(b: BadgeDefinition): Promise<void> {
   try {
-    await api.updateBadge(b.id, { ...b, enabled: b.enabled ? 0 : 1 });
-    showNotice(b.enabled ? '勋章已停用' : '勋章已启用并重新计算');
+    const willEnable = !b.enabled;
+    await api.updateBadge(b.id, { ...b, enabled: willEnable ? 1 : 0 });
+    showNotice(willEnable ? '勋章已启用并全员重新计算' : '勋章已停用', 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`切换勋章状态失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function removeBadge(id: number): Promise<void> {
+  const target = badges.value.find((b) => b.id === id);
+  const name = target ? target.name : `#${id}`;
+  if (!window.confirm(`确定删除勋章「${name}」？`)) return;
+
   try {
     await api.deleteBadge(id);
-    showNotice('勋章已删除');
+    showNotice(`勋章「${name}」删除成功`, 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`删除勋章失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -288,10 +318,10 @@ async function runCheck(): Promise<void> {
   try {
     const result = await api.checkAchievements();
     const granted = result.results.filter((entry) => entry.granted).length;
-    showNotice(granted ? `已为成员授予 ${granted} 项成就与勋章` : '本轮检测完毕，成员当前数据已全部匹配完成');
+    showNotice(granted ? `全员成就检测完成：已为成员授予 ${granted} 项成就与勋章` : '全员成就检测完成：成员当前数据已全部匹配完成', 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`全员成就检测失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -327,7 +357,7 @@ onMounted(() => { void load(); });
 
 <template>
   <div class="achievements-container">
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
 
     <!-- 顶部功能切换 -->
     <div class="tabs-header-row">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { HOME_MODULES, useHomeModules } from './home-modules';
+import { toast } from '../../composables/useToast';
 
 const { modules, loading, saving, error, enabledCount, load, save, reset } = useHomeModules();
 const notice = ref('');
@@ -8,11 +9,20 @@ const notice = ref('');
 async function saveModules(): Promise<void> {
   try {
     await save();
-    notice.value = '主页模块配置已保存';
+    notice.value = '主页模块配置保存成功';
+    toast.success('主页模块配置保存成功');
     window.setTimeout(() => (notice.value = ''), 2600);
-  } catch {
-    // 错误消息已由 composable 保存并展示。
+  } catch (e) {
+    const msg = (e as Error).message || error.value || '保存失败';
+    toast.error(`主页模块配置保存失败：${msg}`);
   }
+}
+
+function resetModules(): void {
+  reset();
+  notice.value = '已恢复默认模块设置（请点击保存生效）';
+  toast.info('已恢复默认模块设置（请点击保存生效）');
+  window.setTimeout(() => (notice.value = ''), 3000);
 }
 
 onMounted(() => void load());
@@ -50,7 +60,7 @@ onMounted(() => void load());
       <p v-else-if="notice" class="panel-notice">{{ notice }}</p>
 
       <footer class="panel-actions">
-        <button type="button" class="btn sm" :disabled="saving" @click="reset">恢复默认</button>
+        <button type="button" class="btn sm" :disabled="saving" @click="resetModules">恢复默认</button>
         <button type="button" class="btn primary" :disabled="saving" @click="saveModules">
           {{ saving ? '保存中…' : '保存模块设置' }}
         </button>

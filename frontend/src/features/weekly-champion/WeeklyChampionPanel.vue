@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../../api';
+import { toast } from '../../composables/useToast';
 import type { ChampionConfig, ServerGroup } from '../../types';
 
 const champion = ref<ChampionConfig | null>(null);
 const groups = ref<ServerGroup[]>([]);
 const form = ref({ enabled: 0, serverGroupId: 0, checkIntervalHours: 24 });
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else toast.warning(message);
+
   if (noticeTimer) clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { notice.value = ''; }, 3000);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, 3500);
 }
 
 async function load(): Promise<void> {
@@ -26,35 +33,36 @@ async function load(): Promise<void> {
       checkIntervalHours: config.checkIntervalHours,
     };
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`加载周冠军配置失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function save(): Promise<void> {
   if (form.value.enabled === 1 && (!form.value.serverGroupId || form.value.serverGroupId <= 0)) {
-    showNotice('启用周冠军时必须选择奖励服务器组');
+    showNotice('保存失败：启用周冠军时必须选择奖励服务器组', 'warning');
     return;
   }
   if (form.value.checkIntervalHours <= 0) {
-    showNotice('请填写有效的检测周期（小时）');
+    showNotice('保存失败：请填写有效的检测周期（大于 0 小时）', 'warning');
     return;
   }
   try {
     await api.saveChampionConfig(form.value);
-    showNotice('周冠军配置已保存');
+    showNotice('周冠军配置保存成功', 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`保存周冠军配置失败：${(error as Error).message}`, 'error');
   }
 }
 
 async function runCheck(): Promise<void> {
   try {
     const result = await api.checkChampion();
-    showNotice(result.result ? `本周冠军：${result.result.nickname}` : '未检测到本周冠军');
+    const msg = result.result ? `检测完成，本周冠军：${result.result.nickname}` : '检测完成，未检测到符合条件的本周冠军';
+    showNotice(msg, 'success');
     await load();
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`检测周冠军失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -63,7 +71,7 @@ onMounted(() => { void load(); });
 
 <template>
   <div>
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <div class="field">
       <label>启用周冠军</label>
       <select v-model.number="form.enabled" class="input">

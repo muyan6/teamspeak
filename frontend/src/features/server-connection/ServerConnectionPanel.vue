@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { api } from '../../api';
+import { toast } from '../../composables/useToast';
 import type { Ts3ConnectionInfo } from '../../types';
 
 const connection = ref<Ts3ConnectionInfo | null>(null);
@@ -10,16 +11,23 @@ const saving = ref(false);
 const reconnecting = ref(false);
 const changingAdminPassword = ref(false);
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning' | 'info'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let connectionCheckId = 0;
 
 const RECONNECT_POLL_INTERVAL_MS = 1500;
 const RECONNECT_POLL_ATTEMPTS = 20;
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else if (type === 'warning') toast.warning(message);
+  else toast.info(message);
+
   if (noticeTimer) clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { notice.value = ''; }, 3000);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, 4000);
 }
 
 async function refreshConnection(updateForm = false): Promise<Ts3ConnectionInfo> {
@@ -42,7 +50,7 @@ async function load(): Promise<void> {
   try {
     await refreshConnection(true);
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`加载服务器配置失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -60,7 +68,7 @@ async function waitForReconnect(): Promise<void> {
       try {
         const config = await refreshConnection();
         if (config.connected) {
-          showNotice('服务器配置已保存，TS3 已连接');
+          showNotice('服务器配置保存成功，TS3 已连接', 'success');
           return;
         }
       } catch {
@@ -69,7 +77,7 @@ async function waitForReconnect(): Promise<void> {
     }
     if (checkId === connectionCheckId) {
       const detail = connection.value?.lastError ? `：${connection.value.lastError}` : '，请检查 ServerQuery 参数和防火墙';
-      showNotice(`配置已保存，但 TS3 在 30 秒内未连接${detail}`);
+      showNotice(`配置已保存，但 TS3 在 30 秒内未连接${detail}`, 'warning');
     }
   } finally {
     if (checkId === connectionCheckId) reconnecting.value = false;
@@ -78,7 +86,11 @@ async function waitForReconnect(): Promise<void> {
 
 async function save(): Promise<void> {
   if (!form.value.host.trim() || !form.value.username.trim()) {
-    showNotice('服务器地址和 ServerQuery 账号不能为空');
+    showNotice('保存失败：服务器地址和 ServerQuery 账号不能为空', 'warning');
+    return;
+  }
+  if (!form.value.queryPort || form.value.queryPort < 1 || form.value.queryPort > 65535 || !form.value.serverPort || form.value.serverPort < 1 || form.value.serverPort > 65535) {
+    showNotice('保存失败：端口号必须在 1~65535 之间', 'warning');
     return;
   }
   if (saving.value) return;
@@ -86,10 +98,10 @@ async function save(): Promise<void> {
   try {
     const result = await api.saveTs3Config({ ...form.value, host: form.value.host.trim(), username: form.value.username.trim() });
     connection.value = { ...(connection.value ?? {}), ...result.config, connected: false } as Ts3ConnectionInfo;
-    showNotice('服务器配置已保存，正在重新连接');
+    showNotice('服务器配置已保存，正在重新连接 TS3...', 'info');
     await waitForReconnect();
   } catch (error) {
-    showNotice(`服务器配置保存失败：${(error as Error).message || '请求失败'}`);
+    showNotice(`服务器配置保存失败：${(error as Error).message || '请求失败'}`, 'error');
   } finally {
     saving.value = false;
   }
@@ -98,15 +110,15 @@ async function save(): Promise<void> {
 async function changeAdminPassword(): Promise<void> {
   const { currentPassword, newPassword, confirmPassword } = adminPasswordForm.value;
   if (!currentPassword || !newPassword || !confirmPassword) {
-    showNotice('请填写当前密码、新密码和确认密码');
+    showNotice('修改失败：请填写当前密码、新密码和确认密码', 'warning');
     return;
   }
   if (newPassword !== confirmPassword) {
-    showNotice('两次输入的新密码不一致');
+    showNotice('修改失败：两次输入的新密码不一致', 'warning');
     return;
   }
   if (newPassword.length < 8) {
-    showNotice('新密码至少需要 8 个字符');
+    showNotice('修改失败：新密码至少需要 8 个字符', 'warning');
     return;
   }
   if (changingAdminPassword.value) return;
@@ -114,9 +126,9 @@ async function changeAdminPassword(): Promise<void> {
   try {
     await api.changeAdminPassword({ currentPassword, newPassword });
     adminPasswordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' };
-    showNotice('后台管理密码已修改，当前站点的其他登录会话已失效');
+    showNotice('后台管理密码修改成功，当前站点的其他登录会话已失效', 'success');
   } catch (error) {
-    showNotice(`后台管理密码修改失败：${(error as Error).message || '请求失败'}`);
+    showNotice(`后台管理密码修改失败：${(error as Error).message || '请求失败'}`, 'error');
   } finally {
     changingAdminPassword.value = false;
   }
@@ -131,7 +143,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <div v-if="connection" class="conn-status" :class="{ ok: connection.connected }">
       连接状态：{{ connection.connected ? '已连接' : reconnecting ? '重新连接中...' : '未连接' }}
       <span v-if="!connection.connected && connection.lastError">（{{ connection.lastError }}）</span>

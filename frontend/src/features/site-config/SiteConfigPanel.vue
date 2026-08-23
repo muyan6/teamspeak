@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../../api';
+import { toast } from '../../composables/useToast';
 
 const site = ref({
   title: '',
@@ -12,12 +13,18 @@ const site = ref({
   excludedBotUids: '',
 });
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else toast.warning(message);
+
   if (noticeTimer) clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { notice.value = ''; }, 3000);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, 3500);
 }
 
 async function load(): Promise<void> {
@@ -33,7 +40,7 @@ async function load(): Promise<void> {
       excludedBotUids: config.excludedBotUids ?? '',
     };
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`加载站点配置失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -43,9 +50,9 @@ async function save(): Promise<void> {
       ...site.value,
       adminSteam: site.value.adminQq, // 兼容性同步
     });
-    showNotice('站点配置已保存');
+    showNotice('站点配置保存成功', 'success');
   } catch (error) {
-    showNotice((error as Error).message);
+    showNotice(`站点配置保存失败：${(error as Error).message}`, 'error');
   }
 }
 
@@ -54,7 +61,7 @@ onMounted(() => { void load(); });
 
 <template>
   <div>
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <div class="field">
       <label>站点名称</label>
       <input v-model="site.title" class="input" placeholder="例如：Voice" />

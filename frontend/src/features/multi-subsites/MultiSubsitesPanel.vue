@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { multiSubsiteApi } from './api';
+import { toast } from '../../composables/useToast';
 import type { CreateManagedSubsiteInput, ManagedSubsite, MultiSubsiteSettings } from './types';
 
 const subsites = ref<ManagedSubsite[]>([]);
@@ -8,6 +9,7 @@ const loading = ref(false);
 const creating = ref(false);
 const savingSettings = ref(false);
 const notice = ref('');
+const noticeType = ref<'success' | 'error' | 'warning'>('success');
 const settings = ref<MultiSubsiteSettings>({ baseDomain: '' });
 const form = ref<CreateManagedSubsiteInput>({
   displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '',
@@ -16,8 +18,13 @@ const form = ref<CreateManagedSubsiteInput>({
 const canCreate = computed(() => Boolean(settings.value.baseDomain.trim() && form.value.displayName.trim() && form.value.slug.trim() && form.value.ts3Host.trim() && form.value.adminPassword));
 const generatedDomain = computed(() => form.value.slug.trim().toLowerCase() ? `${form.value.slug.trim().toLowerCase()}.${settings.value.baseDomain.trim().toLowerCase()}` : `昵称.${settings.value.baseDomain.trim().toLowerCase() || 'example.com'}`);
 
-function showNotice(message: string): void {
+function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
+  noticeType.value = type;
+  if (type === 'success') toast.success(message);
+  else if (type === 'error') toast.error(message);
+  else toast.warning(message);
+
   window.setTimeout(() => { if (notice.value === message) notice.value = ''; }, 4000);
 }
 
@@ -28,29 +35,38 @@ async function load(): Promise<void> {
     settings.value = savedSettings;
     subsites.value = items;
   }
-  catch (error) { showNotice((error as Error).message); }
+  catch (error) { showNotice(`加载分站列表失败：${(error as Error).message}`, 'error'); }
   finally { loading.value = false; }
 }
 
 async function saveSettings(): Promise<void> {
-  if (!settings.value.baseDomain.trim() || savingSettings.value) return;
+  const base = settings.value.baseDomain.trim().toLowerCase();
+  if (!base) {
+    showNotice('保存失败：请输入分站根域名', 'warning');
+    return;
+  }
+  if (savingSettings.value) return;
   savingSettings.value = true;
   try {
-    settings.value = await multiSubsiteApi.saveSettings({ baseDomain: settings.value.baseDomain.trim().toLowerCase() });
-    showNotice(`根域名已保存：${settings.value.baseDomain}`);
-  } catch (error) { showNotice((error as Error).message); }
+    settings.value = await multiSubsiteApi.saveSettings({ baseDomain: base });
+    showNotice(`分站根域名保存成功：${settings.value.baseDomain}`, 'success');
+  } catch (error) { showNotice(`保存分站根域名失败：${(error as Error).message}`, 'error'); }
   finally { savingSettings.value = false; }
 }
 
 async function create(): Promise<void> {
-  if (!canCreate.value || creating.value) return;
+  if (!canCreate.value) {
+    showNotice('创建失败：请完整填写分站信息（昵称、子域名、TS3 地址和后台密码）', 'warning');
+    return;
+  }
+  if (creating.value) return;
   creating.value = true;
   try {
     const created = await multiSubsiteApi.create({ ...form.value, slug: form.value.slug.trim().toLowerCase(), displayName: form.value.displayName.trim(), ts3Host: form.value.ts3Host.trim() });
     subsites.value.unshift(created);
     form.value = { displayName: '', slug: '', domain: '', ts3Host: '', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '', publicHost: '', publicPort: 9987, adminPassword: '' };
-    showNotice(`分站已创建：${created.domain}`);
-  } catch (error) { showNotice((error as Error).message); }
+    showNotice(`分站创建成功：${created.domain}`, 'success');
+  } catch (error) { showNotice(`创建分站失败：${(error as Error).message}`, 'error'); }
   finally { creating.value = false; }
 }
 
@@ -58,8 +74,8 @@ async function toggle(subsite: ManagedSubsite): Promise<void> {
   try {
     const updated = await multiSubsiteApi.setEnabled(subsite.id, !subsite.enabled);
     subsites.value = subsites.value.map((item) => item.id === updated.id ? updated : item);
-    showNotice(updated.enabled ? '分站已启用' : '分站已停用，数据已保留');
-  } catch (error) { showNotice((error as Error).message); }
+    showNotice(updated.enabled ? `分站「${subsite.displayName}」已启用` : `分站「${subsite.displayName}」已停用，数据已保留`, 'success');
+  } catch (error) { showNotice(`切换分站状态失败：${(error as Error).message}`, 'error'); }
 }
 
 onMounted(() => { void load(); });
@@ -67,7 +83,7 @@ onMounted(() => { void load(); });
 
 <template>
   <section class="subsites-panel">
-    <div v-if="notice" class="notice">{{ notice }}</div>
+    <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <div class="platform-note"><strong>统一分站管理</strong><span>新分站拥有独立数据库、TS3 连接和后台密码。访问生效前，请将泛解析 DNS 与反向代理指向本服务。</span></div>
     <div class="domain-setting">
       <div class="field"><label>分站根域名</label><input v-model="settings.baseDomain" class="input" placeholder="例如 example.com" @keyup.enter="saveSettings" /><p class="hint">保存后，创建 alpha 分站会生成 alpha.example.com。</p></div>
