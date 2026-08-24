@@ -25,6 +25,7 @@ import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter } from '.
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  console.log(`[config] 正在启动 TS3 监控服务，数据库路径: ${config.dbPath}`);
 
   const db = openDatabase(config.dbPath);
   const configStore = new SiteConfigStore(db);
