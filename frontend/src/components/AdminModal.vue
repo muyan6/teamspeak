@@ -44,6 +44,26 @@ function logout(): void {
   toast.info('已安全退出登录');
 }
 
+const tsManagerUrl = ref('');
+
+function openTsManager(): void {
+  if (tsManagerUrl.value) {
+    window.open(tsManagerUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    activeTab.value = 'tutorial';
+    toast.info('请在「教程配置」中设置 TS Manager Web 地址');
+  }
+}
+
+function openMusicBot(): void {
+  if (musicBotUrl.value) {
+    window.open(musicBotUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    activeTab.value = 'tutorial';
+    toast.info('请在「教程配置」中设置 TSMusicBot Web 链接');
+  }
+}
+
 async function loadAdminScope(): Promise<void> {
   try {
     const [health, tutorialConfig] = await Promise.all([
@@ -53,6 +73,9 @@ async function loadAdminScope(): Promise<void> {
     isPlatformAdmin.value = health.platform;
     if (tutorialConfig?.musicBotUrl) {
       musicBotUrl.value = tutorialConfig.musicBotUrl;
+    }
+    if (tutorialConfig?.tsManagerUrl) {
+      tsManagerUrl.value = tutorialConfig.tsManagerUrl;
     }
   } catch {
     isPlatformAdmin.value = false;
@@ -76,17 +99,24 @@ onMounted(() => { void loadAdminScope(); });
           <p>服务器与站点设置</p>
         </div>
         <div class="admin-heading-actions">
-          <a
-            v-if="musicBotUrl"
-            :href="musicBotUrl"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
             class="ext-link-btn"
-            title="跳转音乐机器人面板"
+            title="跳转 TS Manager 管理面板"
+            @click="openTsManager"
+          >
+            <i class="ph-bold ph-arrow-square-out"></i>
+            <span>TS Manager</span>
+          </button>
+          <button
+            type="button"
+            class="ext-link-btn"
+            title="跳转 TSMusicBot 音乐机器人面板"
+            @click="openMusicBot"
           >
             <i class="ph-bold ph-arrow-square-out"></i>
             <span>TSMusicBot</span>
-          </a>
+          </button>
           <button v-if="authed" class="btn sm" @click="logout">退出登录</button>
         </div>
       </div>

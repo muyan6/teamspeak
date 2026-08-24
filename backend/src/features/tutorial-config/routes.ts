@@ -15,6 +15,7 @@ interface TutorialConfigPayload {
     translationUrl?: string;
   };
   musicBotUrl?: string;
+  tsManagerUrl?: string;
 }
 
 const MAX_TUTORIAL_CONTENT_LENGTH = 100_000;
@@ -97,6 +98,7 @@ function loadTutorialConfig(deps: ApiDeps): TutorialConfigPayload {
     },
     clientDownload: sanitizeClientDownload(deps.configStore.getJson<unknown>('clientDownload', {})),
     musicBotUrl: sanitizeHttpUrl(deps.configStore.get('musicBotUrl')),
+    tsManagerUrl: sanitizeHttpUrl(deps.configStore.get('tsManagerUrl')),
   };
 }
 
@@ -112,6 +114,9 @@ export function registerTutorialConfigRoutes(router: Router, deps: ApiDeps, admi
       if (body.clientDownload !== undefined) deps.configStore.setJson('clientDownload', normalizeClientDownload(body.clientDownload));
       if (body.musicBotUrl !== undefined) {
         deps.configStore.set('musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot Web 链接') ?? '');
+      }
+      if (body.tsManagerUrl !== undefined) {
+        deps.configStore.set('tsManagerUrl', normalizeHttpUrl(body.tsManagerUrl, 'TS Manager Web 链接') ?? '');
       }
       res.json(loadTutorialConfig(deps));
     } catch (error) {

@@ -333,6 +333,7 @@ describe('管理接口与配置回归', () => {
         translationUrl: 'https://example.com/zh.ts3_translation',
       },
       musicBotUrl: 'https://music.example.com',
+      tsManagerUrl: 'https://tsmanager.example.com',
     };
     const siteInfoPayload = {
       title: 'Voice',

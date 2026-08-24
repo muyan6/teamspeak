@@ -6,6 +6,7 @@ import { toast } from '../../composables/useToast';
 const tutorial = ref({ download: '', basic: '', advanced: '', music: '' });
 const download = ref({ version: '3.6.2', officialUrl: '', mirrorUrl: '', translationUrl: '' });
 const musicBotUrl = ref('');
+const tsManagerUrl = ref('');
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -37,6 +38,7 @@ async function load(): Promise<void> {
       translationUrl: config.clientDownload?.translationUrl ?? '',
     };
     musicBotUrl.value = config.musicBotUrl ?? '';
+    tsManagerUrl.value = config.tsManagerUrl ?? '';
   } catch (error) {
     showNotice(`加载教程配置失败：${(error as Error).message}`, 'error');
   }
@@ -48,8 +50,9 @@ async function save(): Promise<void> {
       tutorial: tutorial.value,
       clientDownload: download.value,
       musicBotUrl: musicBotUrl.value,
+      tsManagerUrl: tsManagerUrl.value,
     });
-    showNotice('教程配置保存成功', 'success');
+    showNotice('教程与面板配置保存成功', 'success');
   } catch (error) {
     showNotice(`教程配置保存失败：${(error as Error).message}`, 'error');
   }
@@ -61,6 +64,14 @@ onMounted(() => { void load(); });
 <template>
   <div>
     <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+    <div class="field">
+      <label>TS Manager Web 管理地址（配置后将在后台顶部展示快捷跳转入口）</label>
+      <input v-model="tsManagerUrl" class="input" placeholder="例如：http://127.0.0.1:1234 或留空" />
+    </div>
+    <div class="field">
+      <label>TSMusicBot Web 链接（WebUI 地址，留空点击按钮将弹出音乐教程）</label>
+      <input v-model="musicBotUrl" class="input" placeholder="例如：http://127.0.0.1:8080 或留空" />
+    </div>
     <div class="field">
       <label>下载教程（Markdown，留空使用默认教程）</label>
       <textarea v-model="tutorial.download" class="input" rows="8" placeholder="留空使用默认教程"></textarea>
@@ -76,10 +87,6 @@ onMounted(() => { void load(); });
     <div class="field">
       <label>音乐教程（Markdown，留空使用默认教程）</label>
       <textarea v-model="tutorial.music" class="input" rows="8" placeholder="留空使用默认教程"></textarea>
-    </div>
-    <div class="field">
-      <label>TSMusicBot Web 链接（WebUI 地址，留空点击按钮将弹出音乐教程）</label>
-      <input v-model="musicBotUrl" class="input" placeholder="例如：http://127.0.0.1:8080 或留空" />
     </div>
     <div class="field">
       <label>官方下载链接</label>
