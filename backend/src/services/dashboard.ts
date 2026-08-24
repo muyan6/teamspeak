@@ -79,6 +79,10 @@ export class DashboardService {
     private achievement: AchievementService
   ) {}
 
+  private readonly cacheTtlMs = 10_000;
+  private cachedData: { value: DashboardData; expiresAt: number } | null = null;
+  private dataInFlight: Promise<DashboardData> | null = null;
+
   getSiteSlug(): string {
     return this.config.site.slug;
   }
@@ -123,10 +127,26 @@ export class DashboardService {
         totalOnline: members.reduce((s, c) => s + c.totalClients, 0),
       };
     });
-    return { groups: result, overallChannels: channels.length };
+    return { groups: result, overallChannels: result.reduce((sum, group) => sum + group.totalChannels, 0) };
   }
 
   async getData(): Promise<DashboardData> {
+    const now = Date.now();
+    if (this.cachedData && this.cachedData.expiresAt > now) return this.cachedData.value;
+    if (this.dataInFlight) return this.dataInFlight;
+
+    this.dataInFlight = this.loadData()
+      .then((value) => {
+        this.cachedData = { value, expiresAt: Date.now() + this.cacheTtlMs };
+        return value;
+      })
+      .finally(() => {
+        this.dataInFlight = null;
+      });
+    return this.dataInFlight;
+  }
+
+  private async loadData(): Promise<DashboardData> {
     const state = await this.ts3.getServerState();
     let clients: OnlineClientData[] = [];
     let channels: ChannelData[] = [];

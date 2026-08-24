@@ -98,6 +98,38 @@ export class AchievementService {
     return this.db.prepare('DELETE FROM achievement_levels WHERE id = ?').run(id).changes > 0;
   }
 
+  async revokeLevelGrants(levelId: number, serverGroupId: number): Promise<boolean> {
+    const serverKey = this.stats.getServerKey();
+    const grants = this.db
+      .prepare('SELECT client_database_id as clientDatabaseId FROM achievement_grants WHERE server_key = ? AND level_id = ?')
+      .all(serverKey, levelId) as Array<{ clientDatabaseId: number }>;
+    const attempted = new Set<number>();
+
+    for (const grant of grants) {
+      if (serverGroupId <= 0 || await this.hasOtherActiveGrantForGroup(serverKey, grant.clientDatabaseId, serverGroupId, levelId, undefined)) {
+        continue;
+      }
+      if (attempted.has(grant.clientDatabaseId)) continue;
+      attempted.add(grant.clientDatabaseId);
+      try {
+        if (!await this.ts3.removeClientFromServerGroup(serverGroupId, grant.clientDatabaseId)) return false;
+      } catch (error) {
+        console.warn(`[achievement] 回收等级服务器组失败: level=${levelId}, dbid=${grant.clientDatabaseId}`, error);
+        return false;
+      }
+    }
+
+    this.db.prepare('DELETE FROM achievement_grants WHERE server_key = ? AND level_id = ?').run(serverKey, levelId);
+    return true;
+  }
+
+  async removeLevelAndRevoke(id: number): Promise<boolean> {
+    const level = this.listLevels().find((item) => item.id === id);
+    if (!level) return false;
+    if (!await this.revokeLevelGrants(id, level.serverGroupId)) return false;
+    return this.db.prepare('DELETE FROM achievement_levels WHERE id = ?').run(id).changes > 0;
+  }
+
   /* ========== 动态勋章管理 (Badges) ========== */
 
   listBadges(): BadgeDefinition[] {
@@ -229,6 +261,144 @@ export class AchievementService {
     return this.db.prepare('DELETE FROM badges WHERE id = ?').run(id).changes > 0;
   }
 
+  async revokeBadgeGrants(badgeId: number, serverGroupId: number): Promise<boolean> {
+    const serverKey = this.stats.getServerKey();
+    const grants = this.db
+      .prepare('SELECT client_database_id as clientDatabaseId FROM badge_grants WHERE server_key = ? AND badge_id = ?')
+      .all(serverKey, badgeId) as Array<{ clientDatabaseId: number }>;
+    const attempted = new Set<number>();
+
+    for (const grant of grants) {
+      if (serverGroupId <= 0 || await this.hasOtherActiveGrantForGroup(serverKey, grant.clientDatabaseId, serverGroupId, undefined, badgeId)) {
+        continue;
+      }
+      if (attempted.has(grant.clientDatabaseId)) continue;
+      attempted.add(grant.clientDatabaseId);
+      try {
+        if (!await this.ts3.removeClientFromServerGroup(serverGroupId, grant.clientDatabaseId)) return false;
+      } catch (error) {
+        console.warn(`[achievement] 回收勋章服务器组失败: badge=${badgeId}, dbid=${grant.clientDatabaseId}`, error);
+        return false;
+      }
+    }
+
+    this.db.prepare('DELETE FROM badge_grants WHERE server_key = ? AND badge_id = ?').run(serverKey, badgeId);
+    return true;
+  }
+
+  async removeBadgeAndRevoke(id: number): Promise<boolean> {
+    const badge = this.listBadges().find((item) => item.id === id);
+    if (!badge) return false;
+    if (!await this.revokeBadgeGrants(id, badge.serverGroupId)) return false;
+    return this.db.prepare('DELETE FROM badges WHERE id = ?').run(id).changes > 0;
+  }
+
+  private async hasOtherActiveGrantForGroup(
+    serverKey: string,
+    clientDatabaseId: number,
+    serverGroupId: number,
+    excludedLevelId?: number,
+    excludedBadgeId?: number,
+  ): Promise<boolean> {
+    const level = this.db.prepare(
+      `SELECT 1
+       FROM achievement_grants g
+       JOIN achievement_levels l ON l.id = g.level_id
+       WHERE g.server_key = ? AND g.client_database_id = ? AND l.enabled = 1
+         AND l.server_group_id = ? ${excludedLevelId === undefined ? '' : 'AND g.level_id <> ?'}
+       LIMIT 1`
+    ).get(...(
+      excludedLevelId === undefined
+        ? [serverKey, clientDatabaseId, serverGroupId]
+        : [serverKey, clientDatabaseId, serverGroupId, excludedLevelId]
+    )) as { 1: number } | undefined;
+    if (level) return true;
+
+    const badge = this.db.prepare(
+      `SELECT 1
+       FROM badge_grants g
+       JOIN badges b ON b.id = g.badge_id
+       WHERE g.server_key = ? AND g.client_database_id = ? AND b.enabled = 1
+         AND b.server_group_id = ? ${excludedBadgeId === undefined ? '' : 'AND g.badge_id <> ?'}
+       LIMIT 1`
+    ).get(...(
+      excludedBadgeId === undefined
+        ? [serverKey, clientDatabaseId, serverGroupId]
+        : [serverKey, clientDatabaseId, serverGroupId, excludedBadgeId]
+    )) as { 1: number } | undefined;
+    return Boolean(badge);
+  }
+
+  private async cleanupStaleGrants(serverKey: string): Promise<void> {
+    const staleLevels = this.db.prepare(
+      `SELECT g.client_database_id as clientDatabaseId, g.level_id as itemId,
+              l.server_group_id as serverGroupId
+       FROM achievement_grants g
+       LEFT JOIN achievement_levels l ON l.id = g.level_id
+       WHERE g.server_key = ? AND (l.id IS NULL OR l.enabled <> 1)`
+    ).all(serverKey) as Array<{ clientDatabaseId: number; itemId: number; serverGroupId: number | null }>;
+    const staleBadges = this.db.prepare(
+      `SELECT g.client_database_id as clientDatabaseId, g.badge_id as itemId,
+              b.server_group_id as serverGroupId
+       FROM badge_grants g
+       LEFT JOIN badges b ON b.id = g.badge_id
+       WHERE g.server_key = ? AND (b.id IS NULL OR b.enabled <> 1)`
+    ).all(serverKey) as Array<{ clientDatabaseId: number; itemId: number; serverGroupId: number | null }>;
+
+    const activeGroups = new Set<string>();
+    const activeLevels = this.db.prepare(
+      `SELECT g.client_database_id as clientDatabaseId, l.server_group_id as serverGroupId
+       FROM achievement_grants g
+       JOIN achievement_levels l ON l.id = g.level_id
+       WHERE g.server_key = ? AND l.enabled = 1 AND l.server_group_id > 0`
+    ).all(serverKey) as Array<{ clientDatabaseId: number; serverGroupId: number }>;
+    const activeBadges = this.db.prepare(
+      `SELECT g.client_database_id as clientDatabaseId, b.server_group_id as serverGroupId
+       FROM badge_grants g
+       JOIN badges b ON b.id = g.badge_id
+       WHERE g.server_key = ? AND b.enabled = 1 AND b.server_group_id > 0`
+    ).all(serverKey) as Array<{ clientDatabaseId: number; serverGroupId: number }>;
+    for (const grant of [...activeLevels, ...activeBadges]) {
+      activeGroups.add(`${grant.clientDatabaseId}:${grant.serverGroupId}`);
+    }
+
+    const revokeGroups = new Map<string, { serverGroupId: number; clientDatabaseId: number }>();
+    for (const grant of [...staleLevels, ...staleBadges]) {
+      if (!grant.serverGroupId || activeGroups.has(`${grant.clientDatabaseId}:${grant.serverGroupId}`)) continue;
+      revokeGroups.set(`${grant.clientDatabaseId}:${grant.serverGroupId}`, {
+        serverGroupId: grant.serverGroupId,
+        clientDatabaseId: grant.clientDatabaseId,
+      });
+    }
+    for (const grant of revokeGroups.values()) {
+      try {
+        if (!await this.ts3.removeClientFromServerGroup(grant.serverGroupId, grant.clientDatabaseId)) return;
+      } catch (error) {
+        console.warn(`[achievement] 清理停用成就服务器组失败: group=${grant.serverGroupId}, dbid=${grant.clientDatabaseId}`, error);
+        return;
+      }
+    }
+
+    if (revokeGroups.size !== 0 || staleLevels.length !== 0 || staleBadges.length !== 0) {
+      if (staleLevels.some((grant) => grant.serverGroupId !== null)) {
+        this.db.prepare(
+          `DELETE FROM achievement_grants
+           WHERE server_key = ? AND level_id IN (
+             SELECT id FROM achievement_levels WHERE enabled <> 1
+           )`
+        ).run(serverKey);
+      }
+      if (staleBadges.some((grant) => grant.serverGroupId !== null)) {
+        this.db.prepare(
+          `DELETE FROM badge_grants
+           WHERE server_key = ? AND badge_id IN (
+             SELECT id FROM badges WHERE enabled <> 1
+           )`
+        ).run(serverKey);
+      }
+    }
+  }
+
   /** 单项勋章判定逻辑 */
   evaluateBadgeForUser(
     badge: BadgeDefinition,
@@ -341,25 +511,13 @@ export class AchievementService {
 
   private async checkInternal(serverKey: string): Promise<Array<{ nickname: string; title: string; granted: boolean }>> {
     const results: Array<{ nickname: string; title: string; granted: boolean }> = [];
-    const levels = this.listLevels().filter((l) => l.enabled === 1);
-    const badges = this.listBadges().filter((b) => b.enabled === 1);
+    const allLevels = this.listLevels();
+    const allBadges = this.listBadges();
+    const levels = allLevels.filter((l) => l.enabled === 1);
+    const badges = allBadges.filter((b) => b.enabled === 1);
 
     // 清理已停用或已删除的勋章与成就 grants
-    const enabledLevelIds = levels.map((l) => l.id);
-    if (enabledLevelIds.length > 0) {
-      const placeholders = enabledLevelIds.map(() => '?').join(',');
-      this.db.prepare(`DELETE FROM achievement_grants WHERE server_key = ? AND level_id NOT IN (${placeholders})`).run(serverKey, ...enabledLevelIds);
-    } else {
-      this.db.prepare('DELETE FROM achievement_grants WHERE server_key = ?').run(serverKey);
-    }
-
-    const enabledBadgeIds = badges.map((b) => b.id);
-    if (enabledBadgeIds.length > 0) {
-      const placeholders = enabledBadgeIds.map(() => '?').join(',');
-      this.db.prepare(`DELETE FROM badge_grants WHERE server_key = ? AND badge_id NOT IN (${placeholders})`).run(serverKey, ...enabledBadgeIds);
-    } else {
-      this.db.prepare('DELETE FROM badge_grants WHERE server_key = ?').run(serverKey);
-    }
+    await this.cleanupStaleGrants(serverKey);
 
     const users = this.db
       .prepare(
@@ -518,13 +676,13 @@ export class AchievementService {
   }
 
   /** 获取指定成就等级的已获得成员列表 */
-  getLevelUsers(levelId: number): Array<{ nickname: string; clientDatabaseId: number; uniqueIdentifier: string; hours: number; grantedAt: number }> {
+  getLevelUsers(levelId: number): Array<{ nickname: string; hours: number; grantedAt: number }> {
     const serverKey = this.stats.getServerKey();
     const botInSql = this.stats.getExcludedBotUidsInSql();
     return this.db
       .prepare(
-        `SELECT u.nickname as nickname, u.client_database_id as clientDatabaseId, u.unique_identifier as uniqueIdentifier,
-                ROUND(u.total_seconds / 3600.0, 1) as hours, g.granted_at as grantedAt
+        `SELECT u.nickname as nickname,
+                 ROUND(u.total_seconds / 3600.0, 1) as hours, g.granted_at as grantedAt
          FROM achievement_grants g
          JOIN user_online_duration u
            ON u.server_key = g.server_key AND u.client_database_id = g.client_database_id
@@ -532,7 +690,7 @@ export class AchievementService {
            AND lower(u.nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
          ORDER BY u.total_seconds DESC, g.granted_at ASC`
       )
-      .all(serverKey, levelId) as Array<{ nickname: string; clientDatabaseId: number; uniqueIdentifier: string; hours: number; grantedAt: number }>;
+      .all(serverKey, levelId) as Array<{ nickname: string; hours: number; grantedAt: number }>;
   }
 
   /** 主页荣誉殿堂公开汇总数据 */

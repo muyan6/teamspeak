@@ -187,8 +187,8 @@ describe('成就服务', () => {
     const goldUsers = service.getLevelUsers(gold.id);
     expect(goldUsers).toHaveLength(1);
     expect(goldUsers[0].nickname).toBe('小林');
-    expect(goldUsers[0].uniqueIdentifier).toBe('uid-1');
     expect(goldUsers[0].hours).toBe(144.7);
+    expect(goldUsers[0]).toEqual({ nickname: '小林', hours: 144.7, grantedAt: 2 });
 
     const bronzeUsers = service.getLevelUsers(bronze.id);
     expect(bronzeUsers).toHaveLength(2);
@@ -326,6 +326,30 @@ describe('成就服务', () => {
     expect(grantedGroups).toEqual([102, 103]);
     expect(db.prepare('SELECT level_id FROM achievement_grants WHERE server_key = ? AND client_database_id = ?').all('server-a', 1)).toEqual([{ level_id: l3.id }]);
 
+    db.close();
+  });
+
+  it('管理成就回收失败时保留本地授权，成功后才允许删除', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    let removeAllowed = false;
+    const ts3 = {
+      removeClientFromServerGroup: async () => removeAllowed,
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+    const level = service.addLevel({ hours: 1, serverGroupId: 9, title: '待回收等级' });
+    db.prepare(
+      'INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)'
+    ).run('server-a', 7, level.id, Date.now());
+
+    expect(await service.removeLevelAndRevoke(level.id)).toBe(false);
+    expect(service.listLevels().some((item) => item.id === level.id)).toBe(true);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 1 });
+
+    removeAllowed = true;
+    expect(await service.removeLevelAndRevoke(level.id)).toBe(true);
+    expect(service.listLevels().some((item) => item.id === level.id)).toBe(false);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 0 });
     db.close();
   });
 });

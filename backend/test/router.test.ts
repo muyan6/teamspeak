@@ -33,6 +33,17 @@ describe('管理接口与配置回归', () => {
       migrated: false,
     });
 
+    const invalidBootstrap = new Map<string, string>();
+    expect(initializeAdminPassword({
+      get: (key) => invalidBootstrap.get(key) ?? null,
+      set: (key, value) => invalidBootstrap.set(key, value),
+    }, 'short')).toMatchObject({ password: '', initialized: false, migrated: false });
+    expect(invalidBootstrap.has('adminPassword')).toBe(false);
+    expect(initializeAdminPassword({
+      get: () => null,
+      set: () => undefined,
+    }, 'x'.repeat(257))).toMatchObject({ password: '', initialized: false, migrated: false });
+
     const legacyValues = new Map<string, string>([['adminPassword', 'legacy-password']]);
     const migrated = initializeAdminPassword({
       get: (key) => legacyValues.get(key) ?? null,
@@ -53,12 +64,28 @@ describe('管理接口与配置回归', () => {
       COLLECT_INTERVAL_MS: '1500',
       SAMPLE_INTERVAL_MS: '2500',
     });
-    expect(config).toMatchObject({
+      expect(config).toMatchObject({
       port: 4100,
       ts3: { queryPort: 12000, serverPort: 9988, serverId: 3 },
       publicServer: { port: 9989 },
       collectIntervalMs: 1500,
       sampleIntervalMs: 2500,
+    });
+    const bounded = loadConfig({
+      PORT: '0',
+      TS3_QUERY_PORT: '70000',
+      TS3_SERVER_PORT: '-1',
+      TS3_SERVER_ID: '-2',
+      TS3_PUBLIC_PORT: 'NaN',
+      COLLECT_INTERVAL_MS: '0',
+      SAMPLE_INTERVAL_MS: '0',
+    });
+    expect(bounded).toMatchObject({
+      port: 4321,
+      ts3: { queryPort: 10011, serverPort: 9987, serverId: 0 },
+      publicServer: { port: 9987 },
+      collectIntervalMs: 30000,
+      sampleIntervalMs: 300000,
     });
   });
 
@@ -422,6 +449,18 @@ describe('管理接口与配置回归', () => {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: '十小时在线', hours: 10, serverGroupId: 3 }),
     })).status).toBe(201);
+  });
+
+  it('频道编辑拒绝 NaN 父频道和人数上限', async () => {
+    const { baseUrl, token } = await startRouter();
+    for (const payload of [{ cpid: 'NaN' }, { maxclients: 'NaN' }, { cpid: -1 }, { maxclients: -1 }]) {
+      const response = await fetch(`${baseUrl}/admin/channels/1`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      expect(response.status).toBe(400);
+    }
   });
 
   it('用户查询优先命中本地数据库且不触发 TS3 远程查询', async () => {

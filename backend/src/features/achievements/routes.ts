@@ -2,6 +2,12 @@ import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number | null {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
   router.get('/achievements/levels/:id/users', (req, res) => {
     const id = Number.parseInt(req.params.id, 10);
@@ -23,9 +29,9 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
   router.post('/achievements/levels', admin, asyncRoute(async (req, res) => {
     const { hours, serverGroupId, title } = req.body ?? {};
     const parsedHours = Number(hours);
-    const parsedGroupId = Number(serverGroupId || 0);
+    const parsedGroupId = parseNonNegativeInteger(serverGroupId, 0);
     const normalizedTitle = String(title ?? '').trim();
-    if (!Number.isFinite(parsedHours) || parsedHours < 0 || !Number.isInteger(parsedGroupId) || parsedGroupId < 0 || !normalizedTitle) {
+    if (!Number.isFinite(parsedHours) || parsedHours < 0 || parsedGroupId === null || !normalizedTitle) {
       res.status(400).json({ error: '成就名称与非负时长必填' });
       return;
     }
@@ -42,13 +48,27 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
     const id = Number.parseInt(req.params.id, 10);
     const { hours, serverGroupId, title, enabled } = req.body ?? {};
     const parsedHours = Number(hours);
-    const parsedGroupId = Number(serverGroupId || 0);
+    const parsedGroupId = parseNonNegativeInteger(serverGroupId, 0);
     const parsedEnabled = Number(enabled);
     const normalizedTitle = String(title ?? '').trim();
-    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(parsedHours) || parsedHours < 0 || !Number.isInteger(parsedGroupId) || parsedGroupId < 0 || ![0, 1].includes(parsedEnabled) || !normalizedTitle) {
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(parsedHours) || parsedHours < 0 || parsedGroupId === null || ![0, 1].includes(parsedEnabled) || !normalizedTitle) {
       res.status(400).json({ error: '成就配置无效' });
       return;
     }
+    const currentLevel = deps.achievement.listLevels().find((level) => level.id === id);
+    if (!currentLevel) {
+      res.status(404).json({ error: '成就等级不存在' });
+      return;
+    }
+    if (
+      (currentLevel.serverGroupId !== parsedGroupId || parsedEnabled === 0)
+      && typeof deps.achievement.revokeLevelGrants === 'function'
+      && !await deps.achievement.revokeLevelGrants(id, currentLevel.serverGroupId)
+    ) {
+      res.status(503).json({ error: '旧成就服务器组回收失败，请稍后重试' });
+      return;
+    }
+
     const updated = deps.achievement.updateLevel(id, {
       hours: parsedHours,
       serverGroupId: parsedGroupId,
@@ -63,14 +83,21 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
     res.json({ success: true });
   }));
 
-  router.delete('/achievements/levels/:id', admin, (req, res) => {
-    const removed = deps.achievement.removeLevel(Number.parseInt(req.params.id, 10));
+  router.delete('/achievements/levels/:id', admin, asyncRoute(async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    const removed = typeof deps.achievement.removeLevelAndRevoke === 'function'
+      ? await deps.achievement.removeLevelAndRevoke(id)
+      : deps.achievement.removeLevel(id);
     if (!removed) {
+      if (typeof deps.achievement.listLevels === 'function' && deps.achievement.listLevels().some((level) => level.id === id)) {
+        res.status(503).json({ error: '旧成就服务器组回收失败，请稍后重试' });
+        return;
+      }
       res.status(404).json({ error: '成就等级不存在' });
       return;
     }
     res.json({ success: true });
-  });
+  }));
 
   /* ========== 勋章管理 (Badges) ========== */
 
@@ -87,6 +114,11 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       res.status(400).json({ error: '勋章名称与有效条件类型必填' });
       return;
     }
+    const parsedGroupId = parseNonNegativeInteger(serverGroupId, 0);
+    if (parsedGroupId === null) {
+      res.status(400).json({ error: '勋章服务器组 ID 无效' });
+      return;
+    }
 
     const created = deps.achievement.addBadge({
       name: normalizedName,
@@ -96,8 +128,8 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       description: String(description ?? '').trim(),
       conditionType,
       conditionParams: conditionParams && typeof conditionParams === 'object' ? conditionParams : {},
-      serverGroupId: Number(serverGroupId || 0),
-      enabled: enabled === 0 ? 0 : 1,
+      serverGroupId: parsedGroupId,
+      enabled: Number(enabled) === 0 ? 0 : 1,
       sortOrder: Number(sortOrder || 100),
     });
 
@@ -122,7 +154,21 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       return;
     }
 
-    const resolvedEnabled = enabled !== undefined ? (enabled === 0 ? 0 : 1) : currentBadge.enabled;
+    const parsedGroupId = parseNonNegativeInteger(serverGroupId, currentBadge.serverGroupId);
+    if (parsedGroupId === null) {
+      res.status(400).json({ error: '勋章服务器组 ID 无效' });
+      return;
+    }
+    const resolvedEnabled = enabled !== undefined ? (Number(enabled) === 0 ? 0 : 1) : currentBadge.enabled;
+
+    if (
+      (currentBadge.serverGroupId !== parsedGroupId || resolvedEnabled === 0)
+      && typeof deps.achievement.revokeBadgeGrants === 'function'
+      && !await deps.achievement.revokeBadgeGrants(id, currentBadge.serverGroupId)
+    ) {
+      res.status(503).json({ error: '旧勋章服务器组回收失败，请稍后重试' });
+      return;
+    }
 
     const updated = deps.achievement.updateBadge(id, {
       name: normalizedName,
@@ -132,7 +178,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       description: description !== undefined ? String(description).trim() : currentBadge.description,
       conditionType,
       conditionParams: conditionParams && typeof conditionParams === 'object' ? conditionParams : currentBadge.conditionParams,
-      serverGroupId: serverGroupId !== undefined ? Number(serverGroupId || 0) : currentBadge.serverGroupId,
+      serverGroupId: parsedGroupId,
       enabled: resolvedEnabled,
       sortOrder: sortOrder !== undefined ? Number(sortOrder || 100) : currentBadge.sortOrder,
     });
@@ -146,14 +192,21 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
     res.json({ success: true });
   }));
 
-  router.delete('/achievements/badges/:id', admin, (req, res) => {
-    const removed = deps.achievement.removeBadge(Number.parseInt(req.params.id, 10));
+  router.delete('/achievements/badges/:id', admin, asyncRoute(async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    const removed = typeof deps.achievement.removeBadgeAndRevoke === 'function'
+      ? await deps.achievement.removeBadgeAndRevoke(id)
+      : deps.achievement.removeBadge(id);
     if (!removed) {
+      if (typeof deps.achievement.listBadges === 'function' && deps.achievement.listBadges().some((badge) => badge.id === id)) {
+        res.status(503).json({ error: '旧勋章服务器组回收失败，请稍后重试' });
+        return;
+      }
       res.status(404).json({ error: '勋章不存在' });
       return;
     }
     res.json({ success: true });
-  });
+  }));
 
   router.post('/achievements/check', admin, asyncRoute(async (_req, res) => {
     res.json({ results: await deps.achievement.check() });

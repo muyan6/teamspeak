@@ -112,6 +112,39 @@ export class WeeklyChampionService {
     return this.getConfigForServer(serverKey);
   }
 
+  async saveConfigWithRevoke(data: {
+    enabled: number;
+    serverGroupId: number | null;
+    checkIntervalHours: number;
+  }): Promise<ChampionConfig> {
+    const current = this.getConfig();
+    const nextGroupId = data.enabled === 1 ? data.serverGroupId : null;
+    const needsRevoke = current.lastWinnerClientDbId !== null
+      && (data.enabled === 0 || current.serverGroupId !== nextGroupId);
+    if (needsRevoke && !await this.revokeCurrentWinner(current)) {
+      throw new Error('旧周冠军服务器组回收失败，请稍后重试');
+    }
+    return this.saveConfig(data);
+  }
+
+  private async revokeCurrentWinner(config: ChampionConfig): Promise<boolean> {
+    if (config.lastWinnerClientDbId === null) return true;
+    if (config.serverGroupId && config.serverGroupId > 0) {
+      try {
+        if (!await this.ts3.removeClientFromServerGroup(config.serverGroupId, config.lastWinnerClientDbId)) return false;
+      } catch (error) {
+        console.warn(`[champion] 回收旧周冠军服务器组失败: dbid=${config.lastWinnerClientDbId}`, error);
+        return false;
+      }
+    }
+    this.db.prepare(
+      `UPDATE champion_config
+       SET last_winner_client_db_id = NULL, last_winner_nickname = NULL
+       WHERE server_key = ?`
+    ).run(this.stats.getServerKey());
+    return true;
+  }
+
   private isValidCheckIntervalHours(value: number): boolean {
     return Number.isInteger(value)
       && value >= MIN_CHECK_INTERVAL_HOURS

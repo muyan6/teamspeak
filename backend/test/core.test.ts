@@ -1259,4 +1259,67 @@ describe('TS3 监控后端核心链路', () => {
 
     historyDb.close();
   });
+
+  it('关闭或更换周冠军奖励组前必须成功回收旧冠军权限', async () => {
+    const configDb = openDatabase(':memory:');
+    const stats = new StatsService(configDb);
+    let removeAllowed = false;
+    const champion = new WeeklyChampionService(configDb, {
+      removeClientFromServerGroup: async () => removeAllowed,
+    } as never, stats);
+    champion.saveConfig({ enabled: 1, serverGroupId: 7, checkIntervalHours: 24 });
+    configDb.prepare(
+      "UPDATE champion_config SET last_winner_client_db_id = 100, last_winner_nickname = '旧冠军' WHERE server_key = 'legacy'"
+    ).run();
+
+    await expect(champion.saveConfigWithRevoke({ enabled: 0, serverGroupId: null, checkIntervalHours: 24 })).rejects.toThrow();
+    expect(champion.getConfig()).toMatchObject({ enabled: 1, serverGroupId: 7, lastWinnerClientDbId: 100 });
+
+    removeAllowed = true;
+    await champion.saveConfigWithRevoke({ enabled: 0, serverGroupId: null, checkIntervalHours: 24 });
+    expect(champion.getConfig()).toMatchObject({ enabled: 0, serverGroupId: null, lastWinnerClientDbId: null, lastWinnerNickname: null });
+    configDb.close();
+  });
+
+  it('删除弹性频道组时保留在线频道，空频道才会被清理', async () => {
+    const elasticDb = openDatabase(':memory:');
+    let channels = [{
+      cid: 55,
+      parentId: 0,
+      name: '#room-1',
+      totalClients: 1,
+      totalClientsFamily: 1,
+      order: 0,
+    }];
+    const deleted: number[] = [];
+    const elastic = new ElasticChannelService(elasticDb, {
+      getChannels: async () => channels,
+      deleteChannel: async (cid: number) => {
+        deleted.push(cid);
+        return true;
+      },
+    } as never);
+    const group = elastic.addGroup({
+      name: '测试房间',
+      namePrefix: '#room-',
+      createThreshold: 2,
+      deleteThreshold: 0,
+      baseChannelId: 0,
+    });
+    elasticDb.prepare(
+      'INSERT INTO elastic_managed_channels (server_key, group_id, channel_id, created_at) VALUES (?, ?, ?, ?)'
+    ).run('legacy', group.id, 55, Date.now());
+
+    const blocked = await elastic.removeGroupAndChannels(group.id);
+    expect(blocked.ok).toBe(false);
+    expect(elastic.listGroups().some((item) => item.id === group.id)).toBe(true);
+    expect(deleted).toEqual([]);
+
+    channels = [{ ...channels[0], totalClients: 0, totalClientsFamily: 0 }];
+    const removed = await elastic.removeGroupAndChannels(group.id);
+    expect(removed.ok).toBe(true);
+    expect(deleted).toEqual([55]);
+    expect(elastic.listGroups().some((item) => item.id === group.id)).toBe(false);
+    elasticDb.close();
+  });
 });

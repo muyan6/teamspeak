@@ -79,13 +79,13 @@ async function copyText(text: string) {
 
 function quickConnect() {
   if (data.value?.site.connectUrl) {
-    window.open(data.value.site.connectUrl, '_blank');
+    window.open(data.value.site.connectUrl, '_blank', 'noopener,noreferrer');
   }
 }
 
 function openMusicBot() {
   if (musicBotUrl.value) {
-    window.open(musicBotUrl.value, '_blank');
+    window.open(musicBotUrl.value, '_blank', 'noopener,noreferrer');
   } else {
     showTutorial.value = true;
     tutorialTab.value = 'music';
@@ -174,8 +174,6 @@ function getAchievementIcon(idx: number): string {
 
 interface LevelUserItem {
   nickname: string;
-  uniqueIdentifier: string;
-  clientDatabaseId: number;
   hours: number;
   grantedAt: number;
 }
@@ -912,7 +910,7 @@ onMounted(() => void loadHomeModules());
                 </div>
                 <div>
                   <router-link
-                    :to="{ path: '/profile', query: { nickname: user.nickname, uid: user.uniqueIdentifier } }"
+                    :to="{ path: '/profile', query: { nickname: user.nickname } }"
                     class="level-user-name"
                     :title="`查看「${user.nickname}」的个人数据`"
                     @click="showLevelModal = false"

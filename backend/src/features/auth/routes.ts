@@ -1,9 +1,8 @@
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
-import { hashAdminPasswordAsync } from '../../services/auth.js';
+import { hashAdminPasswordAsync, MAX_ADMIN_PASSWORD_LENGTH, MIN_ADMIN_PASSWORD_LENGTH } from '../../services/auth.js';
+import { pruneRateLimitMap } from '../../api/route-utils.js';
 
-const MIN_ADMIN_PASSWORD_LENGTH = 8;
-const MAX_ADMIN_PASSWORD_LENGTH = 256;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
@@ -20,6 +19,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
   const failedLogins = new Map<string, LoginAttempt>();
 
   const getRetryAfterSeconds = (clientKey: string): number => {
+    pruneRateLimitMap(failedLogins, Date.now(), (entry) => entry.firstFailureAt + LOGIN_WINDOW_MS);
     const attempt = failedLogins.get(clientKey);
     if (!attempt) return 0;
     const remaining = LOGIN_WINDOW_MS - (Date.now() - attempt.firstFailureAt);
@@ -35,6 +35,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     const attempt = failedLogins.get(clientKey);
     if (!attempt || now - attempt.firstFailureAt >= LOGIN_WINDOW_MS) {
       failedLogins.set(clientKey, { count: 1, firstFailureAt: now });
+      pruneRateLimitMap(failedLogins, now, (entry) => entry.firstFailureAt + LOGIN_WINDOW_MS);
       return;
     }
     attempt.count += 1;

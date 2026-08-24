@@ -46,11 +46,14 @@ function resolveDbPath(rawPath: string | undefined): string {
   return directDataDb;
 }
 
-function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number, min?: number, max?: number): number {
   const v = env[name];
   if (!v) return fallback;
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
+  const n = Number(v);
+  if (!Number.isSafeInteger(n)) return fallback;
+  if (min !== undefined && n < min) return fallback;
+  if (max !== undefined && n > max) return fallback;
+  return n;
 }
 
 export interface AppConfig {
@@ -90,23 +93,22 @@ export interface AppConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const ts3Host = env.TS3_HOST || '';
-  const queryPort = intEnv(env, 'TS3_QUERY_PORT', 10011);
   const adminQqVal = env.SITE_ADMIN_QQ || env.SITE_ADMIN_STEAM || '';
 
   return {
-    port: intEnv(env, 'PORT', 4321),
+    port: intEnv(env, 'PORT', 4321, 1, 65535),
     ts3: {
       host: ts3Host,
-      queryPort,
-      serverPort: intEnv(env, 'TS3_SERVER_PORT', 9987),
+      queryPort: intEnv(env, 'TS3_QUERY_PORT', 10011, 1, 65535),
+      serverPort: intEnv(env, 'TS3_SERVER_PORT', 9987, 1, 65535),
       // 未显式设置时继续按语音端口选择虚拟服务器，避免改变已有部署的连接目标。
-      serverId: intEnv(env, 'TS3_SERVER_ID', 0),
+      serverId: intEnv(env, 'TS3_SERVER_ID', 0, 0),
       username: env.TS3_QUERY_USERNAME || 'serveradmin',
       password: env.TS3_QUERY_PASSWORD || '',
     },
     publicServer: {
       host: env.TS3_PUBLIC_HOST || ts3Host,
-      port: intEnv(env, 'TS3_PUBLIC_PORT', 9987),
+      port: intEnv(env, 'TS3_PUBLIC_PORT', 9987, 1, 65535),
     },
     site: {
       title: env.SITE_TITLE || 'Voice',
@@ -126,7 +128,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // 未配置时使用进程级随机密钥，避免公开默认值被用于伪造管理员令牌。
     jwtSecret: env.JWT_SECRET || randomBytes(32).toString('hex'),
     dbPath: resolveDbPath(env.DB_PATH),
-    collectIntervalMs: intEnv(env, 'COLLECT_INTERVAL_MS', 30000),
-    sampleIntervalMs: intEnv(env, 'SAMPLE_INTERVAL_MS', 300000),
+    collectIntervalMs: intEnv(env, 'COLLECT_INTERVAL_MS', 30000, 1000),
+    sampleIntervalMs: intEnv(env, 'SAMPLE_INTERVAL_MS', 300000, 1000),
   };
 }

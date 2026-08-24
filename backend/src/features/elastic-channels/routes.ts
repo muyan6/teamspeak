@@ -16,14 +16,17 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
 
   router.get('/elastic/load', admin, asyncRoute(async (_req, res) => {
     const groups = deps.elastic.listGroups();
-    let channels: Array<{ cid: number; name: string; totalClients: number }> = [];
+    let channels: Array<{ cid: number; parentId?: number; name: string; totalClients: number }> = [];
     try {
       channels = await deps.ts3.getChannels();
     } catch {
       channels = [];
     }
     const result = groups.map((group) => {
-      const members = channels.filter((channel) => channel.name.startsWith(group.namePrefix));
+      const members = channels.filter((channel) =>
+        channel.name.startsWith(group.namePrefix)
+        && (group.baseChannelId === null || channel.parentId === group.baseChannelId)
+      );
       return {
         group,
         channels: members.map((channel) => ({ cid: channel.cid, name: channel.name, online: channel.totalClients })),
@@ -31,7 +34,7 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
         totalOnline: members.reduce((sum, channel) => sum + channel.totalClients, 0),
       };
     });
-    res.json({ groups: result, overallChannels: channels.length });
+    res.json({ groups: result, overallChannels: result.reduce((sum, group) => sum + group.totalChannels, 0) });
   }));
 
   router.post('/elastic/groups', admin, (req, res) => {
@@ -82,12 +85,20 @@ export function registerElasticChannelRoutes(router: Router, deps: ApiDeps, admi
     res.status(201).json(group);
   });
 
-  router.delete('/elastic/groups/:id', admin, (req, res) => {
-    const ok = deps.elastic.removeGroup(Number.parseInt(req.params.id, 10));
-    if (!ok) {
+  router.delete('/elastic/groups/:id', admin, asyncRoute(async (req, res) => {
+    const id = Number.parseInt(req.params.id, 10);
+    const removeGroupAndChannels = deps.elastic.removeGroupAndChannels;
+    const result = typeof removeGroupAndChannels === 'function'
+      ? await removeGroupAndChannels.call(deps.elastic, id)
+      : { ok: deps.elastic.removeGroup(id), found: true };
+    if (!result.found) {
       res.status(404).json({ error: '频道组不存在' });
       return;
     }
+    if (!result.ok) {
+      res.status(503).json({ error: result.error || '删除弹性频道组失败' });
+      return;
+    }
     res.json({ success: true });
-  });
+  }));
 }

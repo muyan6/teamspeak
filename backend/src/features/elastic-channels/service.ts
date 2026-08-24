@@ -71,6 +71,48 @@ export class ElasticChannelService {
     return this.db.prepare('DELETE FROM elastic_groups WHERE id = ?').run(id).changes > 0;
   }
 
+  async removeGroupAndChannels(id: number): Promise<{ ok: boolean; found: boolean; error?: string }> {
+    const group = this.listGroups().find((item) => item.id === id);
+    if (!group) return { ok: false, found: false };
+
+    const managedChannelIds = this.getManagedChannelIds(id);
+    if (managedChannelIds.size === 0) {
+      return { ok: this.removeGroup(id), found: true };
+    }
+
+    let channels;
+    try {
+      channels = await this.ts3.getChannels();
+    } catch {
+      return { ok: false, found: true, error: '无法获取频道列表，未删除弹性频道组配置' };
+    }
+    const channelMap = new Map(channels.map((channel) => [channel.cid, channel]));
+    const existingManaged = [...managedChannelIds]
+      .map((channelId) => channelMap.get(channelId))
+      .filter((channel): channel is (typeof channels)[number] => Boolean(channel));
+
+    for (const channel of existingManaged) {
+      const users = channel.totalClientsFamily ?? channel.totalClients;
+      if (users > 0) {
+        return { ok: false, found: true, error: `频道「${channel.name}」仍有用户或子频道在线，未删除弹性频道组` };
+      }
+    }
+
+    for (const channelId of managedChannelIds) {
+      const channel = channelMap.get(channelId);
+      if (!channel) {
+        this.forgetManagedChannel(id, channelId);
+        continue;
+      }
+      if (!await this.ts3.deleteChannel(channelId)) {
+        return { ok: false, found: true, error: `删除托管频道「${channel.name}」失败，未删除弹性频道组配置` };
+      }
+      this.forgetManagedChannel(id, channelId);
+    }
+
+    return { ok: this.removeGroup(id), found: true, error: '删除弹性频道组配置失败' };
+  }
+
   private toGroup(row: Record<string, unknown>): ElasticGroup {
     return {
       id: row.id as number,
@@ -111,7 +153,7 @@ export class ElasticChannelService {
     for (const group of groups) {
       const prefix = group.namePrefix;
       const members = channels.filter((c) =>
-        c.name.startsWith(prefix) && (group.baseChannelId ? c.parentId === group.baseChannelId : true)
+        c.name.startsWith(prefix) && (group.baseChannelId === null || c.parentId === group.baseChannelId)
       );
       const fullChannels = members.filter((c) => c.totalClients >= group.createThreshold);
       const emptyChannels = members

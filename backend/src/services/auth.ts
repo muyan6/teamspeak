@@ -8,6 +8,9 @@ const PASSWORD_HASH_PREFIX = 'scrypt';
 const CREDENTIAL_PREFIX = 'enc:v1';
 const scryptAsync = promisify(scrypt);
 
+export const MIN_ADMIN_PASSWORD_LENGTH = 8;
+export const MAX_ADMIN_PASSWORD_LENGTH = 256;
+
 async function deriveScrypt(password: string, salt: Buffer, keyLength: number): Promise<Buffer> {
   const digest = await scryptAsync(password, salt, keyLength);
   if (!Buffer.isBuffer(digest)) throw new Error('scrypt 返回了无效摘要');
@@ -36,7 +39,13 @@ export function initializeAdminPassword(store: AdminPasswordStore, bootstrapPass
     store.set('adminPassword', password);
     return { password, initialized: false, migrated: true };
   }
-  if (!bootstrapPassword) return { password: '', initialized: false, migrated: false };
+  if (
+    typeof bootstrapPassword !== 'string'
+    || bootstrapPassword.length < MIN_ADMIN_PASSWORD_LENGTH
+    || bootstrapPassword.length > MAX_ADMIN_PASSWORD_LENGTH
+  ) {
+    return { password: '', initialized: false, migrated: false };
+  }
   const password = hashAdminPassword(bootstrapPassword);
   store.set('adminPassword', password);
   return { password, initialized: true, migrated: false };

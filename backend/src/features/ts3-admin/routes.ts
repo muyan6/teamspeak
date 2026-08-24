@@ -75,14 +75,20 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
 
   router.post('/admin/channels', admin, asyncRoute(async (req, res) => {
     const { name, cpid, password } = req.body ?? {};
-    if (!name) {
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    const parsedParentId = cpid === undefined || cpid === null || cpid === '' ? undefined : Number(cpid);
+    if (!normalizedName) {
       res.status(400).json({ error: '频道名必填' });
       return;
     }
+    if (parsedParentId !== undefined && (!Number.isSafeInteger(parsedParentId) || parsedParentId < 0)) {
+      res.status(400).json({ error: '父频道 ID 无效' });
+      return;
+    }
     const cid = await deps.ts3.createChannel({
-      name: String(name).trim(),
-      cpid: cpid ? Number.parseInt(String(cpid), 10) : undefined,
-      password: password || undefined,
+      name: normalizedName,
+      cpid: parsedParentId,
+      password: typeof password === 'string' && password !== '' ? password : undefined,
     });
     if (!cid) {
       res.status(500).json({ error: '创建频道失败' });
@@ -98,11 +104,21 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
       return;
     }
     const { name, cpid, password, maxclients } = req.body ?? {};
+    const parsedParentId = cpid !== undefined && cpid !== null && cpid !== '' ? Number(cpid) : undefined;
+    const parsedMaxClients = maxclients !== undefined && maxclients !== null && maxclients !== '' ? Number(maxclients) : undefined;
+    if (parsedParentId !== undefined && (!Number.isSafeInteger(parsedParentId) || parsedParentId < 0)) {
+      res.status(400).json({ error: '父频道 ID 无效' });
+      return;
+    }
+    if (parsedMaxClients !== undefined && (!Number.isSafeInteger(parsedMaxClients) || parsedMaxClients < 0)) {
+      res.status(400).json({ error: '频道人数上限无效' });
+      return;
+    }
     const ok = await deps.ts3.editChannel(cid, {
       name: name ? String(name).trim() : undefined,
-      cpid: cpid !== undefined && cpid !== null ? Number.parseInt(String(cpid), 10) : undefined,
+      cpid: parsedParentId,
       password: password !== undefined ? String(password) : undefined,
-      maxclients: maxclients !== undefined && maxclients !== null ? Number.parseInt(String(maxclients), 10) : undefined,
+      maxclients: parsedMaxClients,
     });
     if (!ok) {
       res.status(500).json({ error: '编辑频道失败' });

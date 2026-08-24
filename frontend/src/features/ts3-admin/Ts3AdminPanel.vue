@@ -27,7 +27,7 @@ function showNotice(msg: string, type: 'success' | 'error' | 'warning' = 'succes
 }
 
 const chForm = ref({ name: '', cpid: 0, password: '' });
-const editing = ref<{ cid: number; name: string; cpid: number; password: string; maxclients: number } | null>(null);
+const editing = ref<{ cid: number; name: string; originalCpid: number; cpid: number; password: string; maxclients: number } | null>(null);
 
 const moveSel = ref<Record<number, number>>({});
 const assignSel = ref<Record<number, number>>({});
@@ -94,7 +94,7 @@ async function removeChannel(cid: number) {
 }
 
 function startEdit(ch: AdminChannel) {
-  editing.value = { cid: ch.cid, name: ch.name, cpid: ch.parentId, password: '', maxclients: 0 };
+  editing.value = { cid: ch.cid, name: ch.name, originalCpid: ch.parentId, cpid: ch.parentId, password: '', maxclients: 0 };
 }
 
 async function saveEdit() {
@@ -108,8 +108,8 @@ async function saveEdit() {
   try {
     await api.editChannel(e.cid, {
       name,
-      cpid: e.cpid,
-      password: e.password,
+      cpid: e.cpid !== e.originalCpid ? e.cpid : undefined,
+      password: e.password.trim() !== '' ? e.password : undefined,
       maxclients: e.maxclients > 0 ? e.maxclients : undefined,
     });
     const cid = e.cid;
@@ -137,9 +137,18 @@ async function kick(clid: number) {
 async function ban(c: AdminClient) {
   if (!window.confirm(`确定封禁用户「${c.nickname}」？`)) return;
   const input = window.prompt('封禁时长（秒，留空为永久）：');
-  const time = input && input.trim() !== '' ? parseInt(input.trim(), 10) : undefined;
+  const normalizedInput = input?.trim() ?? '';
+  let time: number | undefined;
+  if (normalizedInput !== '') {
+    const parsedTime = Number(normalizedInput);
+    if (!Number.isSafeInteger(parsedTime) || parsedTime < 0) {
+      showNotice('封禁失败：时长必须是非负整数秒数', 'warning');
+      return;
+    }
+    time = parsedTime;
+  }
   try {
-    await api.banClient(c.clid, c.uniqueIdentifier, undefined, Number.isFinite(time) ? time : undefined);
+    await api.banClient(c.clid, c.uniqueIdentifier, undefined, time);
     showNotice(`已封禁用户「${c.nickname}」`, 'success');
     await loadAll();
   } catch (err) {

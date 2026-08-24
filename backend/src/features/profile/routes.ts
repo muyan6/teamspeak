@@ -1,6 +1,6 @@
 import type { Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
-import { asyncRoute } from '../../api/route-utils.js';
+import { asyncRoute, pruneRateLimitMap } from '../../api/route-utils.js';
 import type { ClientDatabaseData } from '../../ts3/client.js';
 
 function parseRange(value: unknown, allowed: readonly string[], fallback: string): string {
@@ -38,9 +38,11 @@ const rateLimits = new Map<string, RateLimitEntry>();
 function isRateLimited(req: { ip?: string; socket: { remoteAddress?: string } }): boolean {
   const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
+  pruneRateLimitMap(rateLimits, now, (entry) => entry.resetAt);
   const entry = rateLimits.get(clientKey);
   if (!entry || now >= entry.resetAt) {
     rateLimits.set(clientKey, { count: 1, resetAt: now + SEARCH_WINDOW_MS });
+    pruneRateLimitMap(rateLimits, now, (item) => item.resetAt);
     return false;
   }
   entry.count++;
