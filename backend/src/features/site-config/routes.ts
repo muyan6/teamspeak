@@ -11,9 +11,39 @@ interface SiteConfigPayload {
   adminQq?: string;
   adminSteam?: string;
   excludedBotUids?: string;
+  tsManagerUrl?: string;
+  musicBotUrl?: string;
 }
 
 const MAX_ADMIN_CONTACT_LENGTH = 2_000;
+const MAX_URL_LENGTH = 2_000;
+
+function normalizeHttpUrl(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error(`${fieldName} 必须是字符串`);
+  const text = value.trim();
+  if (!text) return '';
+  if (text.length > MAX_URL_LENGTH) throw new Error(`${fieldName} 不能超过 ${MAX_URL_LENGTH} 个字符`);
+  try {
+    const url = new URL(text);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return text;
+  } catch {
+    // 统一返回字段错误
+  }
+  throw new Error(`${fieldName} 仅支持 HTTP 或 HTTPS 地址`);
+}
+
+function sanitizeHttpUrl(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text || text.length > MAX_URL_LENGTH) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? text : '';
+  } catch {
+    return '';
+  }
+}
 
 function normalizeAdminContact(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -50,6 +80,8 @@ function loadSiteConfig(deps: ApiDeps): SiteConfigPayload {
     adminName: info.adminName ?? '',
     adminSteam: sanitizeAdminContact(info.adminSteam || info.adminQq || ''),
     excludedBotUids: typeof info.excludedBotUids === 'string' ? info.excludedBotUids : '',
+    tsManagerUrl: sanitizeHttpUrl(info.tsManagerUrl || deps.configStore.get('tsManagerUrl')),
+    musicBotUrl: sanitizeHttpUrl(info.musicBotUrl || deps.configStore.get('musicBotUrl')),
   };
   if (info.adminQq !== undefined) {
     res.adminQq = sanitizeAdminContact(info.adminQq);
@@ -79,6 +111,14 @@ export function registerSiteConfigRoutes(router: Router, deps: ApiDeps, admin: R
       };
       if (typeof body.adminQq === 'string') {
         siteInfo.adminQq = normalizeAdminContact(body.adminQq);
+      }
+      if (body.tsManagerUrl !== undefined) {
+        siteInfo.tsManagerUrl = normalizeHttpUrl(body.tsManagerUrl, 'TS Manager 链接') ?? '';
+        deps.configStore.set('tsManagerUrl', siteInfo.tsManagerUrl);
+      }
+      if (body.musicBotUrl !== undefined) {
+        siteInfo.musicBotUrl = normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接') ?? '';
+        deps.configStore.set('musicBotUrl', siteInfo.musicBotUrl);
       }
       deps.configStore.setJson('siteInfo', siteInfo);
       if (deps.stats?.getDatabase) {

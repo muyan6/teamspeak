@@ -11,6 +11,8 @@ const site = ref({
   adminName: '',
   adminQq: '',
   excludedBotUids: '',
+  tsManagerUrl: '',
+  musicBotUrl: '',
 });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
@@ -38,6 +40,8 @@ async function load(): Promise<void> {
       adminName: config.adminName ?? '',
       adminQq: config.adminQq ?? config.adminSteam ?? '',
       excludedBotUids: config.excludedBotUids ?? '',
+      tsManagerUrl: config.tsManagerUrl ?? '',
+      musicBotUrl: config.musicBotUrl ?? '',
     };
   } catch (error) {
     showNotice(`加载站点配置失败：${(error as Error).message}`, 'error');
@@ -77,6 +81,14 @@ onMounted(() => { void load(); });
     <div class="field">
       <label>对外服务器地址</label>
       <input v-model="site.serverAddress" class="input" placeholder="例如：996" />
+    </div>
+    <div class="field">
+      <label>TS Manager Web 管理地址（配置后将在后台顶部展示快捷跳转入口）</label>
+      <input v-model="site.tsManagerUrl" class="input" placeholder="例如：http://127.0.0.1:1234 或留空" />
+    </div>
+    <div class="field">
+      <label>TSMusicBot Web 链接（WebUI 地址，配置后在后台顶部提供快捷跳转）</label>
+      <input v-model="site.musicBotUrl" class="input" placeholder="例如：http://127.0.0.1:3000 或留空" />
     </div>
     <div class="field">
       <label>管理员名称</label>

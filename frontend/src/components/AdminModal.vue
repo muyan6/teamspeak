@@ -50,8 +50,8 @@ function openTsManager(): void {
   if (tsManagerUrl.value) {
     window.open(tsManagerUrl.value, '_blank', 'noopener,noreferrer');
   } else {
-    activeTab.value = 'tutorial';
-    toast.info('请在「教程配置」中设置 TS Manager Web 地址');
+    activeTab.value = 'site';
+    toast.info('请在「站点配置」中设置 TS Manager Web 地址');
   }
 }
 
@@ -59,23 +59,23 @@ function openMusicBot(): void {
   if (musicBotUrl.value) {
     window.open(musicBotUrl.value, '_blank', 'noopener,noreferrer');
   } else {
-    activeTab.value = 'tutorial';
-    toast.info('请在「教程配置」中设置 TSMusicBot Web 链接');
+    activeTab.value = 'site';
+    toast.info('请在「站点配置」中设置 TSMusicBot Web 链接');
   }
 }
 
 async function loadAdminScope(): Promise<void> {
   try {
-    const [health, tutorialConfig] = await Promise.all([
+    const [health, siteConfig] = await Promise.all([
       api.getHealth(),
-      api.getTutorialConfig().catch(() => null),
+      api.getSiteConfig().catch(() => null),
     ]);
     isPlatformAdmin.value = health.platform;
-    if (tutorialConfig?.musicBotUrl) {
-      musicBotUrl.value = tutorialConfig.musicBotUrl;
+    if (siteConfig?.musicBotUrl) {
+      musicBotUrl.value = siteConfig.musicBotUrl;
     }
-    if (tutorialConfig?.tsManagerUrl) {
-      tsManagerUrl.value = tutorialConfig.tsManagerUrl;
+    if (siteConfig?.tsManagerUrl) {
+      tsManagerUrl.value = siteConfig.tsManagerUrl;
     }
   } catch {
     isPlatformAdmin.value = false;

@@ -343,6 +343,8 @@ describe('管理接口与配置回归', () => {
       adminName: '管理员',
       adminSteam: 'https://steamcommunity.com/id/example',
       excludedBotUids: '',
+      tsManagerUrl: 'https://tsmanager.example.com',
+      musicBotUrl: 'https://music.example.com',
     };
 
     expect((await fetch(`${baseUrl}/tutorial-config`, {

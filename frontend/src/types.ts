@@ -217,6 +217,8 @@ export interface SiteConfig {
   adminQq?: string;
   adminSteam?: string;
   excludedBotUids?: string;
+  tsManagerUrl?: string;
+  musicBotUrl?: string;
 }
 
 export interface TutorialConfig {
