@@ -22,24 +22,28 @@ for (const envFile of envCandidates) {
 function resolveDbPath(rawPath: string | undefined): string {
   if (rawPath) {
     if (path.isAbsolute(rawPath)) return rawPath;
+    // 如果指定的是相对路径，先检查 backend/ 下是否存在该路径
+    const inBackend = path.resolve(process.cwd(), 'backend', rawPath);
+    if (existsSync(inBackend)) return inBackend;
     return path.resolve(process.cwd(), rawPath);
   }
-  // 自动检测已有数据库文件位置，优先使用已有数据的真实数据库
-  const candidates = [
-    path.resolve(process.cwd(), 'backend/data/ts3monitor.db'),
-    path.resolve(process.cwd(), 'data/ts3monitor.db'),
-    path.resolve(currentDir, '../data/ts3monitor.db'),
-    path.resolve(currentDir, '../../data/ts3monitor.db'),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
+  // 优先定位真实数据库：backend/data/ts3monitor.db
+  const backendDataDb = path.resolve(process.cwd(), 'backend/data/ts3monitor.db');
+  if (existsSync(backendDataDb)) {
+    return backendDataDb;
+  }
+  const relativeToDist = path.resolve(currentDir, '../data/ts3monitor.db');
+  if (existsSync(relativeToDist)) {
+    return relativeToDist;
+  }
+  const directDataDb = path.resolve(process.cwd(), 'data/ts3monitor.db');
+  if (existsSync(directDataDb)) {
+    return directDataDb;
   }
   if (existsSync(path.resolve(process.cwd(), 'backend'))) {
-    return path.resolve(process.cwd(), 'backend/data/ts3monitor.db');
+    return backendDataDb;
   }
-  return path.resolve(process.cwd(), 'data/ts3monitor.db');
+  return directDataDb;
 }
 
 function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
