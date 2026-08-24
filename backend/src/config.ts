@@ -1,5 +1,46 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+
+// 自动寻找并加载 .env，无论从项目根目录还是 backend 目录启动
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'backend/.env'),
+  path.resolve(currentDir, '../.env'),
+  path.resolve(currentDir, '../../.env'),
+];
+for (const envFile of envCandidates) {
+  if (existsSync(envFile)) {
+    dotenv.config({ path: envFile });
+    break;
+  }
+}
+
+function resolveDbPath(rawPath: string | undefined): string {
+  if (rawPath) {
+    if (path.isAbsolute(rawPath)) return rawPath;
+    return path.resolve(process.cwd(), rawPath);
+  }
+  // 自动检测已有数据库文件位置，优先使用已有数据的真实数据库
+  const candidates = [
+    path.resolve(process.cwd(), 'backend/data/ts3monitor.db'),
+    path.resolve(process.cwd(), 'data/ts3monitor.db'),
+    path.resolve(currentDir, '../data/ts3monitor.db'),
+    path.resolve(currentDir, '../../data/ts3monitor.db'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  if (existsSync(path.resolve(process.cwd(), 'backend'))) {
+    return path.resolve(process.cwd(), 'backend/data/ts3monitor.db');
+  }
+  return path.resolve(process.cwd(), 'data/ts3monitor.db');
+}
 
 function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const v = env[name];
@@ -80,7 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     adminPassword: env.ADMIN_PASSWORD || '',
     // 未配置时使用进程级随机密钥，避免公开默认值被用于伪造管理员令牌。
     jwtSecret: env.JWT_SECRET || randomBytes(32).toString('hex'),
-    dbPath: env.DB_PATH || 'data/ts3monitor.db',
+    dbPath: resolveDbPath(env.DB_PATH),
     collectIntervalMs: intEnv(env, 'COLLECT_INTERVAL_MS', 30000),
     sampleIntervalMs: intEnv(env, 'SAMPLE_INTERVAL_MS', 300000),
   };
