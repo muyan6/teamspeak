@@ -63,24 +63,35 @@ export class WsHub {
   }
 
   broadcast(event: string, data: unknown): void {
-    this.sendToClients(this.clients.keys(), event, data);
+    if (this.clients.size === 0) return;
+    this.sendToClients(Array.from(this.clients.keys()), event, data);
   }
 
   broadcastToHost(host: string, event: string, data: unknown): void {
-    const matching = Array.from(this.clients.entries())
-      .filter(([, clientHost]) => clientHost === host.toLowerCase())
-      .map(([client]) => client);
+    const normalizedHost = host.toLowerCase();
+    const matching: WebSocket[] = [];
+    for (const [client, clientHost] of this.clients.entries()) {
+      if (clientHost === normalizedHost) {
+        matching.push(client);
+      }
+    }
+    if (matching.length === 0) return;
     this.sendToClients(matching, event, data);
   }
 
   broadcastWhere(shouldReceive: (host: string) => boolean, event: string, data: unknown): void {
-    const matching = Array.from(this.clients.entries())
-      .filter(([, clientHost]) => shouldReceive(clientHost))
-      .map(([client]) => client);
+    const matching: WebSocket[] = [];
+    for (const [client, clientHost] of this.clients.entries()) {
+      if (shouldReceive(clientHost)) {
+        matching.push(client);
+      }
+    }
+    if (matching.length === 0) return;
     this.sendToClients(matching, event, data);
   }
 
-  private sendToClients(clients: Iterable<WebSocket>, event: string, data: unknown): void {
+  private sendToClients(clients: Array<WebSocket>, event: string, data: unknown): void {
+    if (clients.length === 0) return;
     const msg = JSON.stringify({ event, data });
     for (const ws of clients) {
       if (ws.readyState === ws.OPEN) {

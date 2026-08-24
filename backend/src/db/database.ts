@@ -408,6 +408,7 @@ export function openDatabase(dbPath: string): AppDatabase {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA temp_store = MEMORY;');
+  db.exec('PRAGMA cache_size = -1000;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   migrateStatsSchema(db);

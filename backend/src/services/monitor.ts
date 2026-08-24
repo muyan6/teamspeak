@@ -12,6 +12,7 @@ export class MonitorService extends EventEmitter {
   private running = false;
   private timer: NodeJS.Timeout | null = null;
   private collectInFlight: Promise<void> | null = null;
+  private lastSampleTimeMs = 0;
   serverState: { name: string; clientsOnline: number; maxClients: number; uptime: number } | null =
     null;
 
@@ -23,6 +24,18 @@ export class MonitorService extends EventEmitter {
     private sampleIntervalMs: number
   ) {
     super();
+    this.initLastSampleTime();
+  }
+
+  private initLastSampleTime(): void {
+    try {
+      const row = this.db
+        .prepare('SELECT MAX(sample_time) as t FROM online_samples WHERE server_key = ?')
+        .get(this.stats.getServerKey()) as { t: number | null } | undefined;
+      this.lastSampleTimeMs = (row?.t ?? 0) * 1000;
+    } catch {
+      this.lastSampleTimeMs = 0;
+    }
   }
 
   start(): void {
@@ -38,13 +51,6 @@ export class MonitorService extends EventEmitter {
       clearInterval(this.timer);
       this.timer = null;
     }
-  }
-
-  private get lastSampleTime(): number {
-    const row = this.db
-      .prepare('SELECT MAX(sample_time) as t FROM online_samples WHERE server_key = ?')
-      .get(this.stats.getServerKey()) as { t: number | null };
-    return row.t ?? 0;
   }
 
   async collect(): Promise<void> {
@@ -74,9 +80,10 @@ export class MonitorService extends EventEmitter {
 
       const now = Date.now();
       const sampleInterval = this.sampleIntervalMs;
-      if (now - this.lastSampleTime * 1000 >= sampleInterval) {
+      if (now - this.lastSampleTimeMs >= sampleInterval) {
         const humanCount = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname)).length;
         this.stats.sampleOnline(humanCount, now);
+        this.lastSampleTimeMs = now;
       }
 
       this.emit('onlineUpdated', {
