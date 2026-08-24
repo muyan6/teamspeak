@@ -9,6 +9,7 @@ const password = ref('');
 const authed = authState;
 const loginError = ref('');
 const isPlatformAdmin = ref(false);
+const musicBotUrl = ref('');
 const activeTab = ref<AdminTab>('elastic');
 const AchievementsPanel = defineAsyncComponent(() => import('../features/achievements/AchievementsPanel.vue'));
 const ElasticChannelsPanel = defineAsyncComponent(() => import('../features/elastic-channels/ElasticChannelsPanel.vue'));
@@ -45,7 +46,14 @@ function logout(): void {
 
 async function loadAdminScope(): Promise<void> {
   try {
-    isPlatformAdmin.value = (await api.getHealth()).platform;
+    const [health, tutorialConfig] = await Promise.all([
+      api.getHealth(),
+      api.getTutorialConfig().catch(() => null),
+    ]);
+    isPlatformAdmin.value = health.platform;
+    if (tutorialConfig?.musicBotUrl) {
+      musicBotUrl.value = tutorialConfig.musicBotUrl;
+    }
   } catch {
     isPlatformAdmin.value = false;
   }
@@ -69,21 +77,12 @@ onMounted(() => { void loadAdminScope(); });
         </div>
         <div class="admin-heading-actions">
           <a
-            href="http://150.158.129.222:1234/"
+            v-if="musicBotUrl"
+            :href="musicBotUrl"
             target="_blank"
             rel="noopener noreferrer"
             class="ext-link-btn"
-            title="跳转 TS Manager"
-          >
-            <i class="ph-bold ph-arrow-square-out"></i>
-            <span>TS Manager</span>
-          </a>
-          <a
-            href="http://150.158.129.222:3000/"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="ext-link-btn"
-            title="跳转 TSMusicBot"
+            title="跳转音乐机器人面板"
           >
             <i class="ph-bold ph-arrow-square-out"></i>
             <span>TSMusicBot</span>

@@ -641,6 +641,23 @@ export class StatsService {
       .map(({ nickname, days }) => ({ nickname, days }));
   }
 
+  findLocalIdentities(nickname: string): ClientIdentityData[] {
+    return this.db
+      .prepare(
+        'SELECT client_database_id as clientDatabaseId, nickname, unique_identifier as uniqueIdentifier FROM user_online_duration WHERE server_key = ? AND nickname = ?'
+      )
+      .all(this.serverKey, nickname) as ClientIdentityData[];
+  }
+
+  getLocalIdentityByUid(uid: string): ClientIdentityData | null {
+    const row = this.db
+      .prepare(
+        'SELECT client_database_id as clientDatabaseId, nickname, unique_identifier as uniqueIdentifier FROM user_online_duration WHERE server_key = ? AND unique_identifier = ? LIMIT 1'
+      )
+      .get(this.serverKey, uid) as ClientIdentityData | undefined;
+    return row ?? null;
+  }
+
   getUserStats(nickname: string, uid?: string): ProfileData | null {
     const identity = this.db
       .prepare(
@@ -1109,13 +1126,17 @@ export class StatsService {
         .prepare('SELECT server_key, sample_time, online_count FROM online_samples WHERE sample_time < ?')
         .all(sampleCutoffSec) as Array<{ server_key: string; sample_time: number; online_count: number }>;
       if (oldSamples.length > 0) {
-        const ins = archiveDb.prepare(
-          'INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)'
-        );
-        for (const s of oldSamples) {
-          ins.run(s.server_key, s.sample_time, s.online_count);
-        }
-        this.db.prepare('DELETE FROM online_samples WHERE sample_time < ?').run(sampleCutoffSec);
+        archiveDb.transaction(() => {
+          const ins = archiveDb.prepare(
+            'INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)'
+          );
+          for (const s of oldSamples) {
+            ins.run(s.server_key, s.sample_time, s.online_count);
+          }
+        })();
+        this.db.transaction(() => {
+          this.db.prepare('DELETE FROM online_samples WHERE sample_time < ?').run(sampleCutoffSec);
+        })();
         archivedSamples = oldSamples.length;
       }
 
@@ -1133,13 +1154,17 @@ export class StatsService {
         duration_seconds: number;
       }>;
       if (oldSessions.length > 0) {
-        const ins = archiveDb.prepare(
-          'INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
-        );
-        for (const s of oldSessions) {
-          ins.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
-        }
-        this.db.prepare('DELETE FROM sessions WHERE end_time IS NOT NULL AND end_time < ?').run(sampleCutoffSec);
+        archiveDb.transaction(() => {
+          const ins = archiveDb.prepare(
+            'INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
+          );
+          for (const s of oldSessions) {
+            ins.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
+          }
+        })();
+        this.db.transaction(() => {
+          this.db.prepare('DELETE FROM sessions WHERE end_time IS NOT NULL AND end_time < ?').run(sampleCutoffSec);
+        })();
         archivedSessions = oldSessions.length;
       }
 
@@ -1154,13 +1179,17 @@ export class StatsService {
         member_seconds: number;
       }>;
       if (oldChannelDays.length > 0) {
-        const ins = archiveDb.prepare(
-          'INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)'
-        );
-        for (const c of oldChannelDays) {
-          ins.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
-        }
-        this.db.prepare('DELETE FROM channel_daily_activity WHERE day < ?').run(sampleCutoffDay);
+        archiveDb.transaction(() => {
+          const ins = archiveDb.prepare(
+            'INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)'
+          );
+          for (const c of oldChannelDays) {
+            ins.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
+          }
+        })();
+        this.db.transaction(() => {
+          this.db.prepare('DELETE FROM channel_daily_activity WHERE day < ?').run(sampleCutoffDay);
+        })();
         archivedChannelDays = oldChannelDays.length;
       }
 
@@ -1175,13 +1204,17 @@ export class StatsService {
         active_seconds: number;
       }>;
       if (oldUserDays.length > 0) {
-        const ins = archiveDb.prepare(
-          'INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)'
-        );
-        for (const u of oldUserDays) {
-          ins.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
-        }
-        this.db.prepare('DELETE FROM user_daily_activity WHERE day < ?').run(dailyCutoffDay);
+        archiveDb.transaction(() => {
+          const ins = archiveDb.prepare(
+            'INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)'
+          );
+          for (const u of oldUserDays) {
+            ins.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
+          }
+        })();
+        this.db.transaction(() => {
+          this.db.prepare('DELETE FROM user_daily_activity WHERE day < ?').run(dailyCutoffDay);
+        })();
         archivedUserDays = oldUserDays.length;
       }
 
@@ -1206,56 +1239,58 @@ export class StatsService {
     let restoredUserDays = 0;
 
     try {
-      const samples = archiveDb.prepare('SELECT server_key, sample_time, online_count FROM online_samples').all() as Array<{
-        server_key: string;
-        sample_time: number;
-        online_count: number;
-      }>;
-      const insSample = this.db.prepare('INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)');
-      for (const s of samples) {
-        const info = insSample.run(s.server_key, s.sample_time, s.online_count);
-        restoredSamples += info.changes;
-      }
+      this.db.transaction(() => {
+        const samples = archiveDb.prepare('SELECT server_key, sample_time, online_count FROM online_samples').all() as Array<{
+          server_key: string;
+          sample_time: number;
+          online_count: number;
+        }>;
+        const insSample = this.db.prepare('INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)');
+        for (const s of samples) {
+          const info = insSample.run(s.server_key, s.sample_time, s.online_count);
+          restoredSamples += info.changes;
+        }
 
-      const sessions = archiveDb.prepare('SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions').all() as Array<{
-        server_key: string;
-        client_database_id: number;
-        nickname: string;
-        start_time: number;
-        end_time: number;
-        duration_seconds: number;
-      }>;
-      const insSession = this.db.prepare('INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)');
-      for (const s of sessions) {
-        const info = insSession.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
-        restoredSessions += info.changes;
-      }
+        const sessions = archiveDb.prepare('SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions').all() as Array<{
+          server_key: string;
+          client_database_id: number;
+          nickname: string;
+          start_time: number;
+          end_time: number;
+          duration_seconds: number;
+        }>;
+        const insSession = this.db.prepare('INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)');
+        for (const s of sessions) {
+          const info = insSession.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
+          restoredSessions += info.changes;
+        }
 
-      const channelDays = archiveDb.prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity').all() as Array<{
-        server_key: string;
-        channel_id: number;
-        channel_name: string;
-        day: string;
-        member_seconds: number;
-      }>;
-      const insChannel = this.db.prepare('INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)');
-      for (const c of channelDays) {
-        const info = insChannel.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
-        restoredChannelDays += info.changes;
-      }
+        const channelDays = archiveDb.prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity').all() as Array<{
+          server_key: string;
+          channel_id: number;
+          channel_name: string;
+          day: string;
+          member_seconds: number;
+        }>;
+        const insChannel = this.db.prepare('INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)');
+        for (const c of channelDays) {
+          const info = insChannel.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
+          restoredChannelDays += info.changes;
+        }
 
-      const userDays = archiveDb.prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity').all() as Array<{
-        server_key: string;
-        client_database_id: number;
-        nickname: string;
-        day: string;
-        active_seconds: number;
-      }>;
-      const insUser = this.db.prepare('INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)');
-      for (const u of userDays) {
-        const info = insUser.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
-        restoredUserDays += info.changes;
-      }
+        const userDays = archiveDb.prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity').all() as Array<{
+          server_key: string;
+          client_database_id: number;
+          nickname: string;
+          day: string;
+          active_seconds: number;
+        }>;
+        const insUser = this.db.prepare('INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)');
+        for (const u of userDays) {
+          const info = insUser.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
+          restoredUserDays += info.changes;
+        }
+      })();
     } finally {
       archiveDb.close();
     }

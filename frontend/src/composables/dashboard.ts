@@ -6,14 +6,39 @@ const data = ref<DashboardData | null>(null);
 const error = ref('');
 let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshPromise: Promise<void> | null = null;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function refresh(): Promise<void> {
+async function doRefresh(): Promise<void> {
   try {
     data.value = await api.getData();
     error.value = '';
   } catch (e) {
     error.value = (e as Error).message;
+  } finally {
+    refreshPromise = null;
   }
+}
+
+async function refresh(immediate = false): Promise<void> {
+  if (immediate) {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (!refreshPromise) {
+      refreshPromise = doRefresh();
+    }
+    return refreshPromise;
+  }
+
+  if (debounceTimer) return;
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    if (!refreshPromise) {
+      refreshPromise = doRefresh();
+    }
+  }, 300);
 }
 
 function connectWebSocket(): void {
@@ -32,9 +57,9 @@ function connectWebSocket(): void {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data) as { event: string; data: unknown };
-      // 后端推送的在线状态变化事件，触发数据刷新
+      // 后端推送的在线状态变化事件，触发防抖数据刷新
       if (msg.event === 'online-update' || msg.event === 'clients-changed') {
-        void refresh();
+        void refresh(false);
       }
     } catch {
       /* 忽略非 JSON 消息 */

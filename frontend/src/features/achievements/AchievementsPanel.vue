@@ -261,6 +261,7 @@ async function saveBadge(): Promise<void> {
     conditionParams = { threshold };
   }
 
+  const current = editingBadgeId.value ? badges.value.find((b) => b.id === editingBadgeId.value) : null;
   const payload = {
     name: badgeForm.value.name.trim(),
     category: badgeForm.value.category,
@@ -271,7 +272,7 @@ async function saveBadge(): Promise<void> {
     conditionParams,
     serverGroupId: badgeForm.value.serverGroupId || 0,
     sortOrder: Number(badgeForm.value.sortOrder || 100),
-    enabled: 1,
+    enabled: current ? current.enabled : 1,
   };
 
   try {

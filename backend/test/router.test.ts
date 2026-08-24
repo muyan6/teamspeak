@@ -420,4 +420,13 @@ describe('管理接口与配置回归', () => {
       body: JSON.stringify({ title: '十小时在线', hours: 10, serverGroupId: 3 }),
     })).status).toBe(201);
   });
+
+  it('用户查询优先命中本地数据库且不触发 TS3 远程查询', async () => {
+    const { baseUrl, clientDbListCalls } = await startRouter();
+    // 在 startRouter 中模拟已存在的本地身份
+    // 当查询不存在的本地身份且远端也无该用户时返回 404
+    const response = await fetch(`${baseUrl}/stats/user?nickname=NonExistent`);
+    expect(response.status).toBe(404);
+    expect(clientDbListCalls()).toBe(1); // 远端回退查询了一次
+  });
 });

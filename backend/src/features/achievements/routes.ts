@@ -116,17 +116,25 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       return;
     }
 
+    const currentBadge = deps.achievement.listBadges().find((b) => b.id === id);
+    if (!currentBadge) {
+      res.status(404).json({ error: '勋章不存在' });
+      return;
+    }
+
+    const resolvedEnabled = enabled !== undefined ? (enabled === 0 ? 0 : 1) : currentBadge.enabled;
+
     const updated = deps.achievement.updateBadge(id, {
       name: normalizedName,
-      category: ['milestone', 'behavior', 'custom'].includes(category) ? category : 'behavior',
+      category: ['milestone', 'behavior', 'custom'].includes(category) ? category : (currentBadge.category || 'behavior'),
       icon: normalizedIcon,
-      color: String(color ?? '#fbbf24').trim() || '#fbbf24',
-      description: String(description ?? '').trim(),
+      color: String(color ?? currentBadge.color ?? '#fbbf24').trim() || '#fbbf24',
+      description: description !== undefined ? String(description).trim() : currentBadge.description,
       conditionType,
-      conditionParams: conditionParams && typeof conditionParams === 'object' ? conditionParams : {},
-      serverGroupId: Number(serverGroupId || 0),
-      enabled: enabled === 0 ? 0 : 1,
-      sortOrder: Number(sortOrder || 100),
+      conditionParams: conditionParams && typeof conditionParams === 'object' ? conditionParams : currentBadge.conditionParams,
+      serverGroupId: serverGroupId !== undefined ? Number(serverGroupId || 0) : currentBadge.serverGroupId,
+      enabled: resolvedEnabled,
+      sortOrder: sortOrder !== undefined ? Number(sortOrder || 100) : currentBadge.sortOrder,
     });
 
     if (!updated) {

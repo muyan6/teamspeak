@@ -751,6 +751,13 @@ export function migrateStatsSchema(db: AppDatabase): void {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_server_client_start
       ON sessions (server_key, client_database_id, start_time);
+
+      CREATE INDEX IF NOT EXISTS idx_channel_daily_server_day ON channel_daily_activity(server_key, day);
+      CREATE INDEX IF NOT EXISTS idx_user_daily_server_day ON user_daily_activity(server_key, day);
+      CREATE INDEX IF NOT EXISTS idx_user_daily_lookup ON user_daily_activity(server_key, client_database_id, day);
+      CREATE INDEX IF NOT EXISTS idx_user_channel_lookup ON user_channel_activity(server_key, client_database_id);
+      CREATE INDEX IF NOT EXISTS idx_achievement_grants_lookup ON achievement_grants(server_key, client_database_id);
+      CREATE INDEX IF NOT EXISTS idx_badge_grants_lookup ON badge_grants(server_key, client_database_id);
     `);
   })();
 }

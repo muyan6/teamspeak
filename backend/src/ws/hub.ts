@@ -4,6 +4,8 @@ import type { Server } from 'node:http';
 export class WsHub {
   private wss: WebSocketServer;
   private clients = new Map<WebSocket, string>();
+  private aliveClients = new WeakMap<WebSocket, boolean>();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(server: Server, path = '/ws') {
     this.wss = new WebSocketServer({ server, path });
@@ -11,10 +13,53 @@ export class WsHub {
       if (server.listening) console.error(`[ws] 服务错误: ${err.message}`);
     });
     this.wss.on('connection', (ws, request) => {
-      this.clients.set(ws, (request.headers.host || '').split(':')[0].toLowerCase());
-      ws.on('close', () => this.clients.delete(ws));
-      ws.on('error', () => this.clients.delete(ws));
+      const host = (request.headers.host || '').split(':')[0].toLowerCase();
+      this.clients.set(ws, host);
+      this.aliveClients.set(ws, true);
+
+      ws.on('pong', () => {
+        this.aliveClients.set(ws, true);
+      });
+
+      const cleanup = (): void => {
+        this.clients.delete(ws);
+      };
+
+      ws.on('close', cleanup);
+      ws.on('error', cleanup);
     });
+
+    this.startHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => {
+      for (const [ws] of this.clients.entries()) {
+        if (this.aliveClients.get(ws) === false) {
+          this.clients.delete(ws);
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+          continue;
+        }
+
+        this.aliveClients.set(ws, false);
+        try {
+          ws.ping();
+        } catch {
+          this.clients.delete(ws);
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }, 30000);
+    this.heartbeatTimer.unref();
   }
 
   broadcast(event: string, data: unknown): void {
@@ -50,5 +95,13 @@ export class WsHub {
 
   getClientCount(): number {
     return this.clients.size;
+  }
+
+  close(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.wss.close();
   }
 }

@@ -91,11 +91,14 @@ export class DashboardService {
     return String(Math.max(0, Math.round(v / 60)));
   }
 
-  private toRankEntries(rows: Array<{ clientDatabaseId: number; nickname: string; seconds: number }>): RankEntry[] {
+  private toRankEntries(
+    rows: Array<{ clientDatabaseId: number; nickname: string; seconds: number }>,
+    badgeMap?: Map<number, UserBadge[]>
+  ): RankEntry[] {
     return rows.map((u) => ({
       name: u.nickname,
       value: this.secondsToMinutes(u.seconds),
-      badges: this.achievement.getUnlockedBadges(u.clientDatabaseId),
+      badges: badgeMap?.get(u.clientDatabaseId) ?? this.achievement.getUnlockedBadges(u.clientDatabaseId),
     }));
   }
 
@@ -155,9 +158,13 @@ export class DashboardService {
       groups: c.serverGroupIds.map((id) => groupNames.get(id) ?? `SG${id}`),
     }));
 
-    // 活跃榜：按在线时长（本周/本月）
-    const ranksWeek = connected ? this.toRankEntries(this.stats.getTopUsers('week', TOP_LIMIT)) : [];
-    const ranksMonth = connected ? this.toRankEntries(this.stats.getTopUsers('month', TOP_LIMIT)) : [];
+    // 活跃榜：按在线时长（本周/本月），批量预取已解锁勋章
+    const weekTopUsers = connected ? this.stats.getTopUsers('week', TOP_LIMIT) : [];
+    const monthTopUsers = connected ? this.stats.getTopUsers('month', TOP_LIMIT) : [];
+    const allTopDbIds = Array.from(new Set([...weekTopUsers, ...monthTopUsers].map((u) => u.clientDatabaseId)));
+    const badgeMap = this.achievement.getBatchUnlockedBadges(allTopDbIds);
+    const ranksWeek = this.toRankEntries(weekTopUsers, badgeMap);
+    const ranksMonth = this.toRankEntries(monthTopUsers, badgeMap);
 
     // 热门频道：按成员累计时长（本周/本月）
     const channelsWeek = connected ? this.stats.getTopChannels('week', TOP_LIMIT).map((c) => ({

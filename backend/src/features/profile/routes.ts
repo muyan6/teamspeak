@@ -26,6 +26,27 @@ function findClient(clients: ClientDatabaseData[], nickname: string, uid: string
   return exact.length === 1 ? exact[0] : null;
 }
 
+const SEARCH_WINDOW_MS = 60 * 1000;
+const SEARCH_MAX_REQUESTS = 60;
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+const rateLimits = new Map<string, RateLimitEntry>();
+
+function isRateLimited(req: { ip?: string; socket: { remoteAddress?: string } }): boolean {
+  const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = rateLimits.get(clientKey);
+  if (!entry || now >= entry.resetAt) {
+    rateLimits.set(clientKey, { count: 1, resetAt: now + SEARCH_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > SEARCH_MAX_REQUESTS;
+}
+
 export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
   router.get('/stats/top-users', (req, res) => {
     const range = parseRange(req.query.range, ['week', 'month', 'all'], 'week') as 'week' | 'month' | 'all';
@@ -45,36 +66,69 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
   });
 
   router.get('/stats/user', asyncRoute(async (req, res) => {
+    if (isRateLimited(req)) {
+      res.status(429).json({ error: '查询请求过于频繁，请稍后再试' });
+      return;
+    }
+
     const nickname = String(req.query.nickname || '').trim();
     const uid = String(req.query.uid || '').trim();
     if (!nickname && !uid) {
       res.status(400).json({ error: '请提供昵称或 UID' });
       return;
     }
-    let client: ClientDatabaseData | null = null;
-    try {
-      const clients = await deps.ts3.getClientDbList();
-      client = findClient(clients, nickname, uid);
-      if (!client) {
-        const candidates = nickname ? clients
-          .filter((entry) => entry.nickname === nickname)
-          .map((entry) => ({ nickname: entry.nickname, uid: entry.uniqueIdentifier })) : [];
-        if (candidates.length > 1) {
-          res.status(409).json({ error: '存在同名用户，请从 UID 列表中选择', candidates });
-          return;
-        }
+
+    // 1. 优先从本地数据库检索用户（避免直接穿透 TS3 ServerQuery 导致 Flood Ban 与 DoS）
+    let identity: { clientDatabaseId: number; uniqueIdentifier: string; nickname: string } | null = null;
+    if (uid) {
+      identity = deps.stats.getLocalIdentityByUid ? deps.stats.getLocalIdentityByUid(uid) : null;
+    } else {
+      const localMatches = deps.stats.findLocalIdentities ? deps.stats.findLocalIdentities(nickname) : [];
+      if (localMatches.length > 1) {
+        // 同名用户，返回候选 UID 供前端选择
+        const candidates = localMatches.map((m) => ({ nickname: m.nickname, uid: m.uniqueIdentifier }));
+        res.status(409).json({ error: '存在同名用户，请从 UID 列表中选择', candidates });
+        return;
       }
-    } catch {
-      /* ignore */
+      if (localMatches.length === 1) {
+        identity = localMatches[0];
+      }
     }
 
-    if (!client) {
-      const localStats = deps.stats.getUserStats(nickname, uid);
-      if (!localStats) {
+    // 2. 本地数据库未命中时，才向 TS3 远端 ServerQuery 回退查找（仅在已连接时）
+    if (!identity && deps.ts3.connected) {
+      try {
+        const remoteClients = await deps.ts3.getClientDbList();
+        const found = findClient(remoteClients, nickname, uid);
+        if (found) {
+          identity = {
+            clientDatabaseId: found.clientDatabaseId,
+            uniqueIdentifier: found.uniqueIdentifier,
+            nickname: found.nickname,
+          };
+          // 将远端同步至本地数据库
+          deps.stats.syncClientIdentities?.([found]);
+        } else if (nickname) {
+          const candidates = remoteClients
+            .filter((entry) => entry.nickname === nickname)
+            .map((entry) => ({ nickname: entry.nickname, uid: entry.uniqueIdentifier }));
+          if (candidates.length > 1) {
+            res.status(409).json({ error: '存在同名用户，请从 UID 列表中选择', candidates });
+            return;
+          }
+        }
+      } catch {
+        /* 远端查询失败时继续走本地兜底 */
+      }
+    }
+
+    if (!identity) {
+      const localFallback = deps.stats.getUserStats ? deps.stats.getUserStats(nickname, uid) : null;
+      if (!localFallback) {
         res.status(404).json({ error: '未在成员数据库中找到该用户' });
         return;
       }
-      const { dbid, ...profile } = localStats;
+      const { dbid, ...profile } = localFallback;
       const badges = deps.achievement.getUserBadges(dbid);
       res.json({
         ...profile,
@@ -84,33 +138,49 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       return;
     }
 
-    const stats = deps.stats.getUserStatsByIdentity(client);
-    const badges = deps.achievement.getUserBadges(client.clientDatabaseId);
+    // 3. 构建用户画像数据与徽章进度
+    const stats = deps.stats.getUserStatsByIdentity(identity);
+    const badges = deps.achievement.getUserBadges(identity.clientDatabaseId);
+
+    // 4. 服务器组与建号时间补充（优先从实时在线状态读取，减少 ServerQuery 阻塞）
     let serverGroups: string[] = [];
-    try {
-      serverGroups = (await deps.ts3.getServerGroupsByClientDbId(client.clientDatabaseId)).map((group) => group.name);
-    } catch {
-      serverGroups = [];
+    const currentOnline = deps.stats.getCurrentOnline ? deps.stats.getCurrentOnline() : [];
+    const onlineClient = currentOnline.find((c) => c.clientDatabaseId === identity!.clientDatabaseId);
+
+    if (onlineClient && onlineClient.serverGroupIds) {
+      try {
+        const groups = await deps.ts3.getServerGroups();
+        const groupMap = new Map(groups.map((g) => [g.sgid, g.name]));
+        const groupIds = onlineClient.serverGroupIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
+        serverGroups = groupIds.map((id) => groupMap.get(id) || `SG${id}`);
+      } catch {
+        serverGroups = [];
+      }
+    } else if (deps.ts3.connected) {
+      try {
+        serverGroups = (await deps.ts3.getServerGroupsByClientDbId(identity.clientDatabaseId)).map((group) => group.name);
+      } catch {
+        serverGroups = [];
+      }
     }
+
     let createdAt = '';
-    try {
-      const dbInfo = await deps.ts3.getClientDbInfo(client.clientDatabaseId);
-      createdAt = dbInfo && dbInfo.created > 0 ? formatTs3Date(dbInfo.created) : '';
-    } catch {
-      createdAt = '';
+    if (deps.ts3.connected) {
+      try {
+        const dbInfo = await deps.ts3.getClientDbInfo(identity.clientDatabaseId);
+        createdAt = dbInfo && dbInfo.created > 0 ? formatTs3Date(dbInfo.created) : '';
+      } catch {
+        createdAt = '';
+      }
     }
+
     const { dbid: _dbid, ...profile } = stats;
-    const ts3LastDate = formatTs3Date(client.lastConnected);
-    const resolvedLastOnline = profile.streak.last_online && ts3LastDate
-      ? (profile.streak.last_online >= ts3LastDate ? profile.streak.last_online : ts3LastDate)
-      : (profile.streak.last_online || ts3LastDate || '');
 
     res.json({
       ...profile,
       server_groups: serverGroups,
       badges,
       total_time: { ...profile.total_time, first_seen: createdAt || profile.total_time.first_seen },
-      streak: { ...profile.streak, last_online: resolvedLastOnline },
     });
   }));
 

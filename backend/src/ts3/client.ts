@@ -306,7 +306,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async getServerGroupsByClientDbId(dbId: number): Promise<Array<{ sgid: number; name: string }>> {
     try {
-      const groups = await this.requireTs3().serverGroupsByClientId(String(dbId));
+      const groups = await this.executeQuery(() => this.requireTs3().serverGroupsByClientId(String(dbId)));
       return groups.map((g) => ({ sgid: parseInt(g.sgid, 10), name: g.name }));
     } catch {
       return [];
@@ -322,7 +322,7 @@ export class Ts3ClientWrapper extends EventEmitter {
     nickname: string;
   } | null> {
     try {
-      const infos = await this.requireTs3().clientDbInfo(String(dbId));
+      const infos = await this.executeQuery(() => this.requireTs3().clientDbInfo(String(dbId)));
       const info = infos[0];
       if (!info) return null;
       return {
@@ -340,13 +340,12 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async getClientDbList(pageSize = 200): Promise<ClientDatabaseData[]> {
     try {
-      const query = this.requireTs3();
       const clients: ClientDatabaseData[] = [];
       let start = 0;
       let total = Number.POSITIVE_INFINITY;
 
       while (start < total) {
-        const rows = await query.clientDbList(start, pageSize, true);
+        const rows = await this.executeQuery(() => this.requireTs3().clientDbList(start, pageSize, true));
         if (rows.length === 0) break;
         total = Number(rows[0].count || start + rows.length);
         for (const row of rows) {
@@ -386,7 +385,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       if (!targetCgid || targetCgid <= 0) {
         targetCgid = await this.getDefaultChannelGroupId();
       }
-      await this.requireTs3().setClientChannelGroup(String(targetCgid), String(cid), String(clientDatabaseId));
+      await this.executeQuery(() => this.requireTs3().setClientChannelGroup(String(targetCgid), String(cid), String(clientDatabaseId)));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -396,7 +395,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async addClientToServerGroup(sgid: number, clientDatabaseId: number): Promise<boolean> {
     try {
-      await this.requireTs3().serverGroupAddClient(String(clientDatabaseId), String(sgid));
+      await this.executeQuery(() => this.requireTs3().serverGroupAddClient(String(clientDatabaseId), String(sgid)));
       return true;
     } catch (err) {
       const errObj = err as { id?: number | string; message?: string };
@@ -410,7 +409,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async getClientByUniqueId(uid: string): Promise<TeamSpeakClient | null> {
     try {
-      const client = await this.requireTs3().getClientByUid(uid);
+      const client = await this.executeQuery(() => this.requireTs3().getClientByUid(uid));
       return client ?? null;
     } catch {
       return null;
@@ -419,7 +418,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async getClientByDbId(cldbid: number): Promise<TeamSpeakClient | null> {
     try {
-      const client = await this.requireTs3().getClientByDbid(String(cldbid));
+      const client = await this.executeQuery(() => this.requireTs3().getClientByDbid(String(cldbid)));
       return client ?? null;
     } catch {
       return null;
@@ -432,13 +431,13 @@ export class Ts3ClientWrapper extends EventEmitter {
     password?: string;
   }): Promise<number | null> {
     try {
-      const channel = await this.requireTs3().channelCreate(props.name, {
+      const channel = await this.executeQuery(() => this.requireTs3().channelCreate(props.name, {
         cpid: props.cpid ? String(props.cpid) : undefined,
         channel_password: props.password,
         channel_flag_permanent: true,
         channel_codec: 4,
         channel_codec_quality: 10,
-      });
+      }));
       return parseInt(channel.cid, 10);
     } catch (err) {
       this.reportError(err);
@@ -448,7 +447,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async deleteChannel(cid: number): Promise<boolean> {
     try {
-      await this.requireTs3().channelDelete(String(cid), true);
+      await this.executeQuery(() => this.requireTs3().channelDelete(String(cid), true));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -458,7 +457,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async getChannel(cid: number): Promise<{ name: string; totalClients: number } | null> {
     try {
-      const channel = await this.requireTs3().getChannelById(String(cid));
+      const channel = await this.executeQuery(() => this.requireTs3().getChannelById(String(cid)));
       return channel ? { name: channel.name, totalClients: channel.totalClients } : null;
     } catch {
       return null;
@@ -472,15 +471,14 @@ export class Ts3ClientWrapper extends EventEmitter {
     maxclients?: number;
   }): Promise<boolean> {
     try {
-      const query = this.requireTs3();
       if (props.cpid !== undefined) {
-        await query.channelMove(String(cid), String(props.cpid));
+        await this.executeQuery(() => this.requireTs3().channelMove(String(cid), String(props.cpid)));
       }
-      await query.channelEdit(String(cid), {
+      await this.executeQuery(() => this.requireTs3().channelEdit(String(cid), {
         channelName: props.name,
         channelPassword: props.password !== undefined ? props.password : undefined,
         channelMaxclients: props.maxclients,
-      });
+      }));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -490,7 +488,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async moveChannel(cid: number, cpid: number): Promise<boolean> {
     try {
-      await this.requireTs3().channelMove(String(cid), String(cpid));
+      await this.executeQuery(() => this.requireTs3().channelMove(String(cid), String(cpid)));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -500,7 +498,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async kickClient(clid: number, reason?: string): Promise<boolean> {
     try {
-      await this.requireTs3().clientKick(String(clid), ReasonIdentifier.KICK_SERVER, reason || 'Kicked by admin');
+      await this.executeQuery(() => this.requireTs3().clientKick(String(clid), ReasonIdentifier.KICK_SERVER, reason || 'Kicked by admin'));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -510,7 +508,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async moveClient(clid: number, cid: number, password?: string): Promise<boolean> {
     try {
-      await this.requireTs3().clientMove(String(clid), String(cid), password);
+      await this.executeQuery(() => this.requireTs3().clientMove(String(clid), String(cid), password));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -520,7 +518,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async banClientByUid(uid: string, reason?: string, timeSec?: number): Promise<boolean> {
     try {
-      await this.requireTs3().ban({ uid, banreason: reason || 'Banned by admin', time: timeSec });
+      await this.executeQuery(() => this.requireTs3().ban({ uid, banreason: reason || 'Banned by admin', time: timeSec }));
       return true;
     } catch (err) {
       this.reportError(err);
@@ -530,7 +528,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   async removeClientFromServerGroup(sgid: number, clientDatabaseId: number): Promise<boolean> {
     try {
-      await this.requireTs3().serverGroupDelClient(String(clientDatabaseId), String(sgid));
+      await this.executeQuery(() => this.requireTs3().serverGroupDelClient(String(clientDatabaseId), String(sgid)));
       return true;
     } catch (err) {
       const errObj = err as { id?: number | string; message?: string };
