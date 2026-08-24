@@ -1,6 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { loadConfig, type AppConfig } from './config.js';
@@ -91,16 +92,18 @@ async function main(): Promise<void> {
   });
 
   // 生产模式：托管前端构建产物
-  const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
-  if (existsSync(frontendDist)) {
+  const frontendDist = findFrontendDist();
+  if (frontendDist) {
     app.use(express.static(frontendDist));
     app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api')) {
+      if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
         next();
         return;
       }
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
+  } else {
+    console.warn('[static] 未找到前端构建产物 (frontend/dist/index.html)，如需前台界面请先执行 (cd frontend && npm run build)');
   }
 
   // 实时事件推送
@@ -253,6 +256,22 @@ function achievementTimer(achievement: AchievementService): void {
   void run();
   const timer = setInterval(run, 6 * 3600 * 1000);
   timer.unref();
+}
+
+function findFrontendDist(): string | null {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(process.cwd(), 'frontend/dist'),
+    path.resolve(process.cwd(), '../frontend/dist'),
+    path.resolve(currentDir, '../../frontend/dist'),
+    path.resolve(currentDir, '../frontend/dist'),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(path.join(dir, 'index.html'))) {
+      return dir;
+    }
+  }
+  return null;
 }
 
 main().catch((err) => {
