@@ -12,6 +12,7 @@ export interface ManagedSubsite {
   publicPort: number;
   enabled: boolean;
   connected: boolean;
+  lastError?: string;
   url: string;
   createdAt: number;
   updatedAt: number;
@@ -26,10 +27,23 @@ export interface CreateManagedSubsiteInput {
   serverPort: number;
   serverId: number;
   username: string;
-  password: string;
+  password?: string;
   publicHost?: string;
   publicPort?: number;
-  adminPassword: string;
+  adminPassword?: string;
+}
+
+export interface UpdateManagedSubsiteInput {
+  displayName?: string;
+  domain?: string;
+  ts3Host?: string;
+  queryPort?: number;
+  serverPort?: number;
+  serverId?: number;
+  username?: string;
+  password?: string;
+  publicHost?: string;
+  publicPort?: number;
 }
 
 export interface MultiSubsiteSettings {

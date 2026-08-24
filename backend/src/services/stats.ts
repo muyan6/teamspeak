@@ -150,12 +150,10 @@ export class StatsService {
 
   weekStartKey(): string {
     const d = new Date();
-    const day = d.getDay() === 0 ? 7 : d.getDay();
-    const start = new Date(d);
-    start.setDate(d.getDate() - day + 1);
-    const mm = String(start.getMonth() + 1).padStart(2, '0');
-    const dd = String(start.getDate()).padStart(2, '0');
-    return `${start.getFullYear()}-${mm}-${dd}`;
+    d.setDate(d.getDate() - 6);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
   }
 
   recordSnapshot(clients: OnlineClientData[], channels: ChannelData[], now = Date.now()): void {
@@ -779,14 +777,10 @@ export class StatsService {
 
   prevWeekStartKey(): string {
     const d = new Date();
-    const day = d.getDay() === 0 ? 7 : d.getDay();
-    const thisMonday = new Date(d);
-    thisMonday.setDate(d.getDate() - day + 1);
-    thisMonday.setHours(0, 0, 0, 0);
-    thisMonday.setDate(thisMonday.getDate() - 7);
-    const mm = String(thisMonday.getMonth() + 1).padStart(2, '0');
-    const dd = String(thisMonday.getDate()).padStart(2, '0');
-    return `${thisMonday.getFullYear()}-${mm}-${dd}`;
+    d.setDate(d.getDate() - 13);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
   }
 
   getTopUsersByRange(

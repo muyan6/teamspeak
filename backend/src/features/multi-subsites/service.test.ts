@@ -104,4 +104,40 @@ describe('统一分站注册表', () => {
     expect(betaAuth.verifyToken(alphaAuth.signToken())).toBeNull();
     db.close();
   });
+
+  it('支持编辑分站信息、重置管理密码以及删除分站', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com');
+    const created = registry.create({ displayName: 'Alpha 语音', slug: 'alpha', ts3Host: '127.0.0.1', adminPassword: 'password-123' });
+
+    // 编辑
+    const updated = registry.update(created.id, {
+      displayName: 'Alpha 2.0',
+      domain: 'alpha2.example.com',
+      ts3Host: '127.0.0.99',
+      queryPort: 10022,
+      serverPort: 9999,
+      serverId: 2,
+    });
+    expect(updated.displayName).toBe('Alpha 2.0');
+    expect(updated.domain).toBe('alpha2.example.com');
+    expect(updated.ts3Host).toBe('127.0.0.99');
+    expect(updated.queryPort).toBe(10022);
+    expect(updated.serverPort).toBe(9999);
+    expect(updated.serverId).toBe(2);
+
+    // 重置密码
+    registry.resetAdminPassword(created.id, 'new-password-456');
+    const reloaded = registry.get(created.id);
+    const auth = new AuthService(reloaded?.adminPassword || '', 'jwt-secret');
+    expect(auth.verifyAdminPassword('new-password-456')).toBe(true);
+    expect(auth.verifyAdminPassword('password-123')).toBe(false);
+
+    // 删除
+    const deleted = registry.delete(created.id);
+    expect(deleted.id).toBe(created.id);
+    expect(registry.get(created.id)).toBeNull();
+    expect(registry.hasHost('alpha2.example.com')).toBe(false);
+    db.close();
+  });
 });

@@ -40,6 +40,19 @@ export interface CreateManagedSubsiteInput {
   adminPassword?: unknown;
 }
 
+export interface UpdateManagedSubsiteInput {
+  displayName?: unknown;
+  domain?: unknown;
+  ts3Host?: unknown;
+  queryPort?: unknown;
+  serverPort?: unknown;
+  serverId?: unknown;
+  username?: unknown;
+  password?: unknown;
+  publicHost?: unknown;
+  publicPort?: unknown;
+}
+
 export interface MultiSubsiteSettings {
   baseDomain: string;
 }
@@ -255,6 +268,71 @@ export class MultiSubsiteRegistry {
     const result = this.db.prepare('UPDATE managed_subsites SET admin_password = ?, updated_at = ? WHERE id = ?')
       .run(passwordHash, Date.now(), id);
     if (!result.changes) throw new Error('分站不存在');
+  }
+
+  update(id: number, input: UpdateManagedSubsiteInput): ManagedSubsite {
+    const existing = this.get(id);
+    if (!existing) throw new Error('分站不存在');
+
+    const displayName = input.displayName !== undefined ? asText(input.displayName) : existing.displayName;
+    if (!displayName || displayName.length > 80) throw new Error('分站昵称不能为空，且不能超过 80 个字符');
+
+    let domain = existing.domain;
+    if (input.domain !== undefined) {
+      domain = validateDomain(normalizeHost(input.domain) || `${existing.slug}.${this.baseDomain}`);
+      if (domain === this.baseDomain) throw new Error('分站域名不能与平台根域名相同');
+    }
+
+    const ts3Host = input.ts3Host !== undefined ? asText(input.ts3Host) : existing.ts3Host;
+    if (!ts3Host) throw new Error('TS3 服务器地址不能为空');
+
+    const queryPort = input.queryPort !== undefined ? asPort(input.queryPort, existing.queryPort) : existing.queryPort;
+    const serverPort = input.serverPort !== undefined ? asPort(input.serverPort, existing.serverPort) : existing.serverPort;
+    const serverId = input.serverId !== undefined ? asServerId(input.serverId, existing.serverId) : existing.serverId;
+    const username = input.username !== undefined ? (asText(input.username) || 'serveradmin') : existing.username;
+    const password = input.password !== undefined && input.password !== '' ? String(input.password) : existing.password;
+    const publicHost = input.publicHost !== undefined ? (asText(input.publicHost) || ts3Host) : existing.publicHost;
+    const publicPort = input.publicPort !== undefined ? asPort(input.publicPort, serverPort) : existing.publicPort;
+
+    try {
+      this.db.prepare(`UPDATE managed_subsites SET
+        display_name = ?, domain = ?, ts3_host = ?, query_port = ?, server_port = ?, server_id = ?,
+        query_username = ?, query_password = ?, public_host = ?, public_port = ?, updated_at = ?
+        WHERE id = ?`)
+        .run(
+          displayName,
+          domain,
+          ts3Host,
+          queryPort,
+          serverPort,
+          serverId,
+          username,
+          this.credentialCipher.encrypt(password),
+          publicHost,
+          publicPort,
+          Date.now(),
+          id
+        );
+      return this.get(id) as ManagedSubsite;
+    } catch (error) {
+      if ((error as Error).message.includes('UNIQUE')) throw new Error('访问域名已被其他分站占用');
+      throw error;
+    }
+  }
+
+  resetAdminPassword(id: number, newPassword: unknown): void {
+    const password = String(newPassword ?? '');
+    if (!password || password.length < 8) throw new Error('分站后台密码至少需要 8 个字符');
+    const result = this.db.prepare('UPDATE managed_subsites SET admin_password = ?, updated_at = ? WHERE id = ?')
+      .run(hashAdminPassword(password), Date.now(), id);
+    if (!result.changes) throw new Error('分站不存在');
+  }
+
+  delete(id: number): ManagedSubsite {
+    const existing = this.get(id);
+    if (!existing) throw new Error('分站不存在');
+    this.db.prepare('DELETE FROM managed_subsites WHERE id = ?').run(id);
+    return existing;
   }
 
   private migrateCredentials(): void {

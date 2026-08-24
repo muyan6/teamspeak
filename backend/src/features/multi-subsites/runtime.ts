@@ -1,3 +1,4 @@
+import { existsSync, rmSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import path from 'node:path';
 import { createRouter, type ApiDeps } from '../../api/router.js';
@@ -15,7 +16,7 @@ import { MonitorService } from '../../services/monitor.js';
 import { StatsService } from '../../services/stats.js';
 import { getTs3ServerKey, Ts3ClientWrapper } from '../../ts3/client.js';
 import type { WsHub } from '../../ws/hub.js';
-import type { ManagedSubsite, MultiSubsiteRegistry } from './service.js';
+import type { ManagedSubsite, MultiSubsiteRegistry, UpdateManagedSubsiteInput } from './service.js';
 
 class ManagedSubsiteRuntime {
   readonly db: AppDatabase;
@@ -67,10 +68,19 @@ class ManagedSubsiteRuntime {
   }
 
   start(): void {
-    this.ts3.on('connected', () => this.monitor.start());
+    this.ts3.on('connected', () => {
+      this.monitor.start();
+      const syncTimer = setTimeout(() => {
+        if (this.ts3.connected) void this.syncClientDirectory();
+      }, 1000);
+      syncTimer.unref();
+    });
     if (this.ts3.getConfig().host) void this.ts3.start();
     const elasticTimer = setInterval(() => void this.safeRun(() => this.runElastic()), 60_000);
     const achievementTimer = setInterval(() => void this.safeRun(() => this.runAchievement()), 6 * 3600 * 1000);
+    const directoryTimer = setInterval(() => {
+      if (this.ts3.connected) void this.syncClientDirectory();
+    }, 6 * 3600 * 1000);
     const archiveDbPath = path.resolve(path.dirname(this.dbPath), `${this.subsite.slug}_archive.db`);
     const archiveTimer = setInterval(() => {
       void this.safeRun(async () => {
@@ -82,8 +92,9 @@ class ManagedSubsiteRuntime {
     }, 24 * 3600 * 1000);
     elasticTimer.unref();
     achievementTimer.unref();
+    directoryTimer.unref();
     archiveTimer.unref();
-    this.timers.push(elasticTimer, achievementTimer, archiveTimer);
+    this.timers.push(elasticTimer, achievementTimer, directoryTimer, archiveTimer);
     void this.runChampionAndSchedule();
   }
 
@@ -93,6 +104,18 @@ class ManagedSubsiteRuntime {
     this.timers.splice(0).forEach(clearInterval);
     if (this.championTimer) clearTimeout(this.championTimer);
     this.db.close();
+  }
+
+  private async syncClientDirectory(): Promise<void> {
+    try {
+      const clients = await this.ts3.getClientDbList();
+      if (clients.length > 0) {
+        const updated = this.stats.syncClientIdentities(clients);
+        console.log(`[ts3:${this.subsite.slug}] 成员数据库同步完成: ${clients.length} 人，更新 ${updated} 条本地身份记录`);
+      }
+    } catch {
+      /* 忽略临时网络异常 */
+    }
   }
 
   private async runElastic(): Promise<void> {
@@ -137,6 +160,42 @@ export class MultiSubsiteRuntimeManager {
     return subsite;
   }
 
+  update(id: number, input: UpdateManagedSubsiteInput): ManagedSubsite {
+    const subsite = this.registry.update(id, input);
+    if (subsite.enabled) {
+      this.start(subsite);
+    }
+    return subsite;
+  }
+
+  resetAdminPassword(id: number, newPassword: unknown): void {
+    this.registry.resetAdminPassword(id, newPassword);
+    const subsite = this.registry.get(id);
+    if (subsite && subsite.enabled) {
+      this.start(subsite);
+    }
+  }
+
+  delete(id: number, purgeDatabase = false): ManagedSubsite {
+    this.stop(id);
+    const subsite = this.registry.delete(id);
+    if (purgeDatabase) {
+      try {
+        const subsiteDir = path.resolve(path.dirname(this.config.dbPath), 'subsites');
+        const dbFile = path.join(subsiteDir, `${subsite.slug}.db`);
+        const archiveFile = path.join(subsiteDir, `${subsite.slug}_archive.db`);
+        const walFile = path.join(subsiteDir, `${subsite.slug}.db-wal`);
+        const shmFile = path.join(subsiteDir, `${subsite.slug}.db-shm`);
+        for (const f of [dbFile, archiveFile, walFile, shmFile]) {
+          if (existsSync(f)) rmSync(f, { force: true });
+        }
+      } catch (err) {
+        console.error(`[subsite] 清理分站数据库文件失败: ${subsite.slug}`, err);
+      }
+    }
+    return subsite;
+  }
+
   setEnabled(id: number, enabled: boolean): ManagedSubsite {
     const subsite = this.registry.setEnabled(id, enabled);
     if (enabled) this.start(subsite);
@@ -144,12 +203,16 @@ export class MultiSubsiteRuntimeManager {
     return subsite;
   }
 
-  list(): Array<ManagedSubsite & { connected: boolean; url: string }> {
-    return this.registry.list().map((subsite) => ({
-      ...subsite,
-      connected: this.runtimes.get(subsite.id)?.ts3.connected ?? false,
-      url: `http://${subsite.domain}`,
-    }));
+  list(): Array<ManagedSubsite & { connected: boolean; lastError: string; url: string }> {
+    return this.registry.list().map((subsite) => {
+      const runtime = this.runtimes.get(subsite.id);
+      return {
+        ...subsite,
+        connected: runtime?.ts3.connected ?? false,
+        lastError: runtime?.ts3.lastError ?? '',
+        url: `http://${subsite.domain}`,
+      };
+    });
   }
 
   getSettings(): { baseDomain: string } {

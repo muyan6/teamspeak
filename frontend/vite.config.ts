@@ -17,4 +17,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+            return 'vendor-echarts';
+          }
+          if (id.includes('node_modules/@phosphor-icons')) {
+            return 'vendor-icons';
+          }
+        },
+      },
+    },
+  },
 });
