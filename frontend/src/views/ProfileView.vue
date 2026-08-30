@@ -429,7 +429,7 @@ onMounted(() => {
                     class="heatmap-week-col"
                   >
                     <div
-                      v-for="day in week.days"
+                      v-for="(day, dIdx) in week.days"
                       :key="day.date"
                       class="heatmap-cell"
                       :class="'level-' + day.level"
@@ -438,7 +438,11 @@ onMounted(() => {
                     >
                       <div
                         class="heatmap-tooltip"
-                        :class="{ 'tooltip-right-align': wIdx >= 48, 'tooltip-left-align': wIdx <= 1 }"
+                        :class="{
+                          'tooltip-flip-down': dIdx < 2,
+                          'tooltip-right-align': wIdx >= 48,
+                          'tooltip-left-align': wIdx <= 1
+                        }"
                       >
                         <span class="tooltip-date">{{ day.date }}</span>
                         <span class="tooltip-val">{{ day.seconds > 0 ? fmtMinutes(Math.round(day.seconds / 60)) : '未在线' }}</span>
@@ -1157,7 +1161,7 @@ onMounted(() => {
 
 .heatmap-scroll-area {
   overflow-x: auto;
-  padding: 30px 16px 8px 4px;
+  padding: 4px 12px 6px 4px;
 }
 
 .heatmap-months-row {
@@ -1281,6 +1285,11 @@ onMounted(() => {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
   pointer-events: none;
   z-index: 30;
+}
+
+.heatmap-tooltip.tooltip-flip-down {
+  bottom: auto;
+  top: calc(100% + 6px);
 }
 
 .heatmap-tooltip.tooltip-right-align {
