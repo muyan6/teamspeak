@@ -436,7 +436,10 @@ onMounted(() => {
                       @mouseenter="hoveredDay = day"
                       @mouseleave="hoveredDay = null"
                     >
-                      <div class="heatmap-tooltip">
+                      <div
+                        class="heatmap-tooltip"
+                        :class="{ 'tooltip-right-align': wIdx >= 48, 'tooltip-left-align': wIdx <= 1 }"
+                      >
                         <span class="tooltip-date">{{ day.date }}</span>
                         <span class="tooltip-val">{{ day.seconds > 0 ? fmtMinutes(Math.round(day.seconds / 60)) : '未在线' }}</span>
                       </div>
@@ -1154,7 +1157,7 @@ onMounted(() => {
 
 .heatmap-scroll-area {
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding: 30px 16px 8px 4px;
 }
 
 .heatmap-months-row {
@@ -1264,7 +1267,7 @@ onMounted(() => {
 
 .heatmap-tooltip {
   position: absolute;
-  bottom: 18px;
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   background: #171717;
@@ -1277,7 +1280,18 @@ onMounted(() => {
   white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
   pointer-events: none;
-  z-index: 20;
+  z-index: 30;
+}
+
+.heatmap-tooltip.tooltip-right-align {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.heatmap-tooltip.tooltip-left-align {
+  left: 0;
+  transform: none;
 }
 
 .heatmap-cell:hover .heatmap-tooltip {
