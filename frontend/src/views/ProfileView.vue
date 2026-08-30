@@ -1160,6 +1160,7 @@ onMounted(() => {
 .heatmap-months-row {
   display: flex;
   align-items: center;
+  height: 16px;
   margin-bottom: 6px;
   min-width: 760px;
 }
@@ -1177,6 +1178,7 @@ onMounted(() => {
 
 .heatmap-month-col {
   width: 12px;
+  height: 16px;
   font-size: 10px;
   color: var(--text-faint);
   position: relative;
@@ -1188,6 +1190,8 @@ onMounted(() => {
   top: 0;
   white-space: nowrap;
   font-weight: 600;
+  line-height: 16px;
+  user-select: none;
 }
 
 .heatmap-body-row {
