@@ -211,11 +211,12 @@ export class DashboardService {
     const legacyGuideUpdatedAt = this.configStore.getUpdatedAt('guide');
     const siteInfo = this.configStore.getJson<SiteInfoConfig>('siteInfo', {});
     const musicBotUrl = this.configStore.get('musicBotUrl') ?? '';
+    const webClientUrl = this.configStore.get('webClientUrl') ?? '';
 
     return {
       status: 'success',
       connected,
-      site: buildSiteData(this.config, serverName, download, siteInfo, musicBotUrl),
+      site: buildSiteData(this.config, serverName, download, siteInfo, musicBotUrl, webClientUrl),
       server_name: serverName,
       online_count: onlineCount,
       max_clients: maxClients,

@@ -13,6 +13,7 @@ interface SiteConfigPayload {
   excludedBotUids?: string;
   tsManagerUrl?: string;
   musicBotUrl?: string;
+  webClientUrl?: string;
 }
 
 const MAX_ADMIN_CONTACT_LENGTH = 2_000;
@@ -82,6 +83,7 @@ function loadSiteConfig(deps: ApiDeps): SiteConfigPayload {
     excludedBotUids: typeof info.excludedBotUids === 'string' ? info.excludedBotUids : '',
     tsManagerUrl: sanitizeHttpUrl(info.tsManagerUrl || deps.configStore.get('tsManagerUrl')),
     musicBotUrl: sanitizeHttpUrl(info.musicBotUrl || deps.configStore.get('musicBotUrl')),
+    webClientUrl: sanitizeHttpUrl(info.webClientUrl || deps.configStore.get('webClientUrl')),
   };
   if (info.adminQq !== undefined) {
     res.adminQq = sanitizeAdminContact(info.adminQq);
@@ -119,6 +121,10 @@ export function registerSiteConfigRoutes(router: Router, deps: ApiDeps, admin: R
       if (body.musicBotUrl !== undefined) {
         siteInfo.musicBotUrl = normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接') ?? '';
         deps.configStore.set('musicBotUrl', siteInfo.musicBotUrl);
+      }
+      if (body.webClientUrl !== undefined) {
+        siteInfo.webClientUrl = normalizeHttpUrl(body.webClientUrl, 'WebSpeak 网页端链接') ?? '';
+        deps.configStore.set('webClientUrl', siteInfo.webClientUrl);
       }
       deps.configStore.setJson('siteInfo', siteInfo);
       if (deps.stats?.getDatabase) {

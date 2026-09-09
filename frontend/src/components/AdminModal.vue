@@ -45,6 +45,7 @@ function logout(): void {
 }
 
 const tsManagerUrl = ref('');
+const webClientUrl = ref('');
 
 function openTsManager(): void {
   if (tsManagerUrl.value) {
@@ -52,6 +53,15 @@ function openTsManager(): void {
   } else {
     activeTab.value = 'site';
     toast.info('请在「站点配置」中设置 TS Manager Web 地址');
+  }
+}
+
+function openWebClient(): void {
+  if (webClientUrl.value) {
+    window.open(webClientUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    activeTab.value = 'site';
+    toast.info('请在「站点配置」中设置 WebSpeak 网页端链接');
   }
 }
 
@@ -76,6 +86,9 @@ async function loadAdminScope(): Promise<void> {
     }
     if (siteConfig?.tsManagerUrl) {
       tsManagerUrl.value = siteConfig.tsManagerUrl;
+    }
+    if (siteConfig?.webClientUrl) {
+      webClientUrl.value = siteConfig.webClientUrl;
     }
   } catch {
     isPlatformAdmin.value = false;
@@ -107,6 +120,15 @@ onMounted(() => { void loadAdminScope(); });
           >
             <i class="ph-bold ph-arrow-square-out"></i>
             <span>TS Manager</span>
+          </button>
+          <button
+            type="button"
+            class="ext-link-btn"
+            title="跳转 WebSpeak 网页端"
+            @click="openWebClient"
+          >
+            <i class="ph-bold ph-arrow-square-out"></i>
+            <span>WebSpeak</span>
           </button>
           <button
             type="button"

@@ -14,6 +14,7 @@ export interface SiteInfo {
   globalServer: string;
   musicBotUrl?: string;
   tsManagerUrl?: string;
+  webClientUrl?: string;
 }
 
 export type BadgeConditionType =
@@ -219,6 +220,7 @@ export interface SiteConfig {
   excludedBotUids?: string;
   tsManagerUrl?: string;
   musicBotUrl?: string;
+  webClientUrl?: string;
 }
 
 export interface TutorialConfig {
@@ -231,6 +233,7 @@ export interface TutorialConfig {
   clientDownload?: ClientDownloadConfig;
   musicBotUrl?: string;
   tsManagerUrl?: string;
+  webClientUrl?: string;
 }
 
 export interface Ts3ConnectionInfo {

@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 import { api } from '../api';
 import { useDashboard } from '../composables/dashboard';
+import { toast } from '../composables/useToast';
 import type { RankEntry, TrendData } from '../types';
 import { renderMarkdown } from '../utils';
 import { useHomeModules } from '../features/home-modules/home-modules';
@@ -64,6 +65,7 @@ const clientDownloadUrl = computed(() => safeHttpUrl(data.value?.site.clientDown
 const mirrorDownloadUrl = computed(() => safeHttpUrl(data.value?.site.mirrorDownload));
 const translationDownloadUrl = computed(() => safeHttpUrl(data.value?.site.translationDownload));
 const musicBotUrl = computed(() => safeHttpUrl(data.value?.site.musicBotUrl));
+const webClientUrl = computed(() => safeHttpUrl(data.value?.site.webClientUrl));
 const adminQqDisplay = computed(() => 'QQ');
 
 async function copyText(text: string) {
@@ -80,6 +82,14 @@ async function copyText(text: string) {
 function quickConnect() {
   if (data.value?.site.connectUrl) {
     window.open(data.value.site.connectUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+function openWebClient() {
+  if (webClientUrl.value) {
+    window.open(webClientUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    toast.info('暂未配置网页语音地址，请在后台「站点配置」中设置');
   }
 }
 
@@ -279,8 +289,20 @@ onMounted(() => void loadHomeModules());
             <button class="quick-connect-btn" @click="quickConnect">
               <i class="ph-bold ph-plug quick-connect-icon"></i>
               <div>
-                <div class="quick-connect-kicker">Quick Connect</div>
+                <div class="quick-connect-kicker">快速连接</div>
                 <div class="quick-connect-title">Connect</div>
+              </div>
+            </button>
+
+            <button
+              class="quick-connect-btn"
+              @click="openWebClient"
+              :title="webClientUrl ? '打开 WebSpeak 网页语音' : '请先在后台「站点配置」中设置 WebSpeak 链接'"
+            >
+              <i class="ph-bold ph-broadcast quick-connect-icon"></i>
+              <div>
+                <div class="quick-connect-kicker">网页语音</div>
+                <div class="quick-connect-title">WebSpeak</div>
               </div>
             </button>
 
@@ -291,7 +313,7 @@ onMounted(() => void loadHomeModules());
             >
               <i class="ph-bold ph-music-notes-simple quick-connect-icon"></i>
               <div>
-                <div class="quick-connect-kicker">TSMusicBot</div>
+                <div class="quick-connect-kicker">音乐机器人</div>
                 <div class="quick-connect-title">WebUI</div>
               </div>
             </button>
@@ -346,6 +368,12 @@ onMounted(() => void loadHomeModules());
             <button class="sublink-item guide" style="background: none; border: none; font-size: inherit; font-family: inherit" @click="showTutorial = true">
               <i class="ph-bold ph-book-open"></i> 使用教程
             </button>
+          </template>
+          <template v-if="webClientUrl">
+            <span v-if="mirrorDownloadUrl || translationDownloadUrl || data.tutorial.enabled" class="sublink-sep">|</span>
+            <a class="sublink-item webclient" :href="webClientUrl" target="_blank" rel="noopener">
+              <i class="ph-bold ph-broadcast"></i> 网页语音版
+            </a>
           </template>
         </div>
       </div>

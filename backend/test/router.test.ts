@@ -372,6 +372,7 @@ describe('管理接口与配置回归', () => {
       excludedBotUids: '',
       tsManagerUrl: 'https://tsmanager.example.com',
       musicBotUrl: 'https://music.example.com',
+      webClientUrl: 'https://web.example.com',
     };
 
     expect((await fetch(`${baseUrl}/tutorial-config`, {

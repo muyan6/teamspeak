@@ -13,6 +13,7 @@ const site = ref({
   excludedBotUids: '',
   tsManagerUrl: '',
   musicBotUrl: '',
+  webClientUrl: '',
 });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
@@ -42,6 +43,7 @@ async function load(): Promise<void> {
       excludedBotUids: config.excludedBotUids ?? '',
       tsManagerUrl: config.tsManagerUrl ?? '',
       musicBotUrl: config.musicBotUrl ?? '',
+      webClientUrl: config.webClientUrl ?? '',
     };
   } catch (error) {
     showNotice(`加载站点配置失败：${(error as Error).message}`, 'error');
@@ -89,6 +91,10 @@ onMounted(() => { void load(); });
     <div class="field">
       <label>TSMusicBot Web 链接（WebUI 地址，配置后在后台顶部提供快捷跳转）</label>
       <input v-model="site.musicBotUrl" class="input" placeholder="例如：http://127.0.0.1:3000 或留空" />
+    </div>
+    <div class="field">
+      <label>WebSpeak 网页端链接（网页语音地址，配置后在首页欢迎卡片与后台顶部展示快捷跳转）</label>
+      <input v-model="site.webClientUrl" class="input" placeholder="例如：http://127.0.0.1:3040 或留空" />
     </div>
     <div class="field">
       <label>管理员名称</label>
