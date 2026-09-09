@@ -295,7 +295,7 @@ onMounted(() => void loadHomeModules());
           </div>
 
           <div class="connect-actions-group">
-            <button class="quick-connect-btn primary-connect-btn" @click="quickConnect">
+            <button class="quick-connect-btn" @click="quickConnect">
               <i class="ph-bold ph-plug quick-connect-icon"></i>
               <div>
                 <div class="quick-connect-kicker">快速连接</div>
