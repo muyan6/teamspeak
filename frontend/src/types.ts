@@ -15,6 +15,7 @@ export interface SiteInfo {
   musicBotUrl?: string;
   tsManagerUrl?: string;
   webClientUrl?: string;
+  steamBoxUrl?: string;
 }
 
 export type BadgeConditionType =
@@ -221,6 +222,7 @@ export interface SiteConfig {
   tsManagerUrl?: string;
   musicBotUrl?: string;
   webClientUrl?: string;
+  steamBoxUrl?: string;
 }
 
 export interface TutorialConfig {

@@ -14,6 +14,7 @@ const site = ref({
   tsManagerUrl: '',
   musicBotUrl: '',
   webClientUrl: '',
+  steamBoxUrl: '',
 });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
@@ -44,6 +45,7 @@ async function load(): Promise<void> {
       tsManagerUrl: config.tsManagerUrl ?? '',
       musicBotUrl: config.musicBotUrl ?? '',
       webClientUrl: config.webClientUrl ?? '',
+      steamBoxUrl: config.steamBoxUrl ?? '',
     };
   } catch (error) {
     showNotice(`加载站点配置失败：${(error as Error).message}`, 'error');
@@ -95,6 +97,10 @@ onMounted(() => { void load(); });
     <div class="field">
       <label>WebSpeak 网页端链接（网页语音地址，配置后在首页欢迎卡片与后台顶部展示快捷跳转）</label>
       <input v-model="site.webClientUrl" class="input" placeholder="例如：http://127.0.0.1:3040 或留空" />
+    </div>
+    <div class="field">
+      <label>Steam 盒子链接（Web 链接，配置后在首页快捷按钮与后台顶部提供跳转）</label>
+      <input v-model="site.steamBoxUrl" class="input" placeholder="例如：https://steam.myil.top 或留空" />
     </div>
     <div class="field">
       <label>管理员名称</label>

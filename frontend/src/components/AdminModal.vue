@@ -46,6 +46,7 @@ function logout(): void {
 
 const tsManagerUrl = ref('');
 const webClientUrl = ref('');
+const steamBoxUrl = ref('');
 
 function openTsManager(): void {
   if (tsManagerUrl.value) {
@@ -62,6 +63,15 @@ function openWebClient(): void {
   } else {
     activeTab.value = 'site';
     toast.info('请在「站点配置」中设置 WebSpeak 网页端链接');
+  }
+}
+
+function openSteamBox(): void {
+  if (steamBoxUrl.value) {
+    window.open(steamBoxUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    activeTab.value = 'site';
+    toast.info('请在「站点配置」中设置 Steam 盒子链接');
   }
 }
 
@@ -89,6 +99,9 @@ async function loadAdminScope(): Promise<void> {
     }
     if (siteConfig?.webClientUrl) {
       webClientUrl.value = siteConfig.webClientUrl;
+    }
+    if (siteConfig?.steamBoxUrl) {
+      steamBoxUrl.value = siteConfig.steamBoxUrl;
     }
   } catch {
     isPlatformAdmin.value = false;
@@ -129,6 +142,15 @@ onMounted(() => { void loadAdminScope(); });
           >
             <i class="ph-bold ph-arrow-square-out"></i>
             <span>WebSpeak</span>
+          </button>
+          <button
+            type="button"
+            class="ext-link-btn"
+            title="跳转 Steam 盒子面板"
+            @click="openSteamBox"
+          >
+            <i class="ph-bold ph-arrow-square-out"></i>
+            <span>Steam盒子</span>
           </button>
           <button
             type="button"

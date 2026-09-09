@@ -66,6 +66,7 @@ const mirrorDownloadUrl = computed(() => safeHttpUrl(data.value?.site.mirrorDown
 const translationDownloadUrl = computed(() => safeHttpUrl(data.value?.site.translationDownload));
 const musicBotUrl = computed(() => safeHttpUrl(data.value?.site.musicBotUrl));
 const webClientUrl = computed(() => safeHttpUrl(data.value?.site.webClientUrl));
+const steamBoxUrl = computed(() => safeHttpUrl(data.value?.site.steamBoxUrl));
 const adminQqDisplay = computed(() => 'QQ');
 
 async function copyText(text: string) {
@@ -90,6 +91,14 @@ function openWebClient() {
     window.open(webClientUrl.value, '_blank', 'noopener,noreferrer');
   } else {
     toast.info('暂未配置网页语音地址，请在后台「站点配置」中设置');
+  }
+}
+
+function openSteamBox() {
+  if (steamBoxUrl.value) {
+    window.open(steamBoxUrl.value, '_blank', 'noopener,noreferrer');
+  } else {
+    toast.info('暂未配置 Steam 盒子地址，请在后台「站点配置」中设置');
   }
 }
 
@@ -286,7 +295,7 @@ onMounted(() => void loadHomeModules());
           </div>
 
           <div class="connect-actions-group">
-            <button class="quick-connect-btn" @click="quickConnect">
+            <button class="quick-connect-btn primary-connect-btn" @click="quickConnect">
               <i class="ph-bold ph-plug quick-connect-icon"></i>
               <div>
                 <div class="quick-connect-kicker">快速连接</div>
@@ -307,7 +316,19 @@ onMounted(() => void loadHomeModules());
             </button>
 
             <button
-              class="quick-connect-btn musicbot-btn"
+              class="quick-connect-btn"
+              @click="openSteamBox"
+              :title="steamBoxUrl ? '打开 Steam 盒子' : '请先在后台「站点配置」中设置 Steam 盒子链接'"
+            >
+              <i class="ph-bold ph-steam-logo quick-connect-icon"></i>
+              <div>
+                <div class="quick-connect-kicker">Steam盒子</div>
+                <div class="quick-connect-title">SteamBox</div>
+              </div>
+            </button>
+
+            <button
+              class="quick-connect-btn"
               @click="openMusicBot"
               :title="musicBotUrl ? '打开 TSMusicBot WebUI' : '查看音乐机器人教程'"
             >

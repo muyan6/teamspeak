@@ -373,6 +373,7 @@ describe('管理接口与配置回归', () => {
       tsManagerUrl: 'https://tsmanager.example.com',
       musicBotUrl: 'https://music.example.com',
       webClientUrl: 'https://web.example.com',
+      steamBoxUrl: 'https://steam.example.com',
     };
 
     expect((await fetch(`${baseUrl}/tutorial-config`, {

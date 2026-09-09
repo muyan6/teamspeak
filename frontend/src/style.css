@@ -520,9 +520,9 @@ button {
 }
 
 .connect-actions-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
   flex-shrink: 0;
   width: 100%;
 }
@@ -530,71 +530,79 @@ button {
 @media (min-width: 768px) {
   .connect-actions-group {
     width: auto;
-    min-width: 170px;
+    min-width: 320px;
+    max-width: 380px;
   }
 }
 
 .quick-connect-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  background: #ffffff;
-  color: #0a0a0a;
-  padding: 0.6875rem 1.25rem;
-  border-radius: 0.875rem;
-  font-weight: 800;
-  border: 1px solid transparent;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 0.625rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  padding: 0.5625rem 0.875rem;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
   cursor: pointer;
   width: 100%;
   box-sizing: border-box;
   justify-content: flex-start;
+  text-align: left;
 }
 
-@media (max-width: 767px) {
-  .quick-connect-btn {
-    justify-content: center;
-  }
+.quick-connect-btn.primary-connect-btn {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.35);
+  box-shadow: 0 4px 16px rgba(244, 63, 94, 0.15);
 }
 
 .quick-connect-btn:hover {
-  background: var(--primary);
+  background: rgba(244, 63, 94, 0.22);
+  border-color: rgba(244, 63, 94, 0.6);
   color: #ffffff;
-  box-shadow: 0 10px 28px rgba(244, 63, 94, 0.4);
-  transform: translateY(-2px) scale(1.02);
-}
-
-.quick-connect-btn.musicbot-btn:hover {
-  background: linear-gradient(135deg, #f43f5e 0%, #ec4899 100%);
-  color: #ffffff;
-  box-shadow: 0 10px 28px rgba(244, 63, 94, 0.4);
-  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(244, 63, 94, 0.3);
+  transform: translateY(-2px);
 }
 
 .quick-connect-icon {
   font-size: 1.25rem;
-  transition: transform 0.3s ease;
+  color: #fb7185;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
 }
 
 .quick-connect-btn:hover .quick-connect-icon {
-  transform: rotate(12deg) scale(1.15);
+  color: #ffffff;
+  transform: scale(1.15);
 }
 
 .quick-connect-kicker {
   font-size: 0.5625rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.75;
-  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  font-weight: 700;
   line-height: 1;
+  margin-bottom: 0.15rem;
+  transition: color 0.25s ease;
+}
+
+.quick-connect-btn:hover .quick-connect-kicker {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .quick-connect-title {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   line-height: 1.15;
   font-weight: 800;
+  color: #ffffff;
 }
 
 /* Download Card */

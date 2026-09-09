@@ -16,6 +16,7 @@ export interface SiteData {
   globalServer: string;
   musicBotUrl: string;
   webClientUrl: string;
+  steamBoxUrl: string;
 }
 
 export interface TutorialSection {
@@ -47,6 +48,7 @@ export interface SiteInfoConfig {
   adminSteam?: string;
   musicBotUrl?: string;
   webClientUrl?: string;
+  steamBoxUrl?: string;
 }
 
 export interface TutorialConfig {
@@ -73,7 +75,8 @@ export function buildSiteData(
   download?: DownloadConfig,
   siteInfo?: SiteInfoConfig,
   musicBotUrl?: string,
-  webClientUrl?: string
+  webClientUrl?: string,
+  steamBoxUrl?: string
 ): SiteData {
   const host = config.publicServer.host;
   const port = config.publicServer.port;
@@ -96,6 +99,7 @@ export function buildSiteData(
     globalServer: config.site.globalServer,
     musicBotUrl: safeText(siteInfo?.musicBotUrl) || safeText(musicBotUrl),
     webClientUrl: safeText(siteInfo?.webClientUrl) || safeText(webClientUrl),
+    steamBoxUrl: safeText(siteInfo?.steamBoxUrl) || safeText(steamBoxUrl),
   };
 }
 

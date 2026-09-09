@@ -212,11 +212,12 @@ export class DashboardService {
     const siteInfo = this.configStore.getJson<SiteInfoConfig>('siteInfo', {});
     const musicBotUrl = this.configStore.get('musicBotUrl') ?? '';
     const webClientUrl = this.configStore.get('webClientUrl') ?? '';
+    const steamBoxUrl = this.configStore.get('steamBoxUrl') ?? '';
 
     return {
       status: 'success',
       connected,
-      site: buildSiteData(this.config, serverName, download, siteInfo, musicBotUrl, webClientUrl),
+      site: buildSiteData(this.config, serverName, download, siteInfo, musicBotUrl, webClientUrl, steamBoxUrl),
       server_name: serverName,
       online_count: onlineCount,
       max_clients: maxClients,
