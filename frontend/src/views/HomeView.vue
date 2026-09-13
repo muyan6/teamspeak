@@ -69,6 +69,14 @@ const webClientUrl = computed(() => safeHttpUrl(data.value?.site.webClientUrl));
 const steamBoxUrl = computed(() => safeHttpUrl(data.value?.site.steamBoxUrl));
 const adminQqDisplay = computed(() => 'QQ');
 
+const configuredActionCount = computed(() => {
+  let count = 1;
+  if (webClientUrl.value) count++;
+  if (steamBoxUrl.value) count++;
+  if (musicBotUrl.value) count++;
+  return count;
+});
+
 async function copyText(text: string) {
   if (!text) return;
   try {
@@ -294,7 +302,7 @@ onMounted(() => void loadHomeModules());
             </div>
           </div>
 
-          <div class="connect-actions-group">
+          <div class="connect-actions-group" :class="'actions-count-' + configuredActionCount">
             <button class="quick-connect-btn" @click="quickConnect">
               <i class="ph-bold ph-plug quick-connect-icon"></i>
               <div>
@@ -304,9 +312,10 @@ onMounted(() => void loadHomeModules());
             </button>
 
             <button
+              v-if="webClientUrl"
               class="quick-connect-btn"
               @click="openWebClient"
-              :title="webClientUrl ? '打开 WebSpeak 网页语音' : '请先在后台「站点配置」中设置 WebSpeak 链接'"
+              title="打开 WebSpeak 网页语音"
             >
               <i class="ph-bold ph-broadcast quick-connect-icon"></i>
               <div>
@@ -316,9 +325,10 @@ onMounted(() => void loadHomeModules());
             </button>
 
             <button
+              v-if="steamBoxUrl"
               class="quick-connect-btn"
               @click="openSteamBox"
-              :title="steamBoxUrl ? '打开 Steam 盒子' : '请先在后台「站点配置」中设置 Steam 盒子链接'"
+              title="打开 Steam 盒子"
             >
               <i class="ph-bold ph-steam-logo quick-connect-icon"></i>
               <div>
@@ -328,9 +338,10 @@ onMounted(() => void loadHomeModules());
             </button>
 
             <button
+              v-if="musicBotUrl"
               class="quick-connect-btn"
               @click="openMusicBot"
-              :title="musicBotUrl ? '打开 TSMusicBot WebUI' : '查看音乐机器人教程'"
+              title="打开 TSMusicBot WebUI"
             >
               <i class="ph-bold ph-music-notes-simple quick-connect-icon"></i>
               <div>
