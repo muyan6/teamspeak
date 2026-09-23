@@ -22,6 +22,7 @@ import { WsHub } from './ws/hub.js';
 import { MultiSubsiteRegistry } from './features/multi-subsites/service.js';
 import { MultiSubsiteRuntimeManager } from './features/multi-subsites/runtime.js';
 import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter } from './features/multi-subsites/host-router.js';
+import { syncTs3ConfigToEnv } from './env-file.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic, achievement);
 
   const app = express();
+  app.set('trust proxy', 1);
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
   const server = http.createServer(app);
@@ -69,6 +71,13 @@ async function main(): Promise<void> {
     publicServer: config.publicServer,
     credentialCipher,
     persistAdminPasswordHash: (passwordHash) => configStore.set('adminPassword', passwordHash),
+    persistTs3Config: (cfg) => {
+      try {
+        syncTs3ConfigToEnv(cfg);
+      } catch (e) {
+        console.warn('[config] 同步 TS3 配置到 .env 失败', e);
+      }
+    },
   });
   const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain, credentialCipher);
   const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub, credentialCipher);

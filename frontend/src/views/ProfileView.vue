@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import type { ProfileData, UserSuggestion } from '../types';
 
 const route = useRoute();
@@ -168,11 +168,17 @@ async function search() {
     router.replace({ query: selectedUid.value ? { nickname: name, uid: selectedUid.value } : { nickname: name } });
   } catch (e) {
     error.value = (e as Error).message;
-    try {
-      const r = await api.suggestNicknames(name);
-      suggestions.value = r.suggestions.filter((s) => s.uid !== selectedUid.value);
-    } catch {
-      suggestions.value = [];
+    const apiErr = e instanceof ApiError ? e : null;
+    const candidates = apiErr?.data?.candidates;
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      suggestions.value = candidates as UserSuggestion[];
+    } else {
+      try {
+        const r = await api.suggestNicknames(name);
+        suggestions.value = r.suggestions.filter((s) => s.uid !== selectedUid.value);
+      } catch {
+        suggestions.value = [];
+      }
     }
   } finally {
     loading.value = false;

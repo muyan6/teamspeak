@@ -101,7 +101,9 @@ export class StatsService {
 
   getExcludedBotUidsInSql(): string {
     const uids = getEffectiveExcludedBotUids(this.db);
-    return uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ');
+    return uids.length > 0
+      ? uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ')
+      : "''";
   }
 
   public static readonly DEFAULT_EXCLUDED_BOT_UIDS = DEFAULT_EXCLUDED_BOT_UIDS;
@@ -127,13 +129,14 @@ export class StatsService {
     return false;
   }
 
-  private weekStart(): number {
-    const d = new Date();
-    const day = d.getDay() === 0 ? 7 : d.getDay();
-    const start = new Date(d);
-    start.setDate(d.getDate() - day + 1);
-    start.setHours(0, 0, 0, 0);
-    return Math.floor(start.getTime() / 1000);
+  calendarWeekStartKey(now = Date.now()): string {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    d.setDate(d.getDate() - diff);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
   }
 
   private dayKey(now = Date.now()): string {
@@ -609,7 +612,13 @@ export class StatsService {
       .all(this.serverKey, limit) as Array<{ nickname: string; seconds: number }>;
   }
 
+  private streakRankingsCache: { value: Array<{ nickname: string; days: number }>; expiresAt: number } | null = null;
+
   getCurrentStreakRankings(limit = 3): Array<{ nickname: string; days: number }> {
+    const now = Date.now();
+    if (this.streakRankingsCache && this.streakRankingsCache.expiresAt > now && limit === 3) {
+      return this.streakRankingsCache.value;
+    }
     const botInSql = this.getExcludedBotUidsInSql();
     const rows = this.db
       .prepare(
@@ -629,7 +638,7 @@ export class StatsService {
       )
       .all(this.serverKey, this.serverKey, this.serverKey) as Array<{ clientDatabaseId: number; nickname: string; days: string }>;
 
-    return rows
+    const res = rows
       .map((row) => ({
         clientDatabaseId: row.clientDatabaseId,
         nickname: row.nickname,
@@ -639,6 +648,11 @@ export class StatsService {
       .sort((a, b) => b.days - a.days || a.clientDatabaseId - b.clientDatabaseId)
       .slice(0, limit)
       .map(({ nickname, days }) => ({ nickname, days }));
+
+    if (limit === 3) {
+      this.streakRankingsCache = { value: res, expiresAt: now + 60_000 };
+    }
+    return res;
   }
 
   findLocalIdentities(nickname: string): ClientIdentityData[] {
@@ -1087,7 +1101,7 @@ export class StatsService {
   }
 
   recordChampionWinner(clientDatabaseId: number, nickname: string, weekStart?: string): void {
-    const ws = weekStart || this.weekStartKey();
+    const ws = weekStart || this.calendarWeekStartKey();
     this.db.prepare(`
       INSERT OR IGNORE INTO champion_history (server_key, client_database_id, nickname, won_at, week_start)
       VALUES (?, ?, ?, ?, ?)
@@ -1121,101 +1135,72 @@ export class StatsService {
     let archivedUserDays = 0;
 
     try {
-      // 1. 迁移 online_samples
-      const oldSamples = this.db
-        .prepare('SELECT server_key, sample_time, online_count FROM online_samples WHERE sample_time < ?')
-        .all(sampleCutoffSec) as Array<{ server_key: string; sample_time: number; online_count: number }>;
-      if (oldSamples.length > 0) {
+      // 1. 迁移 online_samples (分批迁移，避免大表 OOM)
+      const selectSamplesStmt = this.db.prepare('SELECT id, server_key, sample_time, online_count FROM online_samples WHERE sample_time < ? LIMIT 2000');
+      const insSampleStmt = archiveDb.prepare('INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)');
+      const delSampleStmt = this.db.prepare('DELETE FROM online_samples WHERE id = ?');
+      while (true) {
+        const chunk = selectSamplesStmt.all(sampleCutoffSec) as Array<{ id: number; server_key: string; sample_time: number; online_count: number }>;
+        if (chunk.length === 0) break;
         archiveDb.transaction(() => {
-          const ins = archiveDb.prepare(
-            'INSERT OR IGNORE INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)'
-          );
-          for (const s of oldSamples) {
-            ins.run(s.server_key, s.sample_time, s.online_count);
-          }
+          for (const s of chunk) insSampleStmt.run(s.server_key, s.sample_time, s.online_count);
         })();
         this.db.transaction(() => {
-          this.db.prepare('DELETE FROM online_samples WHERE sample_time < ?').run(sampleCutoffSec);
+          for (const s of chunk) delSampleStmt.run(s.id);
         })();
-        archivedSamples = oldSamples.length;
+        archivedSamples += chunk.length;
+        if (chunk.length < 2000) break;
       }
 
-      // 2. 迁移已结束的 sessions
-      const oldSessions = this.db
-        .prepare(
-          'SELECT server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions WHERE end_time IS NOT NULL AND end_time < ?'
-        )
-        .all(sampleCutoffSec) as Array<{
-        server_key: string;
-        client_database_id: number;
-        nickname: string;
-        start_time: number;
-        end_time: number;
-        duration_seconds: number;
-      }>;
-      if (oldSessions.length > 0) {
+      // 2. 迁移已结束的 sessions (分批迁移)
+      const selectSessionsStmt = this.db.prepare('SELECT id, server_key, client_database_id, nickname, start_time, end_time, duration_seconds FROM sessions WHERE end_time IS NOT NULL AND end_time < ? LIMIT 2000');
+      const insSessionStmt = archiveDb.prepare('INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)');
+      const delSessionStmt = this.db.prepare('DELETE FROM sessions WHERE id = ?');
+      while (true) {
+        const chunk = selectSessionsStmt.all(sampleCutoffSec) as Array<{ id: number; server_key: string; client_database_id: number; nickname: string; start_time: number; end_time: number; duration_seconds: number }>;
+        if (chunk.length === 0) break;
         archiveDb.transaction(() => {
-          const ins = archiveDb.prepare(
-            'INSERT OR IGNORE INTO sessions (server_key, client_database_id, nickname, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)'
-          );
-          for (const s of oldSessions) {
-            ins.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
-          }
+          for (const s of chunk) insSessionStmt.run(s.server_key, s.client_database_id, s.nickname, s.start_time, s.end_time, s.duration_seconds);
         })();
         this.db.transaction(() => {
-          this.db.prepare('DELETE FROM sessions WHERE end_time IS NOT NULL AND end_time < ?').run(sampleCutoffSec);
+          for (const s of chunk) delSessionStmt.run(s.id);
         })();
-        archivedSessions = oldSessions.length;
+        archivedSessions += chunk.length;
+        if (chunk.length < 2000) break;
       }
 
-      // 3. 迁移 channel_daily_activity
-      const oldChannelDays = this.db
-        .prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity WHERE day < ?')
-        .all(sampleCutoffDay) as Array<{
-        server_key: string;
-        channel_id: number;
-        channel_name: string;
-        day: string;
-        member_seconds: number;
-      }>;
-      if (oldChannelDays.length > 0) {
+      // 3. 迁移 channel_daily_activity (分批迁移)
+      const selectChannelStmt = this.db.prepare('SELECT server_key, channel_id, channel_name, day, member_seconds FROM channel_daily_activity WHERE day < ? LIMIT 2000');
+      const insChannelStmt = archiveDb.prepare('INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)');
+      const delChannelStmt = this.db.prepare('DELETE FROM channel_daily_activity WHERE server_key = ? AND channel_id = ? AND day = ?');
+      while (true) {
+        const chunk = selectChannelStmt.all(sampleCutoffDay) as Array<{ server_key: string; channel_id: number; channel_name: string; day: string; member_seconds: number }>;
+        if (chunk.length === 0) break;
         archiveDb.transaction(() => {
-          const ins = archiveDb.prepare(
-            'INSERT OR IGNORE INTO channel_daily_activity (server_key, channel_id, channel_name, day, member_seconds) VALUES (?, ?, ?, ?, ?)'
-          );
-          for (const c of oldChannelDays) {
-            ins.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
-          }
+          for (const c of chunk) insChannelStmt.run(c.server_key, c.channel_id, c.channel_name, c.day, c.member_seconds);
         })();
         this.db.transaction(() => {
-          this.db.prepare('DELETE FROM channel_daily_activity WHERE day < ?').run(sampleCutoffDay);
+          for (const c of chunk) delChannelStmt.run(c.server_key, c.channel_id, c.day);
         })();
-        archivedChannelDays = oldChannelDays.length;
+        archivedChannelDays += chunk.length;
+        if (chunk.length < 2000) break;
       }
 
-      // 4. 迁移超期 user_daily_activity (>365天)
-      const oldUserDays = this.db
-        .prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity WHERE day < ?')
-        .all(dailyCutoffDay) as Array<{
-        server_key: string;
-        client_database_id: number;
-        nickname: string;
-        day: string;
-        active_seconds: number;
-      }>;
-      if (oldUserDays.length > 0) {
+      // 4. 迁移超期 user_daily_activity (>365天，分批迁移)
+      const selectUserStmt = this.db.prepare('SELECT server_key, client_database_id, nickname, day, active_seconds FROM user_daily_activity WHERE day < ? LIMIT 2000');
+      const insUserStmt = archiveDb.prepare('INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)');
+      const delUserStmt = this.db.prepare('DELETE FROM user_daily_activity WHERE server_key = ? AND client_database_id = ? AND day = ?');
+      while (true) {
+        const chunk = selectUserStmt.all(dailyCutoffDay) as Array<{ server_key: string; client_database_id: number; nickname: string; day: string; active_seconds: number }>;
+        if (chunk.length === 0) break;
         archiveDb.transaction(() => {
-          const ins = archiveDb.prepare(
-            'INSERT OR IGNORE INTO user_daily_activity (server_key, client_database_id, nickname, day, active_seconds) VALUES (?, ?, ?, ?, ?)'
-          );
-          for (const u of oldUserDays) {
-            ins.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
-          }
+          for (const u of chunk) insUserStmt.run(u.server_key, u.client_database_id, u.nickname, u.day, u.active_seconds);
         })();
         this.db.transaction(() => {
-          this.db.prepare('DELETE FROM user_daily_activity WHERE day < ?').run(dailyCutoffDay);
+          for (const u of chunk) delUserStmt.run(u.server_key, u.client_database_id, u.day);
         })();
-        archivedUserDays = oldUserDays.length;
+        archivedUserDays += chunk.length;
+        if (chunk.length < 2000) break;
       }
 
       this.db.exec('PRAGMA optimize;');

@@ -370,6 +370,29 @@ export class Ts3ClientWrapper extends EventEmitter {
     }
   }
 
+  async findClientDb(pattern: string, isUid = false, maxResults = 10): Promise<ClientDatabaseData[]> {
+    try {
+      const trimmed = pattern.trim();
+      if (!trimmed) return [];
+      const matches = await this.executeQuery(() => this.requireTs3().clientDbFind(trimmed, isUid));
+      if (!Array.isArray(matches) || matches.length === 0) return [];
+
+      const limited = matches.slice(0, maxResults);
+      const results: ClientDatabaseData[] = [];
+      for (const match of limited) {
+        const cldbid = Number(match.cldbid);
+        if (!cldbid) continue;
+        const info = await this.getClientDbInfo(cldbid);
+        if (info && info.uniqueIdentifier && info.uniqueIdentifier !== 'ServerQuery') {
+          results.push(info);
+        }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
   async getDefaultChannelGroupId(): Promise<number> {
     try {
       const info = await this.executeQuery(() => this.requireTs3().serverInfo());

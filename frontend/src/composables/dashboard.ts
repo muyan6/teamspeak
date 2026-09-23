@@ -4,6 +4,7 @@ import type { DashboardData } from '../types';
 
 const data = ref<DashboardData | null>(null);
 const error = ref('');
+const isWsConnected = ref(false);
 let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshPromise: Promise<void> | null = null;
@@ -48,18 +49,29 @@ function connectWebSocket(): void {
   try {
     ws = new WebSocket(wsUrl);
   } catch {
+    isWsConnected.value = false;
     scheduleReconnect();
     return;
   }
   ws.onopen = () => {
-    /* 连接成功 */
+    isWsConnected.value = true;
   };
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data) as { event: string; data: unknown };
-      // 后端推送的在线状态变化事件，触发防抖数据刷新
-      if (msg.event === 'online-update' || msg.event === 'clients-changed') {
-        void refresh(false);
+      if (msg.event === 'online-update') {
+        const payload = msg.data as { online?: number; maxClients?: number } | undefined;
+        if (data.value && payload && typeof payload.online === 'number') {
+          data.value.online_count = payload.online;
+          if (typeof payload.maxClients === 'number') {
+            data.value.max_clients = payload.maxClients;
+          }
+        }
+      } else if (msg.event === 'clients-changed') {
+        const jitter = Math.floor(Math.random() * 800);
+        setTimeout(() => {
+          void refresh(false);
+        }, jitter);
       }
     } catch {
       /* 忽略非 JSON 消息 */
@@ -67,9 +79,11 @@ function connectWebSocket(): void {
   };
   ws.onclose = () => {
     ws = null;
+    isWsConnected.value = false;
     scheduleReconnect();
   };
   ws.onerror = () => {
+    isWsConnected.value = false;
     ws?.close();
   };
 }
@@ -87,6 +101,11 @@ if (typeof window !== 'undefined') {
   connectWebSocket();
 }
 
-export function useDashboard(): { data: Ref<DashboardData | null>; error: Ref<string>; refresh: () => Promise<void> } {
-  return { data, error, refresh };
+export function useDashboard(): {
+  data: Ref<DashboardData | null>;
+  error: Ref<string>;
+  refresh: (immediate?: boolean) => Promise<void>;
+  isWsConnected: Ref<boolean>;
+} {
+  return { data, error, refresh, isWsConnected };
 }

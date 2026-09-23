@@ -80,8 +80,26 @@ export class DashboardService {
   ) {}
 
   private readonly cacheTtlMs = 10_000;
+  private readonly groupCacheTtlMs = 5 * 60 * 1000;
   private cachedData: { value: DashboardData; expiresAt: number } | null = null;
+  private cachedGroupNames: { value: Map<number, string>; expiresAt: number } | null = null;
   private dataInFlight: Promise<DashboardData> | null = null;
+
+  private async getGroupNames(): Promise<Map<number, string>> {
+    const now = Date.now();
+    if (this.cachedGroupNames && this.cachedGroupNames.expiresAt > now) {
+      return this.cachedGroupNames.value;
+    }
+    try {
+      const groups = await this.ts3.getServerGroups();
+      const map = new Map<number, string>();
+      for (const g of groups) map.set(g.sgid, g.name);
+      this.cachedGroupNames = { value: map, expiresAt: now + this.groupCacheTtlMs };
+      return map;
+    } catch {
+      return this.cachedGroupNames?.value ?? new Map();
+    }
+  }
 
   getSiteSlug(): string {
     return this.config.site.slug;
@@ -163,14 +181,8 @@ export class DashboardService {
     const onlineCount = clients.length;
     const maxClients = state?.maxClients ?? 0;
 
-    // 服务器组名映射
-    const groupNames = new Map<number, string>();
-    try {
-      const groups = await this.ts3.getServerGroups();
-      for (const g of groups) groupNames.set(g.sgid, g.name);
-    } catch {
-      /* ignore */
-    }
+    // 服务器组名映射（带 5 分钟缓存）
+    const groupNames = await this.getGroupNames();
 
     const realtimeList: RealtimeEntry[] = clients.map((c) => ({
       nickname: c.nickname,

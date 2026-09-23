@@ -313,7 +313,9 @@ export function getEffectiveExcludedBotUids(db: AppDatabase): string[] {
 
 export function cleanupBotData(db: AppDatabase): void {
   const uids = getEffectiveExcludedBotUids(db);
-  const botUids = uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ');
+  const botUids = uids.length > 0
+    ? uids.map((u) => `'${u.replace(/'/g, "''")}'`).join(', ')
+    : "''";
   try {
     db.exec(`
       DELETE FROM user_daily_activity
@@ -405,6 +407,7 @@ export function openDatabase(dbPath: string): AppDatabase {
     mkdirSync(dirname(dbPath), { recursive: true });
   }
   const db = new AppDatabase(dbPath);
+  db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA temp_store = MEMORY;');

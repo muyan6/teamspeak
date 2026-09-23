@@ -1,22 +1,22 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================
-echo ?? ¿ªÊ¼¸üĞÂ TS3 Monitor (Windows)...
+echo æ­£åœ¨æ›´æ–° TS3 Monitor (Windows)...
 echo ==========================================
 
 if exist ".git" (
-  echo ?? [1/3] ÕıÔÚÀ­È¡ Git ×îĞÂ´úÂë...
+  echo [1/3] è·å– Git æœ€æ–°ä»£ç ...
   git pull
 )
 
 echo.
-echo ?? [2/3] ±àÒëºó¶Ë (Backend)...
+echo [2/3] æ„å»ºåç«¯ (Backend)...
 cd backend
 call npm install
 call npm run build
 
 echo.
-echo ?? [3/3] ±àÒëÇ°¶Ë (Frontend)...
+echo [3/3] æ„å»ºå‰ç«¯ (Frontend)...
 cd ..\frontend
 call npm install
 call npm run build
@@ -24,7 +24,7 @@ call npm run build
 cd ..
 echo.
 echo ==========================================
-echo ?? TS3 Monitor ±àÒë¸üĞÂÍê³É£¡
-echo ÌáÊ¾£ºÇëÖØÆôÄúµÄºó¶Ë·şÎñ½ø³ÌÒÔÓ¦ÓÃ¸üĞÂ¡£
+echo TS3 Monitor æ›´æ–°å®Œæˆï¼
+echo è¯·é‡å¯åç«¯æœåŠ¡ä»¥åº”ç”¨æ›´æ–°ã€‚
 echo ==========================================
 pause

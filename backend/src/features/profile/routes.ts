@@ -100,7 +100,9 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
     // 2. 本地数据库未命中时，才向 TS3 远端 ServerQuery 回退查找（仅在已连接时）
     if (!identity && deps.ts3.connected) {
       try {
-        const remoteClients = await deps.ts3.getClientDbList();
+        const remoteClients = typeof deps.ts3.findClientDb === 'function'
+          ? await deps.ts3.findClientDb(uid || nickname, Boolean(uid))
+          : await deps.ts3.getClientDbList();
         const found = findClient(remoteClients, nickname, uid);
         if (found) {
           identity = {

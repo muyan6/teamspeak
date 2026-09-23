@@ -200,7 +200,9 @@ export class WeeklyChampionService {
       .run(Date.now(), clientDbId, top.nickname, serverKey);
 
     if (typeof this.stats.recordChampionWinner === 'function') {
-      const weekStart = typeof this.stats.weekStartKey === 'function' ? this.stats.weekStartKey() : undefined;
+      const weekStart = typeof this.stats.calendarWeekStartKey === 'function'
+        ? this.stats.calendarWeekStartKey()
+        : (typeof this.stats.weekStartKey === 'function' ? this.stats.weekStartKey() : undefined);
       this.stats.recordChampionWinner(clientDbId, top.nickname, weekStart);
     }
 

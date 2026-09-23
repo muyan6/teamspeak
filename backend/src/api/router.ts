@@ -49,7 +49,7 @@ export function createRouter(deps: ApiDeps): Router {
   registerAuthRoutes(router, deps, admin);
 
   router.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(503).json({
+    res.status(500).json({
       status: 'error',
       message: (error as Error).message || '服务器内部错误',
     });

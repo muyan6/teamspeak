@@ -30,6 +30,18 @@ function clearAuth(): void {
   localStorage.removeItem('admin_token');
 }
 
+export class ApiError extends Error {
+  status: number;
+  data?: Record<string, unknown>;
+
+  constructor(message: string, status: number, data?: Record<string, unknown>) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, clearSessionOnUnauthorized = true): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -42,8 +54,9 @@ async function request<T>(path: string, options: RequestInit = {}, clearSessionO
     if (res.status === 401 && clearSessionOnUnauthorized) {
       clearAuth();
     }
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string; message?: string }).error || (body as { message?: string }).message || `请求失败 (${res.status})`);
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const message = (body?.error as string) || (body?.message as string) || `请求失败 (${res.status})`;
+    throw new ApiError(message, res.status, body);
   }
   return res.json() as Promise<T>;
 }

@@ -3,8 +3,9 @@ import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useDashboard } from './composables/dashboard';
 import ToastContainer from './components/ToastContainer.vue';
 
-const { data, refresh } = useDashboard();
+const { data, refresh, isWsConnected } = useDashboard();
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let pollTick = 0;
 
 const title = computed(() => data.value?.site.serverName || 'TS3 语音服务器');
 
@@ -20,7 +21,14 @@ watch(
 
 onMounted(() => {
   void refresh();
-  refreshTimer = setInterval(refresh, 15000);
+  refreshTimer = setInterval(() => {
+    pollTick++;
+    // 当 WebSocket 连接正常时，实时状态由 WS 推送保证，HTTP 仅作为 60s 兜底心跳
+    if (isWsConnected.value && pollTick % 4 !== 0) {
+      return;
+    }
+    void refresh();
+  }, 15000);
 });
 
 onUnmounted(() => {
