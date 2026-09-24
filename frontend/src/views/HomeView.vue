@@ -600,20 +600,13 @@ onMounted(() => void loadHomeModules());
           <div v-if="achievements.featured || achievements.rankings.length || achievements.levels.length" class="hall-grid-inner">
             <!-- Left Sub-col: 最高荣誉 & 连续在线 -->
             <div class="hall-left-col">
-              <!-- 1. 周冠军 / 最高荣誉 卡片 (C位高光) -->
+              <!-- 1. 周冠军 / 最高荣誉 卡片 -->
               <div class="champion-hero-card">
-                <div class="champion-ambient-glow"></div>
-                <i class="ph-fill ph-crown champion-crown-watermark"></i>
-                <div class="champion-trophy-box">
-                  <div class="trophy-pedestal">
-                    <i class="ph-fill ph-trophy"></i>
-                  </div>
+                <div class="champion-icon-wrap">
+                  <i class="ph-fill ph-trophy"></i>
                 </div>
                 <div class="champion-info-box">
-                  <div class="champion-kicker-row">
-                    <span class="champion-kicker-dot"></span>
-                    <span class="champion-kicker-text">全服最高荣誉勋位</span>
-                  </div>
+                  <span class="champion-kicker-text">全服最高荣誉</span>
                   <div class="champion-user-name">
                     <router-link
                       v-if="achievements.featured"
@@ -632,14 +625,14 @@ onMounted(() => void loadHomeModules());
                 </div>
               </div>
 
-              <!-- 2. 连续在线 (Streak Challenge) -->
+              <!-- 2. 连续在线 (Streak) -->
               <div class="streak-section-container">
                 <div class="streak-section-header">
                   <div class="streak-header-left">
-                    <i class="ph-fill ph-flame streak-flame-icon"></i>
-                    <span class="streak-header-title">连续在线巅峰</span>
+                    <i class="ph-fill ph-flame" style="color: #fb923c; font-size: 1.125rem"></i>
+                    <span class="streak-header-title">连续在线</span>
                   </div>
-                  <span class="badge-count-pill streak-count-pill">{{ achievements.rankings.length }}人上榜</span>
+                  <span class="badge-count-pill">{{ achievements.rankings.length }}人</span>
                 </div>
 
                 <div class="streak-cards-flex">
@@ -648,13 +641,10 @@ onMounted(() => void loadHomeModules());
                       v-for="(member, index) in achievements.rankings.slice(0, 3)"
                       :key="member.nickname + index"
                       class="streak-card-item"
-                      :class="`rank-pos-${index + 1}`"
                     >
                       <div class="streak-card-top-row">
-                        <span class="streak-rank-tag">#{{ index + 1 }}</span>
-                        <i v-if="index === 0" class="ph-fill ph-flame streak-symbol gold"></i>
-                        <i v-else-if="index === 1" class="ph-fill ph-crown-simple streak-symbol silver"></i>
-                        <i v-else class="ph-fill ph-medal streak-symbol bronze"></i>
+                        <span class="streak-rank-tag" :class="{ 'is-top': index === 0 }">#{{ index + 1 }}</span>
+                        <i v-if="index === 0" class="ph-fill ph-flame" style="color: #fb923c; font-size: 1rem"></i>
                       </div>
                       <div class="streak-card-body">
                         <div class="streak-user-nickname">
@@ -667,8 +657,8 @@ onMounted(() => void loadHomeModules());
                           </router-link>
                         </div>
                         <div class="streak-val-row">
-                          <span class="streak-val-num">{{ member.days }}</span>
-                          <span class="streak-val-unit">天持续</span>
+                          <span class="streak-val-num" :class="{ 'is-top': index === 0 }">{{ member.days }}</span>
+                          <span class="streak-val-unit">天</span>
                         </div>
                       </div>
                     </div>
@@ -684,10 +674,10 @@ onMounted(() => void loadHomeModules());
             <div class="hall-right-col achievements-list-col">
               <div class="streak-section-header">
                 <div class="streak-header-left">
-                  <i class="ph-fill ph-medal-military achievements-header-icon"></i>
-                  <span class="streak-header-title">时长境界成就</span>
+                  <i class="ph-fill ph-medal" style="color: #fbbf24; font-size: 1.125rem"></i>
+                  <span class="streak-header-title">时长成就</span>
                 </div>
-                <span class="badge-count-pill achievements-count-pill">{{ achievements.levels.length }}个阶位</span>
+                <span class="badge-count-pill">{{ achievements.levels.length }}级</span>
               </div>
 
               <div class="achievements-items-wrap">
@@ -696,26 +686,17 @@ onMounted(() => void loadHomeModules());
                     v-for="(level, index) in visibleAchievementLevels"
                     :key="level.id"
                     class="achievement-level-card is-clickable"
-                    :class="index === 0 ? 'tier-top' : (index === 1 ? 'tier-second' : 'tier-norm')"
                     @click="openLevelModal(level, index)"
                     :title="`点击查看已获得「${level.title}」的成员列表`"
                   >
-                    <div class="achievement-badge-box">
+                    <div class="achievement-badge-box" :class="{ 'is-first': index === 0 }">
                       <i :class="getAchievementIcon(index)"></i>
                     </div>
                     <div class="achievement-info-main">
-                      <div class="achievement-title-row">
-                        <span class="achievement-title-text">{{ level.title }}</span>
-                        <span v-if="index === 0" class="achievement-peak-badge">巅峰</span>
-                      </div>
-                      <div class="achievement-hours-desc">
-                        累计在线 {{ formatAchievementHours(level.hours) }} 小时
-                      </div>
+                      <div class="achievement-title-text" :class="{ 'is-first': index === 0 }">{{ level.title }}</div>
+                      <div class="achievement-hours-desc">累计 {{ formatAchievementHours(level.hours) }} 小时</div>
                     </div>
-                    <div class="achievement-unlocked-pill">
-                      <span class="achievement-unlocked-num">{{ level.unlockedCount }}</span>
-                      <span class="achievement-unlocked-label">人达成</span>
-                    </div>
+                    <span class="achievement-count-text">{{ level.unlockedCount }}人</span>
                   </div>
                 </template>
                 <div v-else class="empty-box" style="padding: 1.5rem">
@@ -729,7 +710,7 @@ onMounted(() => void loadHomeModules());
                 class="expand-levels-btn"
                 @click="showAllAchievementLevels = !showAllAchievementLevels"
               >
-                <span>{{ showAllAchievementLevels ? '收起更多阶位' : `展开全部 ${achievements.levels.length} 个成就阶位` }}</span>
+                <span>{{ showAllAchievementLevels ? '收起等级' : `还有 ${achievements.levels.length - 3} 个等级` }}</span>
                 <i :class="showAllAchievementLevels ? 'ph-bold ph-caret-up' : 'ph-bold ph-caret-down'"></i>
               </button>
             </div>
