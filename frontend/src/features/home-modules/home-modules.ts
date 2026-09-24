@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { api } from '../../api';
 
 export const HOME_MODULES = [
   { key: 'connection', title: '连接卡片', description: '服务器地址、管理员信息与快速连接入口', icon: '↗' },
@@ -33,21 +34,6 @@ function normalizeModules(value: unknown): HomeModules {
   }, {} as HomeModules);
 }
 
-async function requestModules(options?: RequestInit): Promise<HomeModules> {
-  const token = localStorage.getItem('admin_token');
-  const response = await fetch('/api/home-modules', {
-    ...options,
-    headers: {
-      ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || body.message || `请求失败 (${response.status})`);
-  return normalizeModules(body.modules);
-}
-
 /** 主页和后台模块管理面板共用的开关状态。 */
 export function useHomeModules() {
   const modules = ref<HomeModules>({ ...DEFAULT_HOME_MODULES });
@@ -60,7 +46,8 @@ export function useHomeModules() {
     loading.value = true;
     error.value = '';
     try {
-      modules.value = await requestModules();
+      const res = await api.getHomeModules();
+      modules.value = normalizeModules(res.modules);
     } catch (cause) {
       error.value = (cause as Error).message;
     } finally {
@@ -72,7 +59,8 @@ export function useHomeModules() {
     saving.value = true;
     error.value = '';
     try {
-      modules.value = await requestModules({ method: 'PUT', body: JSON.stringify({ modules: modules.value }) });
+      const res = await api.saveHomeModules(modules.value);
+      modules.value = normalizeModules(res.modules);
     } catch (cause) {
       error.value = (cause as Error).message;
       throw cause;

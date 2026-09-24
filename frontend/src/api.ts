@@ -124,6 +124,8 @@ export const api = {
   setManagedSubsiteEnabled: (id: number, enabled: boolean) => request<ManagedSubsite>(`/platform/subsites/${id}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   getMultiSubsiteSettings: () => request<MultiSubsiteSettings>('/platform/settings'),
   saveMultiSubsiteSettings: (data: MultiSubsiteSettings) => request<MultiSubsiteSettings>('/platform/settings', { method: 'POST', body: JSON.stringify(data) }),
+  getHomeModules: () => request<{ modules: Record<string, boolean> }>('/home-modules', {}, false),
+  saveHomeModules: (modules: Record<string, boolean>) => request<{ modules: Record<string, boolean> }>('/home-modules', { method: 'PUT', body: JSON.stringify({ modules }) }),
 
   login: async (password: string): Promise<void> => {
     const res = await request<{ token: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }, false);

@@ -192,14 +192,28 @@ function selectSuggestion(suggestion: UserSuggestion) {
   void search();
 }
 
+function onBlur() {
+  setTimeout(() => {
+    suggestions.value = [];
+  }, 200);
+}
+
 function onInput() {
   selectedUid.value = '';
   if (suggestTimer) clearTimeout(suggestTimer);
+  const v = nickname.value.trim();
+  if (!v) {
+    suggestions.value = [];
+    return;
+  }
   suggestTimer = setTimeout(async () => {
-    const v = nickname.value.trim();
-    if (!v) return;
+    const current = nickname.value.trim();
+    if (!current) {
+      suggestions.value = [];
+      return;
+    }
     try {
-      const r = await api.suggestNicknames(v);
+      const r = await api.suggestNicknames(current);
       suggestions.value = r.suggestions;
     } catch {
       suggestions.value = [];
@@ -239,8 +253,9 @@ onMounted(() => {
               placeholder="输入昵称..."
               @keyup.enter="search"
               @input="onInput"
+              @blur="onBlur"
             />
-            <div v-if="suggestions.length > 0 && !profile" class="suggestions">
+            <div v-if="suggestions.length > 0" class="suggestions">
               <button v-for="s in suggestions" :key="s.uid" class="suggestion-item" @click="selectSuggestion(s)">
                 <span>{{ s.nickname }}</span>
                 <small>UID: {{ s.uid }}</small>

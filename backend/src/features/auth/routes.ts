@@ -1,7 +1,7 @@
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { hashAdminPasswordAsync, MAX_ADMIN_PASSWORD_LENGTH, MIN_ADMIN_PASSWORD_LENGTH } from '../../services/auth.js';
-import { pruneRateLimitMap } from '../../api/route-utils.js';
+import { asyncRoute, pruneRateLimitMap } from '../../api/route-utils.js';
 
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -41,7 +41,7 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     attempt.count += 1;
   };
 
-  router.post('/auth/login', async (req, res) => {
+  router.post('/auth/login', asyncRoute(async (req, res) => {
     const clientKey = loginClientKey(req);
     const retryAfterSeconds = getRetryAfterSeconds(clientKey);
     if (retryAfterSeconds > 0) {
@@ -62,13 +62,13 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     }
     failedLogins.delete(clientKey);
     res.json({ token: deps.auth.signToken() });
-  });
+  }));
 
   router.get('/auth/check', admin, (_req, res) => {
     res.json({ admin: true });
   });
 
-  router.post('/auth/password', admin, async (req, res) => {
+  router.post('/auth/password', admin, asyncRoute(async (req, res) => {
     const { currentPassword, newPassword } = req.body ?? {};
     if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
       res.status(400).json({ error: '请填写当前密码和新密码' });
@@ -99,5 +99,5 @@ export function registerAuthRoutes(router: Router, deps: ApiDeps, admin: Request
     } catch {
       res.status(503).json({ error: '管理密码保存失败，请稍后重试' });
     }
-  });
+  }));
 }

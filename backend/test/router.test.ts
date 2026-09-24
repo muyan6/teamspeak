@@ -115,6 +115,7 @@ describe('管理接口与配置回归', () => {
     }];
 
     const savedChampionConfigs: Array<{ enabled: number; serverGroupId: number | null; checkIntervalHours: number }> = [];
+    const editedChannels: Array<{ cid: number; props: unknown }> = [];
     let clientDbListCalls = 0;
     const deps = {
       auth,
@@ -164,6 +165,10 @@ describe('管理接口与配置回归', () => {
         },
         getConfig: () => ({ host: 'localhost', queryPort: 10011, serverPort: 9987, serverId: 0, username: 'serveradmin', password: '' }),
         updateConfig: () => undefined,
+        editChannel: async (cid: number, props: unknown) => {
+          editedChannels.push({ cid, props });
+          return true;
+        },
       },
       publicServer: { host: 'localhost', port: 9987 },
       credentialCipher,
@@ -178,7 +183,7 @@ describe('管理接口与配置回归', () => {
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('测试服务器启动失败');
-    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), auth, savedChampionConfigs, siteConfig, clientDbListCalls: () => clientDbListCalls };
+    return { baseUrl: `http://127.0.0.1:${address.port}/api`, token: auth.signToken(), auth, savedChampionConfigs, siteConfig, editedChannels, clientDbListCalls: () => clientDbListCalls };
   }
 
   it('已登录管理员改密后持久化哈希、旧令牌失效且新令牌可用', async () => {
@@ -434,8 +439,21 @@ describe('管理接口与配置回归', () => {
     });
     expect(unsafeContact.status).toBe(400);
 
+    const numericContactPayload = {
+      ...siteInfoPayload,
+      adminSteam: '76561198012345678',
+      adminQq: '123456789',
+    };
+    const savedNumericContact = await fetch(`${baseUrl}/site-config`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(numericContactPayload),
+    });
+    expect(savedNumericContact.status).toBe(200);
+    expect(await savedNumericContact.json()).toEqual(numericContactPayload);
+
     const loadedSiteInfo = await fetch(`${baseUrl}/site-config`);
-    expect(await loadedSiteInfo.json()).toEqual(siteInfoPayload);
+    expect(await loadedSiteInfo.json()).toEqual(numericContactPayload);
   });
 
   it('成就管理接口需要管理员凭证并校验新增数据', async () => {
@@ -463,6 +481,19 @@ describe('管理接口与配置回归', () => {
       });
       expect(response.status).toBe(400);
     }
+  });
+
+  it('频道编辑支持清空密码与有效参数更新', async () => {
+    const { baseUrl, token, editedChannels } = await startRouter();
+    const response = await fetch(`${baseUrl}/admin/channels/12`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '公开大厅', password: '', maxclients: 20 }),
+    });
+    expect(response.status).toBe(200);
+    expect(editedChannels).toEqual([
+      { cid: 12, props: { name: '公开大厅', cpid: undefined, password: '', maxclients: 20 } },
+    ]);
   });
 
   it('用户查询优先命中本地数据库且不触发 TS3 远程查询', async () => {

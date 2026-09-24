@@ -51,4 +51,35 @@ describe('分站 Host 路由', () => {
     expect(response.status).toBe(404);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
+
+  it('停用或未知分站域名访问健康检查返回 404', () => {
+    const manager = {
+      getHealthForHost: vi.fn(() => null),
+      isManagedSubsiteHost: vi.fn((host: string) => host === 'stopped.example.com'),
+    };
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
+    const healthHandler = (req: { hostname: string }, res: { json: (data: unknown) => void; status: (code: number) => { json: (data: unknown) => void } }) => {
+      const hostHealth = manager.getHealthForHost(req.hostname);
+      if (hostHealth) {
+        res.json(hostHealth);
+        return;
+      }
+      if (manager.isManagedSubsiteHost(req.hostname)) {
+        res.status(404).json({ error: '分站不存在或已停用' });
+        return;
+      }
+      res.json({ ok: true, ts3Connected: true, site: 'main', platform: true });
+    };
+
+    healthHandler({ hostname: 'stopped.example.com' }, { json, status });
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ error: '分站不存在或已停用' });
+
+    json.mockClear();
+    status.mockClear();
+    healthHandler({ hostname: 'example.com' }, { json, status });
+    expect(status).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, platform: true }));
+  });
 });

@@ -52,7 +52,7 @@ function normalizeAdminContact(value: unknown): string {
   const contact = value.trim();
   if (!contact) return '';
   if (contact.length > MAX_ADMIN_CONTACT_LENGTH) throw new Error(`管理员联系方式不能超过 ${MAX_ADMIN_CONTACT_LENGTH} 个字符`);
-  if (/^[1-9]\d{4,11}$/.test(contact)) return contact;
+  if (/^[1-9]\d{4,19}$/.test(contact)) return contact;
   try {
     const url = new URL(contact);
     if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'tencent:' || url.protocol === 'mqqwpa:') {
@@ -61,7 +61,7 @@ function normalizeAdminContact(value: unknown): string {
   } catch {
     // 统一返回字段错误，避免泄漏运行时细节。
   }
-  throw new Error('管理员联系方式仅支持 QQ 号码、HTTP(S)、tencent 或 mqqwpa 链接');
+  throw new Error('管理员联系方式仅支持纯数字账号（QQ/SteamID等）、HTTP(S)、tencent 或 mqqwpa 链接');
 }
 
 function sanitizeAdminContact(value: unknown): string {

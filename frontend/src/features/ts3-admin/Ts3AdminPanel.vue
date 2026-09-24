@@ -27,7 +27,7 @@ function showNotice(msg: string, type: 'success' | 'error' | 'warning' = 'succes
 }
 
 const chForm = ref({ name: '', cpid: 0, password: '' });
-const editing = ref<{ cid: number; name: string; originalCpid: number; cpid: number; password: string; maxclients: number } | null>(null);
+const editing = ref<{ cid: number; name: string; originalCpid: number; cpid: number; password: string; clearPassword?: boolean; maxclients: number } | null>(null);
 
 const moveSel = ref<Record<number, number>>({});
 const assignSel = ref<Record<number, number>>({});
@@ -94,7 +94,7 @@ async function removeChannel(cid: number) {
 }
 
 function startEdit(ch: AdminChannel) {
-  editing.value = { cid: ch.cid, name: ch.name, originalCpid: ch.parentId, cpid: ch.parentId, password: '', maxclients: 0 };
+  editing.value = { cid: ch.cid, name: ch.name, originalCpid: ch.parentId, cpid: ch.parentId, password: '', clearPassword: false, maxclients: 0 };
 }
 
 async function saveEdit() {
@@ -105,11 +105,17 @@ async function saveEdit() {
     showNotice('更新失败：频道名称不能为空', 'warning');
     return;
   }
+  let passwordPayload: string | undefined = undefined;
+  if (e.clearPassword) {
+    passwordPayload = '';
+  } else if (e.password.trim() !== '') {
+    passwordPayload = e.password;
+  }
   try {
     await api.editChannel(e.cid, {
       name,
       cpid: e.cpid !== e.originalCpid ? e.cpid : undefined,
-      password: e.password.trim() !== '' ? e.password : undefined,
+      password: passwordPayload,
       maxclients: e.maxclients > 0 ? e.maxclients : undefined,
     });
     const cid = e.cid;
@@ -291,8 +297,13 @@ onUnmounted(() => {
               <option :value="0">根目录（无父频道）</option>
               <option v-for="c in channels.filter((x) => x.cid !== editing!.cid)" :key="c.cid" :value="c.cid">{{ c.name }}</option>
             </select>
-            <input v-model="editing.password" class="input" placeholder="新密码(可选)" />
+            <input v-model="editing.password" class="input" :disabled="editing.clearPassword" placeholder="新密码(留空不改)" />
             <input v-model.number="editing.maxclients" class="input" type="number" placeholder="人数上限(0不改)" />
+          </div>
+          <div style="margin-top: 8px">
+            <label style="font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px">
+              <input v-model="editing.clearPassword" type="checkbox" /> 清空频道密码（移除密码保护）
+            </label>
           </div>
         </div>
         <div class="modal-actions">

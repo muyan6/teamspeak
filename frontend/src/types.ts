@@ -91,6 +91,7 @@ export interface ElasticGroup {
   namePrefix: string;
   createThreshold: number;
   deleteThreshold: number;
+  baseChannelId: number | null;
   maxChannels: number;
   enabled: number;
 }

@@ -93,11 +93,15 @@ async function main(): Promise<void> {
       res.json(hostHealth);
       return;
     }
+    if (subsiteManager.isManagedSubsiteHost(req.hostname)) {
+      res.status(404).json({ error: '分站不存在或已停用' });
+      return;
+    }
     res.json({
       ok: true,
       ts3Connected: ts3.connected,
       site: config.site.slug,
-      platform: !subsiteManager.isManagedSubsiteHost(req.hostname),
+      platform: true,
     });
   });
 

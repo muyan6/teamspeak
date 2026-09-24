@@ -206,7 +206,7 @@ export class StatsService {
 
       const addDurationStmt = this.db.prepare(`
         UPDATE user_online_duration
-        SET total_seconds = total_seconds + ?, week_seconds = week_seconds + ?,
+        SET total_seconds = total_seconds + ?,
             longest_session_seconds = MAX(longest_session_seconds, ?),
             nickname = ?, unique_identifier = ?, last_updated = ?
         WHERE server_key = ? AND client_database_id = ?
@@ -362,7 +362,6 @@ export class StatsService {
           if (initialDelta > 0) {
             addDurationStmt.run(
               initialDelta,
-              initialDelta,
               currentSessionDuration || initialDelta,
               c.nickname,
               c.uniqueIdentifier,
@@ -381,7 +380,6 @@ export class StatsService {
           const deltaSec = Math.max(0, nowSec - deltaStartSec);
           if (deltaSec > 0) {
             addDurationStmt.run(
-              deltaSec,
               deltaSec,
               currentSessionDuration || deltaSec,
               c.nickname,
@@ -413,7 +411,6 @@ export class StatsService {
           });
           if (deltaSec > 0) {
             addDurationStmt.run(
-              deltaSec,
               deltaSec,
               currentSessionDuration || deltaSec,
               c.nickname,
@@ -479,7 +476,7 @@ export class StatsService {
             const deltaSec = Math.max(0, Math.floor((now - r.last_seen) / 1000));
             const userSessionDuration = r.connected_time > 0 ? Math.max(0, nowSec - Math.floor(r.connected_time)) : deltaSec;
             if (deltaSec > 0) {
-              addDurationStmt.run(deltaSec, deltaSec, userSessionDuration || deltaSec, r.nickname, r.unique_identifier, now, this.serverKey, r.client_database_id);
+              addDurationStmt.run(deltaSec, userSessionDuration || deltaSec, r.nickname, r.unique_identifier, now, this.serverKey, r.client_database_id);
               addUserDaily(r.client_database_id, r.nickname, Math.floor(r.last_seen / 1000), nowSec);
               if (r.channel_id > 0) {
                 channelStmt.run(this.serverKey, r.channel_id, r.channel_name, null, now);
