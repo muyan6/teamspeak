@@ -97,19 +97,29 @@ function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'su
 }
 
 async function load(): Promise<void> {
-  try {
-    const [achievementLevels, badgeList, unlockedAchievements, serverGroups] = await Promise.all([
-      api.listAchievementLevels(),
-      api.listBadges(),
-      api.listUnlockedAchievements(),
-      api.getServerGroups(),
-    ]);
-    levels.value = achievementLevels;
-    badges.value = badgeList;
-    unlocked.value = unlockedAchievements;
-    groups.value = serverGroups;
-  } catch (error) {
-    showNotice(`加载成就数据失败：${(error as Error).message}`, 'error');
+  // 分别降级：例如 TS3 未连接时 getServerGroups 会失败，但成就/勋章列表仍应正常显示。
+  const [achievementLevels, badgeList, unlockedAchievements, serverGroups] = await Promise.allSettled([
+    api.listAchievementLevels(),
+    api.listBadges(),
+    api.listUnlockedAchievements(),
+    api.getServerGroups(),
+  ]);
+  if (achievementLevels.status === 'fulfilled') levels.value = achievementLevels.value;
+  if (badgeList.status === 'fulfilled') badges.value = badgeList.value;
+  if (unlockedAchievements.status === 'fulfilled') unlocked.value = unlockedAchievements.value;
+  if (serverGroups.status === 'fulfilled') groups.value = serverGroups.value;
+
+  const failures = [
+    ['时长成就', achievementLevels],
+    ['勋章列表', badgeList],
+    ['解锁记录', unlockedAchievements],
+    ['服务器组', serverGroups],
+  ].filter(([, result]) => (result as PromiseSettledResult<unknown>).status === 'rejected');
+  if (failures.length > 0) {
+    const detail = failures
+      .map(([label, result]) => `${label}：${((result as PromiseRejectedResult).reason as Error)?.message || '请求失败'}`)
+      .join('；');
+    showNotice(`部分成就数据加载失败（${detail}）`, 'warning');
   }
 }
 
@@ -238,7 +248,7 @@ function openEditBadgeModal(b: BadgeDefinition): void {
     color: b.color || '#fbbf24',
     description: b.description || '',
     serverGroupId: b.serverGroupId || 0,
-    sortOrder: b.sortOrder || 100,
+    sortOrder: b.sortOrder !== undefined && b.sortOrder !== null ? Number(b.sortOrder) : 100,
   };
   showBadgeModal.value = true;
 }
@@ -262,6 +272,9 @@ async function saveBadge(): Promise<void> {
   }
 
   const current = editingBadgeId.value ? badges.value.find((b) => b.id === editingBadgeId.value) : null;
+  const parsedSortOrder = badgeForm.value.sortOrder !== undefined && badgeForm.value.sortOrder !== null && String(badgeForm.value.sortOrder).trim() !== ''
+    ? Number(badgeForm.value.sortOrder)
+    : 100;
   const payload = {
     name: badgeForm.value.name.trim(),
     category: badgeForm.value.category,
@@ -271,7 +284,7 @@ async function saveBadge(): Promise<void> {
     conditionType: badgeForm.value.conditionType,
     conditionParams,
     serverGroupId: badgeForm.value.serverGroupId || 0,
-    sortOrder: Number(badgeForm.value.sortOrder || 100),
+    sortOrder: Number.isSafeInteger(parsedSortOrder) ? parsedSortOrder : 100,
     enabled: current ? current.enabled : 1,
   };
 
@@ -505,7 +518,7 @@ onMounted(() => { void load(); });
         <div class="section-title">最近已解锁记录</div>
         <div v-if="!unlocked.length" class="empty">暂无已解锁记录</div>
         <ul v-else class="history-list">
-          <li v-for="entry in unlocked.slice(0, 10)" :key="`${entry.nickname}-${entry.title}`">
+          <li v-for="(entry, entryIndex) in unlocked.slice(0, 10)" :key="`${entry.nickname}-${entry.title}-${entryIndex}`">
             <span style="font-weight: 700; color: var(--text)">{{ entry.nickname }}</span>
             <span style="color: var(--amber)">{{ entry.title }} · 达成 {{ entry.hours }} 小时</span>
           </li>

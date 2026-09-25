@@ -10,6 +10,7 @@ export interface SiteData {
   clientDownload: string;
   mirrorDownload: string;
   translationDownload: string;
+  clientVersion: string;
   adminName: string;
   adminQq: string;
   adminSteam: string;
@@ -36,6 +37,14 @@ export interface DownloadConfig {
   clientDownload?: string;
   mirrorDownload?: string;
   translationDownload?: string;
+  /** 客户端版本号；用于首页「推荐使用 vX.Y.Z 稳定版」文案。 */
+  version?: string;
+}
+
+/** 版本号只允许数字与点，避免后台填入任意文本被直接渲染到页面。 */
+export function normalizeVersionLabel(value: unknown): string {
+  const text = safeText(value);
+  return /^\d+(?:\.\d+){0,3}$/.test(text) ? text : '';
 }
 
 export interface SiteInfoConfig {
@@ -61,6 +70,9 @@ export interface TutorialConfig {
 function safeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
+
+/** 与 DOWNLOAD_LINKS 中默认安装包对应的版本号。 */
+export const DEFAULT_CLIENT_VERSION = '3.6.2';
 
 export const DOWNLOAD_LINKS = {
   clientDownload: 'https://files.teamspeak-services.com/releases/client/3.6.2/TeamSpeak3-Client-win64-3.6.2.exe',
@@ -93,13 +105,17 @@ export function buildSiteData(
     clientDownload: download?.clientDownload || DOWNLOAD_LINKS.clientDownload,
     mirrorDownload: download?.mirrorDownload || DOWNLOAD_LINKS.mirrorDownload,
     translationDownload: download?.translationDownload || DOWNLOAD_LINKS.translationDownload,
+    // 后台配置的版本号现在真正生效（旧实现保存了却从未被读取）。
+    clientVersion: normalizeVersionLabel(download?.version) || DEFAULT_CLIENT_VERSION,
     adminName: safeText(siteInfo?.adminName) || config.site.adminName,
     adminQq: adminContact,
     adminSteam: adminContact,
     globalServer: config.site.globalServer,
-    musicBotUrl: safeText(siteInfo?.musicBotUrl) || safeText(musicBotUrl),
-    webClientUrl: safeText(siteInfo?.webClientUrl) || safeText(webClientUrl),
-    steamBoxUrl: safeText(siteInfo?.steamBoxUrl) || safeText(steamBoxUrl),
+    // 单一数据源：这几个外链只由 site_config 的独立键持有，siteInfo 仅作历史兜底。
+    // 旧实现让 siteInfo 优先，导致「教程配置」页保存的新值被 siteInfo 里的旧值遮蔽。
+    musicBotUrl: safeText(musicBotUrl) || safeText(siteInfo?.musicBotUrl),
+    webClientUrl: safeText(webClientUrl) || safeText(siteInfo?.webClientUrl),
+    steamBoxUrl: safeText(steamBoxUrl) || safeText(siteInfo?.steamBoxUrl),
   };
 }
 

@@ -8,6 +8,7 @@ export interface SiteInfo {
   clientDownload: string;
   mirrorDownload: string;
   translationDownload: string;
+  clientVersion: string;
   adminName: string;
   adminQq?: string;
   adminSteam?: string;

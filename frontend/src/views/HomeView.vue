@@ -31,6 +31,14 @@ const visibleAchievementLevels = computed(() =>
   showAllAchievementLevels.value ? achievements.value.levels : achievements.value.levels.slice(0, 3),
 );
 
+// 图标按「等级在完整列表中的下标」选取，而不是按当前可见列表的下标。
+// 否则点击「展开等级」后，前三名的图标配色会随新下标跳变。
+const achievementLevelIndex = computed(() => {
+  const map = new Map<number, number>();
+  achievements.value.levels.forEach((level, index) => map.set(level.id, index));
+  return map;
+});
+
 const tutorialSection = computed(() => {
   if (!data.value) return null;
   const sections = data.value.tutorial.sections;
@@ -68,6 +76,11 @@ const musicBotUrl = computed(() => safeHttpUrl(data.value?.site.musicBotUrl));
 const webClientUrl = computed(() => safeHttpUrl(data.value?.site.webClientUrl));
 const steamBoxUrl = computed(() => safeHttpUrl(data.value?.site.steamBoxUrl));
 const adminQqDisplay = computed(() => 'QQ');
+// 版本号来自后台「教程配置」，后端已做白名单校验；这里再兜底一次默认值。
+const downloadVersion = computed(() => {
+  const v = (data.value?.site.clientVersion || '').trim();
+  return /^\d+(?:\.\d+){0,3}$/.test(v) ? `v${v}` : 'v3.6.2';
+});
 
 const configuredActionCount = computed(() => {
   let count = 1;
@@ -361,7 +374,7 @@ onMounted(() => void loadHomeModules());
           <h3 class="download-card-title">
             <i class="ph-duotone ph-windows-logo" style="color: #38bdf8; font-size: 1.25rem"></i> 需要客户端？
           </h3>
-          <p class="download-card-subtitle">推荐使用 v3.6.2 稳定版</p>
+          <p class="download-card-subtitle">推荐使用 {{ downloadVersion }} 稳定版</p>
         </div>
 
         <a v-if="clientDownloadUrl" class="download-main-btn" :href="clientDownloadUrl" target="_blank" rel="noopener">
@@ -485,7 +498,7 @@ onMounted(() => void loadHomeModules());
               <span>暂无数据</span>
             </div>
             <ul v-else class="rank-list-scroll">
-              <li v-for="(u, i) in ranks.slice(0, 7)" :key="u.name + i" class="rank-item-row">
+              <li v-for="(u, i) in ranks.slice(0, 7)" :key="u.name + '-' + i" class="rank-item-row">
                 <div class="rank-progress-bg rank-progress-amber" :style="{ width: rankWidth(ranks, u) }"></div>
                 <div class="rank-item-content">
                   <div class="rank-user-info">
@@ -561,7 +574,7 @@ onMounted(() => void loadHomeModules());
               <span>暂无数据</span>
             </div>
             <ul v-else class="rank-list-scroll">
-              <li v-for="(c, i) in channels.slice(0, 7)" :key="c.name + i" class="rank-item-row">
+              <li v-for="(c, i) in channels.slice(0, 7)" :key="c.name + '-' + i" class="rank-item-row">
                 <div class="rank-progress-bg rank-progress-sky" :style="{ width: rankWidth(channels, c) }"></div>
                 <div class="rank-item-content">
                   <div class="rank-user-info">
@@ -683,17 +696,17 @@ onMounted(() => void loadHomeModules());
               <div class="achievements-items-wrap">
                 <template v-if="achievements.levels.length">
                   <div
-                    v-for="(level, index) in visibleAchievementLevels"
+                    v-for="level in visibleAchievementLevels"
                     :key="level.id"
                     class="achievement-level-card is-clickable"
-                    @click="openLevelModal(level, index)"
+                    @click="openLevelModal(level, achievementLevelIndex.get(level.id) ?? 0)"
                     :title="`点击查看已获得「${level.title}」的成员列表`"
                   >
-                    <div class="achievement-badge-box" :class="{ 'is-first': index === 0 }">
-                      <i :class="getAchievementIcon(index)"></i>
+                    <div class="achievement-badge-box" :class="{ 'is-first': (achievementLevelIndex.get(level.id) ?? 0) === 0 }">
+                      <i :class="getAchievementIcon(achievementLevelIndex.get(level.id) ?? 0)"></i>
                     </div>
                     <div class="achievement-info-main">
-                      <div class="achievement-title-text" :class="{ 'is-first': index === 0 }">{{ level.title }}</div>
+                      <div class="achievement-title-text" :class="{ 'is-first': (achievementLevelIndex.get(level.id) ?? 0) === 0 }">{{ level.title }}</div>
                       <div class="achievement-hours-desc">累计 {{ formatAchievementHours(level.hours) }} 小时</div>
                     </div>
                     <span class="achievement-count-text">{{ level.unlockedCount }}人</span>

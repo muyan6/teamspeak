@@ -89,6 +89,22 @@ export interface AppConfig {
   dbPath: string;
   collectIntervalMs: number;
   sampleIntervalMs: number;
+  /** Express `trust proxy` 设置。默认只信任本机反向代理，避免 Host / X-Forwarded-* 被外部伪造。 */
+  trustProxy: boolean | number | string;
+}
+
+/**
+ * 解析 TRUST_PROXY。
+ * 默认 loopback：只有当反向代理与后端位于同一台机器时才信任转发头。
+ * 直连（未配置代理）时该设置也不会放宽任何来源，因为 loopback 不匹配外部 IP。
+ */
+export function parseTrustProxy(value: string | undefined): boolean | number | string {
+  const raw = (value ?? '').trim();
+  if (!raw) return 'loopback';
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -130,5 +146,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbPath: resolveDbPath(env.DB_PATH),
     collectIntervalMs: intEnv(env, 'COLLECT_INTERVAL_MS', 30000, 1000),
     sampleIntervalMs: intEnv(env, 'SAMPLE_INTERVAL_MS', 300000, 1000),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
   };
 }

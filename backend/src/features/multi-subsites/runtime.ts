@@ -15,8 +15,23 @@ import { DashboardService } from '../../services/dashboard.js';
 import { MonitorService } from '../../services/monitor.js';
 import { StatsService } from '../../services/stats.js';
 import { getTs3ServerKey, Ts3ClientWrapper } from '../../ts3/client.js';
+import { normalizeHost } from '../../net/host.js';
 import type { WsHub } from '../../ws/hub.js';
 import type { ManagedSubsite, MultiSubsiteRegistry, UpdateManagedSubsiteInput } from './service.js';
+
+/**
+ * 分站对外访问地址。
+ *
+ * 不能硬编码 `http://`：生产部署（install.md）使用 HTTPS，后台里展示 http 链接
+ * 会被浏览器拦截或降级。这里按请求时站点使用的协议推导，并允许通过
+ * SITE_PROTOCOL 环境变量显式覆盖。
+ */
+export function subsiteUrl(domain: string, protocol = process.env.SITE_PROTOCOL): string {
+  const scheme = protocol === 'http' || protocol === 'https'
+    ? protocol
+    : (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+  return `${scheme}://${domain}`;
+}
 
 class ManagedSubsiteRuntime {
   readonly db: AppDatabase;
@@ -28,8 +43,11 @@ class ManagedSubsiteRuntime {
   private readonly elastic: ElasticChannelService;
   private readonly champion: WeeklyChampionService;
   private readonly achievement: AchievementService;
-  private readonly timers: NodeJS.Timeout[] = [];
+  /** 只存放 setInterval 句柄；setTimeout（周冠军/初始归档）单独用 championTimer / initialArchiveTimer 管理。 */
+  private readonly intervalTimers: NodeJS.Timeout[] = [];
   private championTimer?: NodeJS.Timeout;
+  private initialArchiveTimer?: NodeJS.Timeout;
+  private stopped = false;
 
   constructor(
     readonly subsite: ManagedSubsite,
@@ -83,26 +101,34 @@ class ManagedSubsiteRuntime {
     }, 6 * 3600 * 1000);
     const archiveDbPath = path.resolve(path.dirname(this.dbPath), `${this.subsite.slug}_archive.db`);
     const archiveTimer = setInterval(() => {
-      void this.safeRun(async () => {
-        const res = this.stats.archiveOldData(archiveDbPath, 180, 365);
-        if (res.archivedSamples > 0 || res.archivedSessions > 0 || res.archivedChannelDays > 0 || res.archivedUserDays > 0) {
-          console.log(`[archive:${this.subsite.slug}] 历史数据已归档: samples=${res.archivedSamples}, sessions=${res.archivedSessions}`);
-        }
-      });
+      void this.safeRun(() => this.runArchive(archiveDbPath));
     }, 24 * 3600 * 1000);
     elasticTimer.unref();
     achievementTimer.unref();
     directoryTimer.unref();
     archiveTimer.unref();
-    this.timers.push(elasticTimer, achievementTimer, directoryTimer, archiveTimer);
+    this.intervalTimers.push(elasticTimer, achievementTimer, directoryTimer, archiveTimer);
+    // 首次归档与总站保持一致（启动 10 秒后跑一次），而不是等满 24 小时。
+    this.initialArchiveTimer = setTimeout(() => {
+      void this.safeRun(() => this.runArchive(archiveDbPath));
+    }, 10_000);
+    this.initialArchiveTimer.unref();
     void this.runChampionAndSchedule();
   }
 
   stop(): void {
+    this.stopped = true;
     this.monitor.stop();
     this.ts3.stop();
-    this.timers.splice(0).forEach(clearInterval);
-    if (this.championTimer) clearTimeout(this.championTimer);
+    for (const timer of this.intervalTimers.splice(0)) clearInterval(timer);
+    if (this.championTimer) {
+      clearTimeout(this.championTimer);
+      this.championTimer = undefined;
+    }
+    if (this.initialArchiveTimer) {
+      clearTimeout(this.initialArchiveTimer);
+      this.initialArchiveTimer = undefined;
+    }
     this.db.close();
   }
 
@@ -126,16 +152,28 @@ class ManagedSubsiteRuntime {
     if (this.ts3.connected) await this.achievement.check();
   }
 
+  private async runArchive(archiveDbPath: string): Promise<void> {
+    const res = this.stats.archiveOldData(archiveDbPath, 180, 365);
+    if (res.archivedSamples > 0 || res.archivedSessions > 0 || res.archivedChannelDays > 0 || res.archivedUserDays > 0) {
+      console.log(`[archive:${this.subsite.slug}] 历史数据已归档: samples=${res.archivedSamples}, sessions=${res.archivedSessions}`);
+    }
+  }
+
   private async runChampionAndSchedule(): Promise<void> {
+    if (this.stopped) return;
     await this.safeRun(async () => {
       if (this.ts3.connected) await this.champion.check();
     });
+    if (this.stopped) return;
     const hours = this.champion.getConfig().checkIntervalHours;
-    this.championTimer = setTimeout(() => void this.runChampionAndSchedule(), (hours > 0 ? hours : 24) * 3600 * 1000);
+    // 与 WeeklyChampionService 的合法区间保持一致（1..168 小时），避免脏数据产生超长定时器。
+    const intervalHours = Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24;
+    this.championTimer = setTimeout(() => void this.runChampionAndSchedule(), intervalHours * 3600 * 1000);
     this.championTimer.unref();
   }
 
   private async safeRun(action: () => Promise<void>): Promise<void> {
+    if (this.stopped) return;
     try { await action(); } catch { /* 下一轮继续执行 */ }
   }
 }
@@ -186,7 +224,10 @@ export class MultiSubsiteRuntimeManager {
         const archiveFile = path.join(subsiteDir, `${subsite.slug}_archive.db`);
         const walFile = path.join(subsiteDir, `${subsite.slug}.db-wal`);
         const shmFile = path.join(subsiteDir, `${subsite.slug}.db-shm`);
-        for (const f of [dbFile, archiveFile, walFile, shmFile]) {
+        // 非 WAL 模式（或降级）时 SQLite 会生成 -journal，一并清理避免残留。
+        const journalFile = path.join(subsiteDir, `${subsite.slug}.db-journal`);
+        const archiveJournalFile = path.join(subsiteDir, `${subsite.slug}_archive.db-journal`);
+        for (const f of [dbFile, archiveFile, walFile, shmFile, journalFile, archiveJournalFile]) {
           if (existsSync(f)) rmSync(f, { force: true });
         }
       } catch (err) {
@@ -210,7 +251,7 @@ export class MultiSubsiteRuntimeManager {
         ...subsite,
         connected: runtime?.ts3.connected ?? false,
         lastError: runtime?.ts3.lastError ?? '',
-        url: `http://${subsite.domain}`,
+        url: subsiteUrl(subsite.domain),
       };
     });
   }
@@ -242,8 +283,7 @@ export class MultiSubsiteRuntimeManager {
   }
 
   isManagedSubsiteHost(host: string): boolean {
-    const normalized = host.toLowerCase().replace(/\.$/, '');
-    return this.registry.hasHost(normalized);
+    return this.registry.hasHost(normalizeHost(host));
   }
 
   private start(subsite: ManagedSubsite): void {

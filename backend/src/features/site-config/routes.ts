@@ -116,21 +116,19 @@ export function registerSiteConfigRoutes(router: Router, deps: ApiDeps, admin: R
       if (typeof body.adminQq === 'string') {
         siteInfo.adminQq = normalizeAdminContact(body.adminQq);
       }
+      // 这些外链只写入独立的 site_config 键（单一数据源）。
+      // 旧实现同时写进 siteInfo，两处一旦不同步就会出现「后台显示 A、首页显示 B」。
       if (body.tsManagerUrl !== undefined) {
-        siteInfo.tsManagerUrl = normalizeHttpUrl(body.tsManagerUrl, 'TS Manager 链接') ?? '';
-        deps.configStore.set('tsManagerUrl', siteInfo.tsManagerUrl);
+        deps.configStore.set('tsManagerUrl', normalizeHttpUrl(body.tsManagerUrl, 'TS Manager 链接') ?? '');
       }
       if (body.musicBotUrl !== undefined) {
-        siteInfo.musicBotUrl = normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接') ?? '';
-        deps.configStore.set('musicBotUrl', siteInfo.musicBotUrl);
+        deps.configStore.set('musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接') ?? '');
       }
       if (body.webClientUrl !== undefined) {
-        siteInfo.webClientUrl = normalizeHttpUrl(body.webClientUrl, 'WebSpeak 网页端链接') ?? '';
-        deps.configStore.set('webClientUrl', siteInfo.webClientUrl);
+        deps.configStore.set('webClientUrl', normalizeHttpUrl(body.webClientUrl, 'WebSpeak 网页端链接') ?? '');
       }
       if (body.steamBoxUrl !== undefined) {
-        siteInfo.steamBoxUrl = normalizeHttpUrl(body.steamBoxUrl, 'Steam 盒子链接') ?? '';
-        deps.configStore.set('steamBoxUrl', siteInfo.steamBoxUrl);
+        deps.configStore.set('steamBoxUrl', normalizeHttpUrl(body.steamBoxUrl, 'Steam 盒子链接') ?? '');
       }
       deps.configStore.setJson('siteInfo', siteInfo);
       if (deps.stats?.getDatabase) {

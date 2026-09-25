@@ -1,5 +1,7 @@
 import type { AppDatabase } from '../../db/database.js';
 import { CredentialCipher, hashAdminPassword, isAdminPasswordHash } from '../../services/auth.js';
+import { normalizeHost } from '../../net/host.js';
+import { isValidHost } from '../ts3-admin/routes.js';
 
 export interface ManagedSubsite {
   id: number;
@@ -75,10 +77,6 @@ function asServerId(value: unknown, fallback = 0): number {
   return parsed;
 }
 
-function normalizeHost(value: unknown): string {
-  return asText(value).toLowerCase().replace(/\.$/, '');
-}
-
 export function validateDomain(domain: string): string {
   if (!domain || domain.length > 253 || domain.includes('://') || domain.includes('/') || domain.includes(' ')) {
     throw new Error('分站域名格式无效');
@@ -91,15 +89,37 @@ export function validateDomain(domain: string): string {
 }
 
 function validateBaseDomain(value: unknown): string {
-  const domain = validateDomain(normalizeHost(value));
+  const domain = validateDomain(normalizeHost(asText(value)));
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)) throw new Error('根域名不能使用 IP 地址');
   return domain;
 }
 
-function fromRow(row: Record<string, unknown>, credentialCipher: CredentialCipher): ManagedSubsite {
+/**
+ * 容错解密。密钥丢失/更换时只让该行凭据降级为空字符串，
+ * 而不是让整个分站列表（后台「统一分站」页）500，导致管理员无法进入页面修复。
+ */
+function safeDecrypt(
+  cipher: CredentialCipher,
+  value: string,
+  onError: (error: unknown) => void
+): string {
+  try {
+    return cipher.decrypt(value);
+  } catch (error) {
+    onError(error);
+    return '';
+  }
+}
+
+function fromRow(
+  row: Record<string, unknown>,
+  credentialCipher: CredentialCipher,
+  onDecryptError?: (slug: string, error: unknown) => void
+): ManagedSubsite {
+  const slug = String(row.slug);
   return {
     id: Number(row.id),
-    slug: String(row.slug),
+    slug,
     displayName: String(row.display_name),
     domain: String(row.domain),
     ts3Host: String(row.ts3_host),
@@ -107,7 +127,9 @@ function fromRow(row: Record<string, unknown>, credentialCipher: CredentialCiphe
     serverPort: Number(row.server_port),
     serverId: Number(row.server_id ?? 0),
     username: String(row.query_username),
-    password: credentialCipher.decrypt(String(row.query_password)),
+    password: safeDecrypt(credentialCipher, String(row.query_password), (error) => {
+      onDecryptError?.(slug, error);
+    }),
     publicHost: String(row.public_host),
     publicPort: Number(row.public_port),
     adminPassword: String(row.admin_password),
@@ -176,19 +198,23 @@ export class MultiSubsiteRegistry {
     return this.getSettings();
   }
 
+  private reportDecryptError(slug: string, error: unknown): void {
+    console.error(`[subsite] 分站「${slug}」的 ServerQuery 凭据无法解密，请检查 CREDENTIAL_ENCRYPTION_KEY 或数据目录下的 .credentials.key`, error);
+  }
+
   list(): ManagedSubsite[] {
     return this.db.prepare('SELECT * FROM managed_subsites ORDER BY created_at DESC').all<Record<string, unknown>>()
-      .map((row) => fromRow(row, this.credentialCipher));
+      .map((row) => fromRow(row, this.credentialCipher, (slug, error) => this.reportDecryptError(slug, error)));
   }
 
   get(id: number): ManagedSubsite | null {
     const row = this.db.prepare('SELECT * FROM managed_subsites WHERE id = ?').get<Record<string, unknown>>(id);
-    return row ? fromRow(row, this.credentialCipher) : null;
+    return row ? fromRow(row, this.credentialCipher, (slug, error) => this.reportDecryptError(slug, error)) : null;
   }
 
   getByHost(host: string): ManagedSubsite | null {
     const row = this.db.prepare('SELECT * FROM managed_subsites WHERE domain = ? AND enabled = 1').get<Record<string, unknown>>(normalizeHost(host));
-    return row ? fromRow(row, this.credentialCipher) : null;
+    return row ? fromRow(row, this.credentialCipher, (slug, error) => this.reportDecryptError(slug, error)) : null;
   }
 
   hasHost(host: string): boolean {
@@ -201,18 +227,19 @@ export class MultiSubsiteRegistry {
     if (!SLUG_PATTERN.test(slug) || slug.length > 64) throw new Error('子域名只能使用小写字母、数字和连字符');
     if (!displayName || displayName.length > 80) throw new Error('分站昵称不能为空，且不能超过 80 个字符');
     if (!this.baseDomain && !asText(input.domain)) throw new Error('请先在统一分站后台保存根域名，再生成子域名');
-    const domain = validateDomain(normalizeHost(input.domain) || `${slug}.${this.baseDomain}`);
+    const domain = validateDomain(normalizeHost(asText(input.domain)) || `${slug}.${this.baseDomain}`);
     if (domain === this.baseDomain) throw new Error('分站域名不能与平台根域名相同');
     const ts3Host = asText(input.ts3Host);
     const username = asText(input.username) || 'serveradmin';
     const password = String(input.password ?? '');
     const adminPassword = String(input.adminPassword ?? '');
-    if (!ts3Host) throw new Error('TS3 服务器地址不能为空');
+    if (!ts3Host || !isValidHost(ts3Host)) throw new Error('TS3 服务器地址格式无效，请填写域名或 IP');
     if (!adminPassword || adminPassword.length < 8) throw new Error('分站后台密码至少需要 8 个字符');
     const queryPort = asPort(input.queryPort, 10011);
     const serverPort = asPort(input.serverPort, 9987);
     const serverId = asServerId(input.serverId);
     const publicHost = asText(input.publicHost) || ts3Host;
+    if (!isValidHost(publicHost)) throw new Error('客户端连接地址格式无效，请填写域名或 IP');
     const publicPort = asPort(input.publicPort, serverPort);
     const now = Date.now();
     try {
@@ -279,12 +306,12 @@ export class MultiSubsiteRegistry {
 
     let domain = existing.domain;
     if (input.domain !== undefined) {
-      domain = validateDomain(normalizeHost(input.domain) || `${existing.slug}.${this.baseDomain}`);
+      domain = validateDomain(normalizeHost(asText(input.domain)) || `${existing.slug}.${this.baseDomain}`);
       if (domain === this.baseDomain) throw new Error('分站域名不能与平台根域名相同');
     }
 
     const ts3Host = input.ts3Host !== undefined ? asText(input.ts3Host) : existing.ts3Host;
-    if (!ts3Host) throw new Error('TS3 服务器地址不能为空');
+    if (!ts3Host || !isValidHost(ts3Host)) throw new Error('TS3 服务器地址格式无效，请填写域名或 IP');
 
     const queryPort = input.queryPort !== undefined ? asPort(input.queryPort, existing.queryPort) : existing.queryPort;
     const serverPort = input.serverPort !== undefined ? asPort(input.serverPort, existing.serverPort) : existing.serverPort;
@@ -292,6 +319,7 @@ export class MultiSubsiteRegistry {
     const username = input.username !== undefined ? (asText(input.username) || 'serveradmin') : existing.username;
     const password = input.password !== undefined && input.password !== '' ? String(input.password) : existing.password;
     const publicHost = input.publicHost !== undefined ? (asText(input.publicHost) || ts3Host) : existing.publicHost;
+    if (!isValidHost(publicHost)) throw new Error('客户端连接地址格式无效，请填写域名或 IP');
     const publicPort = input.publicPort !== undefined ? asPort(input.publicPort, serverPort) : existing.publicPort;
 
     try {

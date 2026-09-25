@@ -78,19 +78,29 @@ export class MonitorService extends EventEmitter {
       const channels = await this.ts3.getChannels();
       this.stats.recordSnapshot(clients, channels);
 
+      // 统一口径：页面展示、WS 推送、趋势采样都使用「剔除机器人后」的人数。
+      // 旧实现页面用 clients.length（含机器人）而采样用 humanCount，
+      // 造成同一页面上「实时在线人数」与「趋势图峰值」对不上。
+      const humans = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname));
+      const humanCount = humans.length;
+
       const now = Date.now();
       const sampleInterval = this.sampleIntervalMs;
       if (now - this.lastSampleTimeMs >= sampleInterval) {
-        const humanCount = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname)).length;
-        this.stats.sampleOnline(humanCount, now);
-        this.lastSampleTimeMs = now;
+        // 采样失败不应影响本轮事件推送，因此单独捕获。
+        try {
+          this.stats.sampleOnline(humanCount, now);
+          this.lastSampleTimeMs = now;
+        } catch (err) {
+          console.error('[monitor] 在线采样失败:', (err as Error).message);
+        }
       }
 
       this.emit('onlineUpdated', {
-        online: clients.length,
+        online: humanCount,
         maxClients: state.maxClients,
       });
-      this.emit('clientsChanged', { online: clients.length });
+      this.emit('clientsChanged', { online: humanCount });
     } catch (err) {
       console.error('[monitor] 采集失败:', (err as Error).message);
     }

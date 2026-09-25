@@ -1,5 +1,22 @@
-import type { RequestHandler, Router } from 'express';
-import type { MultiSubsiteRuntimeManager } from './runtime.js';
+import { subsiteUrl, type MultiSubsiteRuntimeManager } from './runtime.js';
+
+/**
+ * 严格解析启用标记。
+ *
+ * 旧实现用 `Boolean(value)`，导致字符串 `"false"` 被当作 `true`，
+ * 前端一旦传字符串就无法停用分站。这里只接受真正的布尔值以及
+ * 数字 0/1 和字符串 "0"/"1"/"true"/"false"。
+ */
+export function parseEnabledFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === 1) return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === '') return false;
+  }
+  return false;
+}
 
 export function registerMultiSubsiteRoutes(router: Router, manager: MultiSubsiteRuntimeManager, admin: RequestHandler): void {
   router.get('/settings', admin, (_req, res) => {
@@ -22,7 +39,7 @@ export function registerMultiSubsiteRoutes(router: Router, manager: MultiSubsite
     try {
       const subsite = manager.create(req.body ?? {});
       const { password: _password, adminPassword: _adminPassword, ...safe } = subsite;
-      res.status(201).json({ ...safe, connected: false, url: `http://${subsite.domain}` });
+      res.status(201).json({ ...safe, connected: false, url: subsiteUrl(subsite.domain) });
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });
     }
@@ -32,9 +49,9 @@ export function registerMultiSubsiteRoutes(router: Router, manager: MultiSubsite
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id < 1) throw new Error('分站 ID 无效');
-      const subsite = manager.setEnabled(id, Boolean(req.body?.enabled));
+      const subsite = manager.setEnabled(id, parseEnabledFlag(req.body?.enabled));
       const { password: _password, adminPassword: _adminPassword, ...safe } = subsite;
-      res.json({ ...safe, connected: false, url: `http://${subsite.domain}` });
+      res.json({ ...safe, connected: false, url: subsiteUrl(subsite.domain) });
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });
     }
@@ -46,7 +63,7 @@ export function registerMultiSubsiteRoutes(router: Router, manager: MultiSubsite
       if (!Number.isInteger(id) || id < 1) throw new Error('分站 ID 无效');
       const subsite = manager.update(id, req.body ?? {});
       const { password: _password, adminPassword: _adminPassword, ...safe } = subsite;
-      res.json({ ...safe, connected: false, url: `http://${subsite.domain}` });
+      res.json({ ...safe, connected: false, url: subsiteUrl(subsite.domain) });
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });
     }

@@ -33,23 +33,25 @@ interface RateLimitEntry {
   count: number;
   resetAt: number;
 }
-const rateLimits = new Map<string, RateLimitEntry>();
-
-function isRateLimited(req: { ip?: string; socket: { remoteAddress?: string } }): boolean {
-  const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  pruneRateLimitMap(rateLimits, now, (entry) => entry.resetAt);
-  const entry = rateLimits.get(clientKey);
-  if (!entry || now >= entry.resetAt) {
-    rateLimits.set(clientKey, { count: 1, resetAt: now + SEARCH_WINDOW_MS });
-    pruneRateLimitMap(rateLimits, now, (item) => item.resetAt);
-    return false;
-  }
-  entry.count++;
-  return entry.count > SEARCH_MAX_REQUESTS;
-}
 
 export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
+  // 限流表必须是「每个路由实例一份」。放在模块作用域时，所有分站（租户）会共享同一张表：
+  // 分站 A 的查询配额会挤占分站 B，且过期键永不释放。
+  const rateLimits = new Map<string, RateLimitEntry>();
+
+  function isRateLimited(req: { ip?: string; socket: { remoteAddress?: string } }): boolean {
+    const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    pruneRateLimitMap(rateLimits, now, (entry) => entry.resetAt);
+    const entry = rateLimits.get(clientKey);
+    if (!entry || now >= entry.resetAt) {
+      rateLimits.set(clientKey, { count: 1, resetAt: now + SEARCH_WINDOW_MS });
+      pruneRateLimitMap(rateLimits, now, (item) => item.resetAt);
+      return false;
+    }
+    entry.count++;
+    return entry.count > SEARCH_MAX_REQUESTS;
+  }
   router.get('/stats/top-users', (req, res) => {
     const range = parseRange(req.query.range, ['week', 'month', 'all'], 'week') as 'week' | 'month' | 'all';
     const limit = parseLimit(req.query.limit);

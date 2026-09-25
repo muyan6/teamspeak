@@ -69,6 +69,8 @@ export class StatsService {
   setServerKey(serverKey: string, migrateLegacy = false): void {
     if (!serverKey || serverKey === this.serverKey) return;
     if (migrateLegacy) {
+      // 必须覆盖所有带 server_key 的表：遗漏会让「羁绊好友」「勋章」「周冠军历史」
+      // 在切换被监控服务器后凭空消失（查询按新 serverKey 过滤，旧行仍是 legacy）。
       const tables = [
         'online_clients',
         'user_online_duration',
@@ -78,7 +80,12 @@ export class StatsService {
         'channel_daily_activity',
         'user_daily_activity',
         'user_channel_activity',
+        'user_channel_bonds',
+        'elastic_managed_channels',
         'achievement_grants',
+        'badge_grants',
+        'champion_config',
+        'champion_history',
       ];
       const tx = this.db.transaction(() => {
         for (const table of tables) {
@@ -89,6 +96,13 @@ export class StatsService {
     }
     this.serverKey = serverKey;
     this.suspendedOnline.clear();
+    // 连续在线榜有 60s 缓存，切换服务器后必须立即失效，否则会继续展示旧服数据。
+    this.invalidateRankCaches();
+  }
+
+  /** 清空所有按 serverKey 计算的短期缓存。 */
+  invalidateRankCaches(): void {
+    this.streakRankingsCache = null;
   }
 
   getDatabase(): AppDatabase {
@@ -547,8 +561,13 @@ export class StatsService {
   }
 
   sampleOnline(count: number, now = Date.now()): void {
+    // (server_key, sample_time) 上有唯一索引；同一秒内重复采样必须幂等覆盖，
+    // 否则会抛约束错误并中断本轮采集。
     this.db
-      .prepare('INSERT INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)')
+      .prepare(
+        `INSERT INTO online_samples (server_key, sample_time, online_count) VALUES (?, ?, ?)
+         ON CONFLICT(server_key, sample_time) DO UPDATE SET online_count = excluded.online_count`
+      )
       .run(this.serverKey, Math.floor(now / 1000), count);
   }
 
@@ -916,15 +935,18 @@ export class StatsService {
         clientDatabaseId
       ) as Array<{ dbid: number; name: string; seconds: number; last_meet: number }>;
 
+    // 旧实现在结尾加了 `.filter(x => x.hours > 0 || x.last_meet > 0)`，
+    // 但 last_meet 恒为正数，该过滤永远为真、形同虚设；同时 Math.round 会把
+    // 不足半小时的羁绊显示成 0 小时。改为按秒保留精度，只过滤真正的空记录。
     return rows
       .filter((r) => !this.isBot(r.name))
+      .filter((r) => r.seconds > 0 || r.last_meet > 0)
       .map((r) => ({
         dbid: r.dbid,
         name: r.name,
-        hours: Math.round(r.seconds / 3600),
+        hours: Math.round((r.seconds / 3600) * 10) / 10,
         last_meet: r.last_meet,
-      }))
-      .filter((x) => x.hours > 0 || x.last_meet > 0);
+      }));
   }
 
   getTopChannels(range: 'week' | 'month' | 'all', limit = 10): Array<{ channelName: string; memberSeconds: number }> {
@@ -1105,10 +1127,20 @@ export class StatsService {
     `).run(this.serverKey, clientDatabaseId, nickname, Date.now(), ws);
   }
 
+  /**
+   * 把超期历史数据迁移到独立的归档库。
+   *
+   * @param sampleRetentionDays 采样点与已结束会话、频道日活的保留天数（默认 180 天）
+   * @param userDailyRetentionDays 用户日活（热力图/连续打卡）的保留天数（默认 365 天）
+   *
+   * 注意：第二个参数只作用于 `user_daily_activity`；`channel_daily_activity`
+   * 与采样、会话共用第一个参数。旧参数名 `dailyRetentionDays` 容易让人误以为
+   * 它同时管辖两类日活表，故改名。
+   */
   archiveOldData(
     archiveDbPath: string,
     sampleRetentionDays = 180,
-    dailyRetentionDays = 365
+    userDailyRetentionDays = 365
   ): {
     archivedSamples: number;
     archivedSessions: number;
@@ -1123,7 +1155,7 @@ export class StatsService {
     const sampleCutoffDay = `${sampleCutoffDate.getFullYear()}-${String(sampleCutoffDate.getMonth() + 1).padStart(2, '0')}-${String(sampleCutoffDate.getDate()).padStart(2, '0')}`;
 
     const dailyCutoffDate = new Date();
-    dailyCutoffDate.setDate(dailyCutoffDate.getDate() - dailyRetentionDays);
+    dailyCutoffDate.setDate(dailyCutoffDate.getDate() - userDailyRetentionDays);
     const dailyCutoffDay = `${dailyCutoffDate.getFullYear()}-${String(dailyCutoffDate.getMonth() + 1).padStart(2, '0')}-${String(dailyCutoffDate.getDate()).padStart(2, '0')}`;
 
     let archivedSamples = 0;

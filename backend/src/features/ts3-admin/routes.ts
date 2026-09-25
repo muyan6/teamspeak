@@ -1,7 +1,34 @@
+import net from 'net';
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
 import { getTs3ServerKey } from '../../ts3/client.js';
+
+/**
+ * 校验 TS3 主机地址。
+ * 允许合法域名（含 `_` 等主机名字符）与 IPv4/IPv6 字面量，
+ * 拒绝空白、换行、路径、查询参数、协议前缀与非法端口/字符格式。
+ */
+export function isValidHost(host: string): boolean {
+  if (!host || typeof host !== 'string' || host.length > 253) return false;
+  if (/[\s/\\?#]/.test(host)) return false;
+  if (host.includes('://')) return false;
+  if (net.isIP(host)) return true;
+  const bracketMatch = host.match(/^\[([0-9a-fA-F:]+)\](?::(\d{1,5}))?$/);
+  if (bracketMatch) {
+    if (!net.isIPv6(bracketMatch[1])) return false;
+    if (bracketMatch[2] && (Number(bracketMatch[2]) < 1 || Number(bracketMatch[2]) > 65535)) return false;
+    return true;
+  }
+  try {
+    const url = new URL(`http://${host}`);
+    if (url.pathname !== '/' && url.pathname !== '') return false;
+    if (url.search || url.hash) return false;
+    return Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
   router.get('/server-groups', admin, asyncRoute(async (_req, res) => {
@@ -32,8 +59,15 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     const parsedQueryPort = Number(queryPort ?? current.queryPort);
     const parsedServerPort = Number(serverPort ?? current.serverPort);
     const parsedServerId = Number(serverId ?? current.serverId ?? 0);
+    const normalizedHost = host ? String(host).trim() : current.host;
+    // host 会被写入 SQLite 并同步回 .env，若不校验格式，脏值（超长字符串、
+    // 含换行/空格的地址）会污染配置文件并导致后续连接出现难排查的失败。
+    if (!isValidHost(normalizedHost)) {
+      res.status(400).json({ error: '服务器地址格式无效，请填写域名或 IP（可含端口以外的字符）' });
+      return;
+    }
     const config = {
-      host: host ? String(host).trim() : current.host,
+      host: normalizedHost,
       queryPort: parsedQueryPort,
       serverPort: parsedServerPort,
       serverId: parsedServerId,

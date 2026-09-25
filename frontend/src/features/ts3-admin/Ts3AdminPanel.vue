@@ -27,26 +27,36 @@ function showNotice(msg: string, type: 'success' | 'error' | 'warning' = 'succes
 }
 
 const chForm = ref({ name: '', cpid: 0, password: '' });
-const editing = ref<{ cid: number; name: string; originalCpid: number; cpid: number; password: string; clearPassword?: boolean; maxclients: number } | null>(null);
+const editing = ref<{ cid: number; name: string; originalCpid: number; cpid: number; password: string; clearPassword?: boolean; maxclients: number | '' } | null>(null);
 
 const moveSel = ref<Record<number, number>>({});
 const assignSel = ref<Record<number, number>>({});
 const cgSel = ref<Record<number, number>>({});
 
 async function loadAll() {
-  try {
-    const [chs, cls, sgs, cgs] = await Promise.all([
-      api.listChannels(),
-      api.listClients(),
-      api.getServerGroups(),
-      api.listChannelGroups(),
-    ]);
-    channels.value = chs;
-    clients.value = cls;
-    serverGroups.value = sgs;
-    channelGroups.value = cgs;
-  } catch (e) {
-    showNotice(`获取 TS3 数据失败：${(e as Error).message}`, 'error');
+  // 四个接口分别降级：任一失败（例如服务器未启用频道组）不应让整个面板空白。
+  const [chs, cls, sgs, cgs] = await Promise.allSettled([
+    api.listChannels(),
+    api.listClients(),
+    api.getServerGroups(),
+    api.listChannelGroups(),
+  ]);
+  if (chs.status === 'fulfilled') channels.value = chs.value;
+  if (cls.status === 'fulfilled') clients.value = cls.value;
+  if (sgs.status === 'fulfilled') serverGroups.value = sgs.value;
+  if (cgs.status === 'fulfilled') channelGroups.value = cgs.value;
+
+  const failed = [
+    ['频道列表', chs],
+    ['在线用户', cls],
+    ['服务器组', sgs],
+    ['频道组', cgs],
+  ].filter(([, result]) => (result as PromiseSettledResult<unknown>).status === 'rejected');
+  if (failed.length > 0) {
+    const detail = failed
+      .map(([label, result]) => `${label}：${((result as PromiseRejectedResult).reason as Error)?.message || '请求失败'}`)
+      .join('；');
+    showNotice(`部分 TS3 数据获取失败（${detail}）`, 'warning');
   }
 }
 
@@ -94,7 +104,7 @@ async function removeChannel(cid: number) {
 }
 
 function startEdit(ch: AdminChannel) {
-  editing.value = { cid: ch.cid, name: ch.name, originalCpid: ch.parentId, cpid: ch.parentId, password: '', clearPassword: false, maxclients: 0 };
+  editing.value = { cid: ch.cid, name: ch.name, originalCpid: ch.parentId, cpid: ch.parentId, password: '', clearPassword: false, maxclients: '' };
 }
 
 async function saveEdit() {
@@ -112,11 +122,17 @@ async function saveEdit() {
     passwordPayload = e.password;
   }
   try {
+    // maxclients 语义：> 0 表示设置上限，0 表示「无限制」（后端支持并透传 0），
+    // 空字符串表示「不修改」。旧实现把 0 当作「不修改」，导致无法改回无限制。
+    const maxclientsPayload = e.maxclients === null || e.maxclients === undefined || e.maxclients === ''
+      ? undefined
+      : Number(e.maxclients);
+
     await api.editChannel(e.cid, {
       name,
       cpid: e.cpid !== e.originalCpid ? e.cpid : undefined,
       password: passwordPayload,
-      maxclients: e.maxclients > 0 ? e.maxclients : undefined,
+      maxclients: maxclientsPayload,
     });
     const cid = e.cid;
     editing.value = null;
@@ -298,7 +314,7 @@ onUnmounted(() => {
               <option v-for="c in channels.filter((x) => x.cid !== editing!.cid)" :key="c.cid" :value="c.cid">{{ c.name }}</option>
             </select>
             <input v-model="editing.password" class="input" :disabled="editing.clearPassword" placeholder="新密码(留空不改)" />
-            <input v-model.number="editing.maxclients" class="input" type="number" placeholder="人数上限(0不改)" />
+            <input v-model.number="editing.maxclients" class="input" type="number" min="0" placeholder="人数上限(留空不改，0=无限制)" />
           </div>
           <div style="margin-top: 8px">
             <label style="font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px">

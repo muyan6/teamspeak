@@ -372,30 +372,46 @@ export class AchievementService {
     }
     for (const grant of revokeGroups.values()) {
       try {
-        if (!await this.ts3.removeClientFromServerGroup(grant.serverGroupId, grant.clientDatabaseId)) return;
+        if (!await this.ts3.removeClientFromServerGroup(grant.serverGroupId, grant.clientDatabaseId)) {
+          console.warn(`[achievement] 清理停用成就服务器组未成功: group=${grant.serverGroupId}, dbid=${grant.clientDatabaseId}`);
+          continue;
+        }
       } catch (error) {
         console.warn(`[achievement] 清理停用成就服务器组失败: group=${grant.serverGroupId}, dbid=${grant.clientDatabaseId}`, error);
-        return;
+        continue;
       }
     }
 
-    if (revokeGroups.size !== 0 || staleLevels.length !== 0 || staleBadges.length !== 0) {
-      if (staleLevels.some((grant) => grant.serverGroupId !== null)) {
-        this.db.prepare(
-          `DELETE FROM achievement_grants
-           WHERE server_key = ? AND level_id IN (
-             SELECT id FROM achievement_levels WHERE enabled <> 1
-           )`
-        ).run(serverKey);
-      }
-      if (staleBadges.some((grant) => grant.serverGroupId !== null)) {
-        this.db.prepare(
-          `DELETE FROM badge_grants
-           WHERE server_key = ? AND badge_id IN (
-             SELECT id FROM badges WHERE enabled <> 1
-           )`
-        ).run(serverKey);
-      }
+    // 清理已停用或已删除条目的授权记录。
+    //
+    // 旧实现只在「存在 serverGroupId 非空」时才 DELETE，导致纯网站成就/勋章
+    // （server_group_id = 0，不发放 TS3 组）被停用或删除后，其 grants 永远残留，
+    // 持续污染 getUnlockedCount() 与荣誉殿堂的「最高荣誉」。
+    // 这里改为始终清理：TS3 服务器组已在上面按需回收，本地记录与之解耦。
+    if (staleLevels.length !== 0) {
+      this.db.prepare(
+        `DELETE FROM achievement_grants
+         WHERE server_key = ? AND level_id IN (
+           SELECT id FROM achievement_levels WHERE enabled <> 1
+         )`
+      ).run(serverKey);
+      // 同时清理指向已删除等级的孤儿记录（LEFT JOIN 中 l.id IS NULL）。
+      this.db.prepare(
+        `DELETE FROM achievement_grants
+         WHERE server_key = ? AND level_id NOT IN (SELECT id FROM achievement_levels)`
+      ).run(serverKey);
+    }
+    if (staleBadges.length !== 0) {
+      this.db.prepare(
+        `DELETE FROM badge_grants
+         WHERE server_key = ? AND badge_id IN (
+           SELECT id FROM badges WHERE enabled <> 1
+         )`
+      ).run(serverKey);
+      this.db.prepare(
+        `DELETE FROM badge_grants
+         WHERE server_key = ? AND badge_id NOT IN (SELECT id FROM badges)`
+      ).run(serverKey);
     }
   }
 
@@ -543,7 +559,11 @@ export class AchievementService {
       for (const level of levels) {
         if (level.id !== highestLevel?.id && existingLevelIds.has(level.id)) {
           let ts3Ok = true;
-          if (level.serverGroupId > 0 && level.serverGroupId !== highestLevel?.serverGroupId) {
+          if (
+            level.serverGroupId > 0
+            && level.serverGroupId !== highestLevel?.serverGroupId
+            && !await this.hasOtherActiveGrantForGroup(serverKey, user.clientDatabaseId, level.serverGroupId, level.id, undefined)
+          ) {
             try {
               ts3Ok = await this.ts3.removeClientFromServerGroup(level.serverGroupId, user.clientDatabaseId);
             } catch (err) {
@@ -622,7 +642,10 @@ export class AchievementService {
         } else if (!qualifies && alreadyGranted) {
           // 不再满足条件（如连续在线中断），回收勋章
           let ts3Ok = true;
-          if (badge.serverGroupId > 0) {
+          if (
+            badge.serverGroupId > 0
+            && !await this.hasOtherActiveGrantForGroup(serverKey, user.clientDatabaseId, badge.serverGroupId, undefined, badge.id)
+          ) {
             try {
               ts3Ok = await this.ts3.removeClientFromServerGroup(badge.serverGroupId, user.clientDatabaseId);
             } catch (err) {
@@ -765,7 +788,8 @@ export class AchievementService {
         color,
         description: `累计在线时长达 ${highestLevel.hours} 小时`,
         unlocked: true,
-        unlockedAt: grantMap.get(highestLevel.id) ?? Date.now(),
+        // 未结算时不要用当前时间伪装解锁时间：留空比假数据更诚实，前端会显示「未知」。
+        unlockedAt: grantMap.get(highestLevel.id),
         progress: {
           current: Math.min(highestLevel.hours, Math.floor(totalHours)),
           total: highestLevel.hours,
@@ -808,7 +832,7 @@ export class AchievementService {
     for (const b of dynamicBadges) {
       const evalRes = this.evaluateBadgeForUser(b, clientDatabaseId);
       const isGranted = evalRes.unlocked;
-      const grantedAt = isGranted ? (badgeGrantMap.get(b.id) ?? Date.now()) : undefined;
+      const grantedAt = isGranted ? badgeGrantMap.get(b.id) : undefined;
 
       badges.push({
         id: `badge_${b.id}`,

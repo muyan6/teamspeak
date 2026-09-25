@@ -9,6 +9,8 @@ let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshPromise: Promise<void> | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingRefresh = false;
+const jitterTimers = new Set<ReturnType<typeof setTimeout>>();
 
 async function doRefresh(): Promise<void> {
   try {
@@ -18,6 +20,10 @@ async function doRefresh(): Promise<void> {
     error.value = (e as Error).message;
   } finally {
     refreshPromise = null;
+    if (pendingRefresh) {
+      pendingRefresh = false;
+      void refresh(false);
+    }
   }
 }
 
@@ -36,9 +42,13 @@ async function refresh(immediate = false): Promise<void> {
   if (debounceTimer) return;
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
-    if (!refreshPromise) {
-      refreshPromise = doRefresh();
+    // 旧实现直接丢弃这次刷新（`if (!refreshPromise)` 无 else），导致高频推送时
+    // 数据可能长时间停在旧值。这里改为「记住待刷新」，等当前请求结束后补一次。
+    if (refreshPromise) {
+      pendingRefresh = true;
+      return;
     }
+    refreshPromise = doRefresh();
   }, 300);
 }
 
@@ -68,10 +78,13 @@ function connectWebSocket(): void {
           }
         }
       } else if (msg.event === 'clients-changed') {
+        // 高频推送时逐个 setTimeout 会持续堆积；这里登记句柄以便在重连/关闭时统一清理。
         const jitter = Math.floor(Math.random() * 800);
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          jitterTimers.delete(timer);
           void refresh(false);
         }, jitter);
+        jitterTimers.add(timer);
       }
     } catch {
       /* 忽略非 JSON 消息 */
@@ -80,6 +93,8 @@ function connectWebSocket(): void {
   ws.onclose = () => {
     ws = null;
     isWsConnected.value = false;
+    for (const timer of jitterTimers) clearTimeout(timer);
+    jitterTimers.clear();
     scheduleReconnect();
   };
   ws.onerror = () => {

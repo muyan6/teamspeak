@@ -1,5 +1,6 @@
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server } from 'node:http';
+import { normalizeHost } from '../net/host.js';
 
 export class WsHub {
   private wss: WebSocketServer;
@@ -13,7 +14,8 @@ export class WsHub {
       if (server.listening) console.error(`[ws] 服务错误: ${err.message}`);
     });
     this.wss.on('connection', (ws, request) => {
-      const host = (request.headers.host || '').split(':')[0].toLowerCase();
+      // 与 HTTP 侧使用同一套归一化逻辑，兼容 IPv6 字面量（[::1]:4321）。
+      const host = normalizeHost(request.headers.host || '');
       this.clients.set(ws, host);
       this.aliveClients.set(ws, true);
 
@@ -68,7 +70,7 @@ export class WsHub {
   }
 
   broadcastToHost(host: string, event: string, data: unknown): void {
-    const normalizedHost = host.toLowerCase();
+    const normalizedHost = normalizeHost(host);
     const matching: WebSocket[] = [];
     for (const [client, clientHost] of this.clients.entries()) {
       if (clientHost === normalizedHost) {

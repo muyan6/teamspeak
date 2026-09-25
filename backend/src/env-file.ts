@@ -13,14 +13,35 @@ const KEY_TO_ENV: Record<keyof Ts3ConnectionConfig, string> = {
   password: 'TS3_QUERY_PASSWORD',
 };
 
-function formatEnvValue(v: string): string {
-  if (/[\s#"']/.test(v)) return `"${v.replace(/"/g, '\\"')}"`;
-  return v;
+/**
+ * 找出实际在用的 .env 路径。
+ *
+ * 必须与 config.ts 的查找顺序保持一致，否则从仓库根目录启动时会在根目录
+ * 新建一个 .env，而 config.ts 下次又会优先读它，造成配置「漂移」到另一个文件。
+ */
+export function resolveEnvPath(cwd = process.cwd()): string {
+  const candidates = [
+    path.resolve(cwd, '.env'),
+    path.resolve(cwd, 'backend/.env'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // 都不存在时，与 config.ts 一致地优先写 backend/.env（当存在 backend 目录时）。
+  if (existsSync(path.resolve(cwd, 'backend'))) return path.resolve(cwd, 'backend/.env');
+  return path.resolve(cwd, '.env');
+}
+
+function formatEnvValue(value: string): string {
+  // 换行/回车必须转义：直接写入会破坏 .env 的行结构，导致后续 dotenv 解析异常。
+  const normalized = value.replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+  if (/[\s#"']/.test(normalized)) return `"${normalized.replace(/"/g, '\\"')}"`;
+  return normalized;
 }
 
 // 将 TS3 连接配置写回 .env 文件（保留其他配置项，仅更新 TS3 相关键）。
 // .env 不存在时优先以 .env.example 为模板生成。
-export function syncTs3ConfigToEnv(config: Ts3ConnectionConfig, envPath = path.resolve(process.cwd(), '.env')): void {
+export function syncTs3ConfigToEnv(config: Ts3ConnectionConfig, envPath = resolveEnvPath()): void {
   const values = new Map<string, string>();
   for (const key of TS3_ENV_KEYS) {
     values.set(KEY_TO_ENV[key], key === 'serverId' ? String(config.serverId ?? 0) : String(config[key]));
@@ -30,9 +51,16 @@ export function syncTs3ConfigToEnv(config: Ts3ConnectionConfig, envPath = path.r
   if (existsSync(envPath)) {
     baseLines = readFileSync(envPath, 'utf8').split(/\r?\n/);
   } else {
-    const examplePath = path.resolve(path.dirname(envPath), '.env.example');
-    if (existsSync(examplePath)) {
-      baseLines = readFileSync(examplePath, 'utf8').split(/\r?\n/);
+    // 模板可能在后端目录，也可能在仓库根目录。
+    const exampleCandidates = [
+      path.resolve(path.dirname(envPath), '.env.example'),
+      path.resolve(path.dirname(envPath), '..', '.env.example'),
+    ];
+    for (const examplePath of exampleCandidates) {
+      if (existsSync(examplePath)) {
+        baseLines = readFileSync(examplePath, 'utf8').split(/\r?\n/);
+        break;
+      }
     }
   }
 

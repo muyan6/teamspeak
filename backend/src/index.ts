@@ -7,7 +7,7 @@ import cors from 'cors';
 import { loadConfig, type AppConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { SiteConfigStore } from './db/site-config.js';
-import { AuthService, CredentialCipher, initializeAdminPassword } from './services/auth.js';
+import { AuthService, CredentialCipher, generateBootstrapAdminPassword, hashAdminPassword, initializeAdminPassword } from './services/auth.js';
 import { StatsService } from './services/stats.js';
 import { ElasticChannelService } from './features/elastic-channels/service.js';
 import { WeeklyChampionService } from './features/weekly-champion/service.js';
@@ -21,7 +21,7 @@ import { createHomeModulesRouter } from './features/home-modules/home-modules-ro
 import { WsHub } from './ws/hub.js';
 import { MultiSubsiteRegistry } from './features/multi-subsites/service.js';
 import { MultiSubsiteRuntimeManager } from './features/multi-subsites/runtime.js';
-import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter } from './features/multi-subsites/host-router.js';
+import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter, resolveRequestHost } from './features/multi-subsites/host-router.js';
 import { syncTs3ConfigToEnv } from './env-file.js';
 
 async function main(): Promise<void> {
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const db = openDatabase(config.dbPath);
   const configStore = new SiteConfigStore(db);
   const credentialCipher = CredentialCipher.forDatabase(config.dbPath);
-  const adminPasswordConfig = initializeAdminPassword(configStore, config.adminPassword);
+  let adminPasswordConfig = initializeAdminPassword(configStore, config.adminPassword);
   if (adminPasswordConfig.initialized) {
     console.log('[auth] 已将 ADMIN_PASSWORD 初始化到数据库，后续认证不再依赖 .env');
   }
@@ -39,7 +39,16 @@ async function main(): Promise<void> {
     console.log('[auth] 已将旧版明文管理员密码升级为 scrypt 哈希');
   }
   if (!adminPasswordConfig.password) {
-    console.warn('[auth] 尚未初始化后台密码；请在首次启动前设置 ADMIN_PASSWORD');
+    // 既没有已保存的哈希，也没有合法的 ADMIN_PASSWORD。
+    // 旧行为会让任何密码都无法登录，而改密接口又要求先登录，只能手改 SQLite。
+    // 这里生成一次性随机密码并打印一次，管理员登录后自行修改即可。
+    const bootstrapPassword = generateBootstrapAdminPassword();
+    const bootstrapHash = hashAdminPassword(bootstrapPassword);
+    configStore.set('adminPassword', bootstrapHash);
+    adminPasswordConfig = { password: bootstrapHash, initialized: true, migrated: false };
+    console.warn('[auth] 未配置 ADMIN_PASSWORD，已生成一次性后台密码（仅本次打印）：');
+    console.warn(`[auth]   ${bootstrapPassword}`);
+    console.warn('[auth] 请立即用它登录后台「服务器配置」并修改密码。');
   }
   const auth = new AuthService(adminPasswordConfig.password, config.jwtSecret);
   const stats = new StatsService(db);
@@ -54,7 +63,9 @@ async function main(): Promise<void> {
   const dashboard = new DashboardService(config, ts3, stats, configStore, elastic, achievement);
 
   const app = express();
-  app.set('trust proxy', 1);
+  // 只信任本机反向代理（可用 TRUST_PROXY 覆盖）。设为 1 会让直连后端的人
+  // 通过 X-Forwarded-Host 冒充任意分站域名，进而访问该分站的 API 与登录接口。
+  app.set('trust proxy', config.trustProxy);
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
   const server = http.createServer(app);
@@ -88,12 +99,14 @@ async function main(): Promise<void> {
   app.use('/api', createHomeModulesRouter({ configStore, requireAdmin: adminAuth(auth) }));
 
   app.get('/api/health', (req, res) => {
-    const hostHealth = subsiteManager.getHealthForHost(req.hostname);
+    // 与 API 路由保持一致：按客户端真实 Host 判定租户，避免 X-Forwarded-Host 伪造。
+    const host = resolveRequestHost(req.headers);
+    const hostHealth = subsiteManager.getHealthForHost(host);
     if (hostHealth) {
       res.json(hostHealth);
       return;
     }
-    if (subsiteManager.isManagedSubsiteHost(req.hostname)) {
+    if (subsiteManager.isManagedSubsiteHost(host)) {
       res.status(404).json({ error: '分站不存在或已停用' });
       return;
     }

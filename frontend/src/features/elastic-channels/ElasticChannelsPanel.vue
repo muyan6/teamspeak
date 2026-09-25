@@ -6,7 +6,8 @@ import type { AdminChannel, ElasticGroup } from '../../types';
 
 const groups = ref<ElasticGroup[]>([]);
 const channels = ref<AdminChannel[]>([]);
-const form = ref({ name: '', namePrefix: '', baseChannelId: 0, createThreshold: 2, deleteThreshold: 0, maxChannels: 8 });
+const EMPTY_FORM = { name: '', namePrefix: '', baseChannelId: 0, createThreshold: 2, deleteThreshold: 0, maxChannels: 8 };
+const form = ref({ ...EMPTY_FORM });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -23,15 +24,18 @@ function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'su
 }
 
 async function load(): Promise<void> {
-  try {
-    const [groupList, channelList] = await Promise.all([
-      api.listElasticGroups(),
-      api.listChannels().catch(() => []),
-    ]);
-    groups.value = groupList;
-    channels.value = channelList;
-  } catch (error) {
-    showNotice(`加载弹性频道列表失败：${(error as Error).message}`, 'error');
+  // 频道列表失败（TS3 未连接）不应阻止弹性频道组配置的展示。
+  const [groupList, channelList] = await Promise.allSettled([
+    api.listElasticGroups(),
+    api.listChannels(),
+  ]);
+  if (groupList.status === 'fulfilled') groups.value = groupList.value;
+  if (channelList.status === 'fulfilled') channels.value = channelList.value;
+
+  if (groupList.status === 'rejected') {
+    showNotice(`加载弹性频道列表失败：${(groupList.reason as Error)?.message || '请求失败'}`, 'error');
+  } else if (channelList.status === 'rejected') {
+    showNotice(`频道列表加载失败，父频道将显示为 #ID：${(channelList.reason as Error)?.message || '请求失败'}`, 'warning');
   }
 }
 
@@ -52,6 +56,15 @@ async function add(): Promise<void> {
     showNotice('添加失败：满员阈值与最大频道数必须为大于 0 的有效数字', 'warning');
     return;
   }
+  // 后端要求 0 <= deleteThreshold < createThreshold；这里提前校验，避免提交后才拿到 400。
+  if (form.value.deleteThreshold === null || form.value.deleteThreshold === undefined || form.value.deleteThreshold < 0) {
+    showNotice('添加失败：空置回收阈值不能为负数', 'warning');
+    return;
+  }
+  if (form.value.deleteThreshold >= form.value.createThreshold) {
+    showNotice('添加失败：空置回收阈值必须小于满员阈值', 'warning');
+    return;
+  }
 
   try {
     await api.addElasticGroup({
@@ -60,7 +73,7 @@ async function add(): Promise<void> {
       namePrefix: prefix,
       baseChannelId: form.value.baseChannelId > 0 ? form.value.baseChannelId : null,
     });
-    form.value = { name: '', namePrefix: '', baseChannelId: 0, createThreshold: 2, deleteThreshold: 0, maxChannels: 8 };
+    form.value = { ...EMPTY_FORM };
     showNotice(`弹性频道组「${name}」添加成功`, 'success');
     await load();
   } catch (error) {
@@ -89,13 +102,14 @@ onMounted(() => { void load(); });
   <div>
     <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
     <table class="tbl">
-      <thead><tr><th>名称</th><th>前缀</th><th>父频道</th><th>满员阈值</th><th>最大频道</th><th></th></tr></thead>
+      <thead><tr><th>名称</th><th>前缀</th><th>父频道</th><th>满员阈值</th><th>空置回收</th><th>最大频道</th><th></th></tr></thead>
       <tbody>
         <tr v-for="group in groups" :key="group.id">
           <td>{{ group.name }}</td>
           <td class="mono">{{ group.namePrefix }}</td>
           <td>{{ getChannelName(group.baseChannelId) }}</td>
           <td>{{ group.createThreshold }}</td>
+          <td>{{ group.deleteThreshold }}</td>
           <td>{{ group.maxChannels }}</td>
           <td style="text-align: right"><button class="btn sm danger" @click="remove(group.id)">删除</button></td>
         </tr>
@@ -109,6 +123,7 @@ onMounted(() => { void load(); });
             </select>
           </td>
           <td><input v-model.number="form.createThreshold" class="input" type="number" min="1" placeholder="满员阈值" /></td>
+          <td><input v-model.number="form.deleteThreshold" class="input" type="number" min="0" placeholder="空置回收" /></td>
           <td><input v-model.number="form.maxChannels" class="input" type="number" min="1" placeholder="最大频道" /></td>
           <td style="text-align: right"><button class="btn primary" @click="add">添加</button></td>
         </tr>

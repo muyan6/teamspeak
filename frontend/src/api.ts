@@ -6,7 +6,6 @@ import type {
   ChampionConfig,
   ChannelGroup,
   DashboardData,
-  ElasticChannelData,
   ElasticGroup,
   ProfileData,
   ServerGroup,
@@ -43,10 +42,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}, clearSessionOnUnauthorized = true): Promise<T> {
+  // 只在确实带 body 时才声明 Content-Type：给 GET 也加 application/json
+  // 会触发浏览器不必要的 CORS 预检请求。
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers, cache: 'no-store' });
@@ -64,8 +65,6 @@ async function request<T>(path: string, options: RequestInit = {}, clearSessionO
 export const api = {
   getHealth: () => request<{ ok: boolean; ts3Connected: boolean; site: string; platform: boolean }>('/health'),
   getData: () => request<DashboardData>('/data'),
-
-  getElasticLoad: () => request<ElasticChannelData>('/elastic/load'),
 
   listElasticGroups: () => request<ElasticGroup[]>('/elastic/groups'),
   addElasticGroup: (data: Record<string, unknown>) => request<ElasticGroup>('/elastic/groups', { method: 'POST', body: JSON.stringify(data) }),

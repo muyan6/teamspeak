@@ -116,8 +116,8 @@
 **/.env
 **/.env.local
 **/.env.*.local
-# 保留无敏感值的后端首次启动模板；填写真实凭据后请勿提交该文件。
-!backend/.env
+# 只保留无敏感值的模板文件；真实的 backend/.env 绝不提交。
+!**/.env.example
 *.pem
 *.key
 

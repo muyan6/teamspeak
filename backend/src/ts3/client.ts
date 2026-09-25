@@ -342,12 +342,16 @@ export class Ts3ClientWrapper extends EventEmitter {
     try {
       const clients: ClientDatabaseData[] = [];
       let start = 0;
-      let total = Number.POSITIVE_INFINITY;
+      // 以「本页返回条数 < pageSize」作为唯一可靠的终止条件，并加页数硬上限。
+      //
+      // 旧实现用 `rows[0].count` 推算总量，一旦该字段缺失或语义变化（不同 TS3
+      // 版本/库的返回可能不同），循环会提前退出，导致成员库同步不完整。
+      // 硬上限同时避免异常响应造成死循环。
+      const MAX_PAGES = 200;
 
-      while (start < total) {
+      for (let page = 0; page < MAX_PAGES; page += 1) {
         const rows = await this.executeQuery(() => this.requireTs3().clientDbList(start, pageSize, true));
         if (rows.length === 0) break;
-        total = Number(rows[0].count || start + rows.length);
         for (const row of rows) {
           const clientDatabaseId = Number(row.cldbid);
           if (!clientDatabaseId || !row.clientUniqueIdentifier || row.clientUniqueIdentifier === 'ServerQuery') continue;
@@ -497,11 +501,19 @@ export class Ts3ClientWrapper extends EventEmitter {
       if (props.cpid !== undefined) {
         await this.executeQuery(() => this.requireTs3().channelMove(String(cid), String(props.cpid)));
       }
-      await this.executeQuery(() => this.requireTs3().channelEdit(String(cid), {
+      const channelProps: Record<string, unknown> = {
         channelName: props.name,
         channelPassword: props.password !== undefined ? props.password : undefined,
-        channelMaxclients: props.maxclients,
-      }));
+      };
+      if (props.maxclients !== undefined) {
+        if (props.maxclients === 0) {
+          channelProps.channelFlagMaxclientsUnlimited = true;
+        } else if (props.maxclients > 0) {
+          channelProps.channelFlagMaxclientsUnlimited = false;
+          channelProps.channelMaxclients = props.maxclients;
+        }
+      }
+      await this.executeQuery(() => this.requireTs3().channelEdit(String(cid), channelProps as any));
       return true;
     } catch (err) {
       this.reportError(err);

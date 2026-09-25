@@ -84,6 +84,12 @@ export class DashboardService {
   private cachedData: { value: DashboardData; expiresAt: number } | null = null;
   private cachedGroupNames: { value: Map<number, string>; expiresAt: number } | null = null;
   private dataInFlight: Promise<DashboardData> | null = null;
+  /**
+   * 最近一次「已连接」时构建成功的数据。
+   * TS3 瞬时抖动（getServerState 返回 null）时用它兜底，避免首页所有榜单
+   * 在同一秒内被清空——那比短暂展示历史数据体验更差。
+   */
+  private lastConnectedData: DashboardData | null = null;
 
   private async getGroupNames(): Promise<Map<number, string>> {
     const now = Date.now();
@@ -156,6 +162,7 @@ export class DashboardService {
     this.dataInFlight = this.loadData()
       .then((value) => {
         this.cachedData = { value, expiresAt: Date.now() + this.cacheTtlMs };
+        if (value.connected) this.lastConnectedData = value;
         return value;
       })
       .finally(() => {
@@ -178,13 +185,30 @@ export class DashboardService {
 
     const serverName = state?.name ?? this.config.site.serverName;
     const connected = state !== null;
-    const onlineCount = clients.length;
+    // 与 MonitorService / WebSocket 推送保持一致：剔除机器人后再统计。
+    const humans = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname));
+    const onlineCount = humans.length;
     const maxClients = state?.maxClients ?? 0;
+
+    // TS3 瞬时抖动时不返回空榜单，改为回退最近一次成功构建的数据（仅替换连接态字段）。
+    if (!connected && this.lastConnectedData) {
+      return {
+        ...this.lastConnectedData,
+        connected: false,
+        status: 'success',
+        server_name: serverName,
+        online_count: 0,
+        max_clients: 0,
+        realtime_list: [],
+        cache_time: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      };
+    }
 
     // 服务器组名映射（带 5 分钟缓存）
     const groupNames = await this.getGroupNames();
 
-    const realtimeList: RealtimeEntry[] = clients.map((c) => ({
+    // 实时列表同样剔除机器人，否则页面会出现「在线 0 人」却列出 MusicBot 的矛盾现象。
+    const realtimeList: RealtimeEntry[] = humans.map((c) => ({
       nickname: c.nickname,
       channel: c.channelName,
       groups: c.serverGroupIds.map((id) => groupNames.get(id) ?? `SG${id}`),
@@ -216,6 +240,7 @@ export class DashboardService {
       clientDownload: clientDownload.officialUrl,
       mirrorDownload: clientDownload.mirrorUrl,
       translationDownload: clientDownload.translationUrl,
+      version: clientDownload.version,
     };
     const tutorial = this.configStore.getJson<TutorialConfig>('tutorial', {});
     const tutorialUpdatedAt = this.configStore.getUpdatedAt('tutorial');

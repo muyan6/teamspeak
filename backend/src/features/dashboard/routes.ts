@@ -3,7 +3,15 @@ import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute, pruneRateLimitMap } from '../../api/route-utils.js';
 
 const DATA_WINDOW_MS = 60 * 1000;
-const DATA_MAX_REQUESTS = 30;
+/**
+ * 每 IP 每分钟的仪表盘请求上限。
+ *
+ * 前端在有 WebSocket 时约 60 秒轮询一次、无 WS 时 15 秒一次，正常单标签页
+ * 只需 1~4 次/分钟。但当反向代理未设置 `X-Forwarded-For`（或 NAT 后多人
+ * 共享出口 IP）时，`req.ip` 会退化成同一个地址，所有访客共用配额。
+ * 30 太低会让首页直接被打成 429，因此放宽到 120，同时保留对脚本刷接口的约束。
+ */
+const DATA_MAX_REQUESTS = 120;
 interface DataRateLimitEntry { count: number; resetAt: number }
 
 export function registerDashboardRoutes(router: Router, deps: ApiDeps): void {

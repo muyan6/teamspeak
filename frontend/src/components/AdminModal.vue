@@ -85,26 +85,27 @@ function openMusicBot(): void {
 }
 
 async function loadAdminScope(): Promise<void> {
-  try {
-    const [health, siteConfig] = await Promise.all([
-      api.getHealth(),
-      api.getSiteConfig().catch(() => null),
-    ]);
-    isPlatformAdmin.value = health.platform;
-    if (siteConfig?.musicBotUrl) {
-      musicBotUrl.value = siteConfig.musicBotUrl;
-    }
-    if (siteConfig?.tsManagerUrl) {
-      tsManagerUrl.value = siteConfig.tsManagerUrl;
-    }
-    if (siteConfig?.webClientUrl) {
-      webClientUrl.value = siteConfig.webClientUrl;
-    }
-    if (siteConfig?.steamBoxUrl) {
-      steamBoxUrl.value = siteConfig.steamBoxUrl;
-    }
-  } catch {
-    isPlatformAdmin.value = false;
+  // 用 allSettled 而不是 all：单个接口失败（例如分站未启用平台能力）不应该让
+  // 整块后台信息一起丢失。健康检查失败才降级为「非平台管理员」。
+  const [healthResult, siteConfigResult] = await Promise.allSettled([
+    api.getHealth(),
+    api.getSiteConfig(),
+  ]);
+
+  isPlatformAdmin.value = healthResult.status === 'fulfilled' ? Boolean(healthResult.value.platform) : false;
+
+  const siteConfig = siteConfigResult.status === 'fulfilled' ? siteConfigResult.value : null;
+  if (siteConfig?.musicBotUrl) {
+    musicBotUrl.value = siteConfig.musicBotUrl;
+  }
+  if (siteConfig?.tsManagerUrl) {
+    tsManagerUrl.value = siteConfig.tsManagerUrl;
+  }
+  if (siteConfig?.webClientUrl) {
+    webClientUrl.value = siteConfig.webClientUrl;
+  }
+  if (siteConfig?.steamBoxUrl) {
+    steamBoxUrl.value = siteConfig.steamBoxUrl;
   }
 }
 

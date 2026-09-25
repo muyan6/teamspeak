@@ -256,7 +256,8 @@ onMounted(() => {
               @blur="onBlur"
             />
             <div v-if="suggestions.length > 0" class="suggestions">
-              <button v-for="s in suggestions" :key="s.uid" class="suggestion-item" @click="selectSuggestion(s)">
+              <!-- @mousedown.prevent：避免输入框 blur 先清空候选，导致点击选不中 -->
+              <button v-for="s in suggestions" :key="s.uid" class="suggestion-item" @mousedown.prevent @click="selectSuggestion(s)">
                 <span>{{ s.nickname }}</span>
                 <small>UID: {{ s.uid }}</small>
               </button>

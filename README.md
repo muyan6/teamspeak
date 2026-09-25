@@ -57,8 +57,9 @@ http://localhost:4321
 ```bash
 # 1. 准备后端配置
 cd backend
-# 创建 .env，只填写首次启动密码即可
-printf '%s\n' 'ADMIN_PASSWORD=请替换为你的后台密码' > .env
+# 从模板创建 .env，只填写首次启动密码即可
+cp .env.example .env
+# 然后编辑 .env 设置 ADMIN_PASSWORD=你的后台密码
 # TS3 连接信息可在后台填写，无需写入 .env
 npm ci
 
@@ -76,7 +77,9 @@ npm run dev
 
 ## 配置说明（`.env`）
 
-> `.env` 包含后台密码、JWT 密钥和 TS3 ServerQuery 凭据，不能提交到 Git 仓库。生产环境请设置固定且随机的 `JWT_SECRET`，否则服务重启后已有的管理员登录令牌会失效。
+> `.env` 包含后台密码、JWT 密钥和 TS3 ServerQuery 凭据，**已被 `.gitignore` 忽略，绝不能提交到 Git 仓库**。仓库里只保留无敏感值的模板 `backend/.env.example`，请复制它来创建 `.env`。生产环境请设置固定且随机的 `JWT_SECRET`，否则服务重启后已有的管理员登录令牌会失效。
+
+> 未设置 `ADMIN_PASSWORD` 时，服务会在首次启动时生成一次性随机后台密码并**打印在启动日志中**（形如 `[auth] 未配置 ADMIN_PASSWORD，已生成一次性后台密码`）。请立即登录后台并修改密码。
 
 | 变量 | 说明 | 必填 |
 |------|------|------|
@@ -94,7 +97,8 @@ npm run dev
 | `SITE_SLUG` | 当前分站唯一标识，例如 `server-a` | 否 |
 | `SITE_DOMAIN` | 当前分站允许访问的域名，可用逗号分隔多个域名 | 否 |
 | `SITE_BASE_DOMAIN` | 统一分站的默认根域名；也可在总站后台「统一分站」中保存 | 否 |
-| `ADMIN_PASSWORD` | 首次启动时初始化后台管理密码；初始化后密码保存在 SQLite，可从 `.env` 删除 | 首次启动必填 |
+| `ADMIN_PASSWORD` | 首次启动时初始化后台管理密码；初始化后密码保存在 SQLite，可从 `.env` 删除。未设置时会自动生成随机密码并打印到日志 | 否（推荐首次设置） |
+| `TRUST_PROXY` | 反向代理信任级别，默认 `loopback`（仅信任本机代理）。可选 `false` / `true` / 具体 IP 或 CIDR。仅当反向代理与后端不在同一台机器时才需要放宽 | 否 |
 | `JWT_SECRET` | JWT 签名密钥，生产环境请改成随机串 | 否 |
 | `DB_PATH` | SQLite 数据库路径，默认 `data/ts3monitor.db` | 否 |
 | `COLLECT_INTERVAL_MS` | 数据采集间隔（毫秒），默认 `30000` | 否 |

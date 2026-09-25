@@ -56,10 +56,15 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** 仅允许 http/https 和相对路径，拦截 javascript: 等危险协议 */
+/**
+ * 仅允许 http/https 和站内相对路径，拦截 javascript: 等危险协议。
+ *
+ * 注意：`//evil.com` 这类协议相对地址会被浏览器按当前页协议解析到外域，
+ * 对图片/链接而言没有必要，因此一并拒绝，只允许单斜杠开头的站内路径。
+ */
 function safeUrl(url: string): string {
   const u = url.trim();
-  if (/^(https?:)?\/\//i.test(u) || u.startsWith('/') || u.startsWith('./') || u.startsWith('../') || u.startsWith('#')) {
+  if (/^https?:\/\//i.test(u) || (u.startsWith('/') && !u.startsWith('//')) || u.startsWith('./') || u.startsWith('../') || u.startsWith('#')) {
     return u;
   }
   return '';
@@ -72,16 +77,22 @@ export function renderMarkdown(md: string): string {
   let listTag = 'ul';
 
   const inline = (text: string): string => {
+    // 注意：文本此前已由 escapeHtml 处理过（& 已转为 &amp;，" 已转为 &quot;）。
+    // 此处 escapeAttr 只需确保单双引号与尖括号被安全编码，绝不能再次把 &amp; 转为 &amp;amp;，
+    // 否则会破坏包含查询参数（?a=1&b=2）的链接与图片地址。
+    const escapeAttr = (value: string): string =>
+      value.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
     let t = escapeHtml(text);
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
     t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     t = t.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) => {
       const safe = safeUrl(src);
-      return safe ? `<img alt="${alt}" src="${safe}" loading="lazy">` : '';
+      return safe ? `<img alt="${escapeAttr(alt)}" src="${escapeAttr(safe)}" loading="lazy">` : '';
     });
     t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label: string, href: string) => {
       const safe = safeUrl(href);
-      return safe ? `<a href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+      return safe ? `<a href="${escapeAttr(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
     });
     return t;
   };

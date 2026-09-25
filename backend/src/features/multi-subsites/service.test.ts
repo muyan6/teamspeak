@@ -140,4 +140,33 @@ describe('统一分站注册表', () => {
     expect(registry.hasHost('alpha2.example.com')).toBe(false);
     db.close();
   });
+
+  it('getByHost 和 hasHost 支持剥离端口的主机名查询', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com');
+    const created = registry.create({ displayName: 'Alpha', slug: 'alpha', ts3Host: '127.0.0.1', adminPassword: 'password-123' });
+
+    expect(registry.hasHost('alpha.example.com:443')).toBe(true);
+    expect(registry.hasHost('alpha.example.com:8080')).toBe(true);
+    expect(registry.getByHost('alpha.example.com:443')?.id).toBe(created.id);
+    expect(registry.getByHost('ALPHA.example.com:8443.')?.id).toBe(created.id);
+
+    db.close();
+  });
+
+  it('分站创建与更新时校验 ts3Host 与 publicHost 格式', () => {
+    const db = openDatabase(':memory:');
+    const registry = new MultiSubsiteRegistry(db, 'example.com');
+
+    // 拒绝协议前缀、空格与非法字符
+    expect(() => registry.create({ displayName: 'Bad1', slug: 'bad1', ts3Host: 'http://ts3.com', adminPassword: 'password-123' })).toThrow('TS3 服务器地址格式无效');
+    expect(() => registry.create({ displayName: 'Bad2', slug: 'bad2', ts3Host: 'ts3.com\nEVIL=1', adminPassword: 'password-123' })).toThrow('TS3 服务器地址格式无效');
+    expect(() => registry.create({ displayName: 'Bad3', slug: 'bad3', ts3Host: '127.0.0.1', publicHost: 'http://ts3.com', adminPassword: 'password-123' })).toThrow('客户端连接地址格式无效');
+
+    const ok = registry.create({ displayName: 'Good', slug: 'good', ts3Host: '127.0.0.1', adminPassword: 'password-123' });
+    expect(() => registry.update(ok.id, { ts3Host: 'ts3.com/path' })).toThrow('TS3 服务器地址格式无效');
+    expect(() => registry.update(ok.id, { publicHost: 'ts3.com:invalid:port:format' })).toThrow('客户端连接地址格式无效');
+
+    db.close();
+  });
 });

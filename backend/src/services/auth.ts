@@ -105,6 +105,18 @@ export class AuthService {
   }
 }
 
+/**
+ * 生成一次性引导密码。
+ *
+ * 当既没有已保存的管理员哈希、也没有合法的 ADMIN_PASSWORD 时使用。
+ * 旧行为是让 AuthService 持有空哈希，此后任何密码都无法登录、而修改密码
+ * 又要求先登录，导致只能手工改 SQLite 才能恢复。改为自动生成随机密码
+ * 并在启动日志中打印一次，管理员登录后即可自行修改。
+ */
+export function generateBootstrapAdminPassword(): string {
+  return randomBytes(18).toString('base64url');
+}
+
 export function hashAdminPassword(password: string): string {
   const salt = randomBytes(16);
   const digest = scryptSync(password, salt, 64);

@@ -352,4 +352,74 @@ describe('成就服务', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM achievement_grants WHERE level_id = ?').get(level.id)).toEqual({ count: 0 });
     db.close();
   });
+
+  it('勋章与成就等级共享同一 TS3 组时，勋章回收不应误删用户的 TS3 组', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    const removedGroups: number[] = [];
+    const ts3 = {
+      addClientToServerGroup: async () => true,
+      removeClientFromServerGroup: async (sgid: number) => {
+        removedGroups.push(sgid);
+        return true;
+      },
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+
+    // 拥有白银等级（sgid=99）和连续在线勋章（同为 sgid=99）
+    const lvl = service.addLevel({ hours: 10, serverGroupId: 99, title: '十小时' });
+    const badge = service.addBadge({
+      name: '连续打卡',
+      conditionType: 'streak_days',
+      conditionParams: { threshold: 7 },
+      serverGroupId: 99,
+      enabled: 1,
+      icon: 'ph-fire',
+    });
+
+    // 用户累计 20 小时（达成等级），但没有连续打卡记录（勋章不满足）
+    db.prepare(`
+      INSERT INTO user_online_duration (
+        server_key, client_database_id, unique_identifier, nickname,
+        total_seconds, week_seconds, longest_session_seconds, last_updated
+      ) VALUES ('server-a', 1, 'uid-1', '测试玩家', 72000, 0, 0, ?)
+    `).run(Date.now());
+
+    // 模拟之前曾被授予该勋章和等级
+    db.prepare('INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)').run('server-a', 1, lvl.id, Date.now());
+    db.prepare('INSERT INTO badge_grants (server_key, client_database_id, badge_id, granted_at) VALUES (?, ?, ?, ?)').run('server-a', 1, badge.id, Date.now());
+
+    await service.check();
+
+    // 勋章应被回收（本地 grant 删除），但 TS3 组 99 绝不应被移除，因为等级仍持有该组
+    expect(removedGroups).not.toContain(99);
+    expect(db.prepare('SELECT 1 FROM badge_grants WHERE server_key = ? AND client_database_id = ? AND badge_id = ?').get('server-a', 1, badge.id)).toBeUndefined();
+    expect(db.prepare('SELECT 1 FROM achievement_grants WHERE server_key = ? AND client_database_id = ? AND level_id = ?').get('server-a', 1, lvl.id)).toBeDefined();
+
+    db.close();
+  });
+
+  it('停用成就清理时单个成员 TS3 移除失败不应阻断其他成员与本地 grants 清理', async () => {
+    const db = openDatabase(':memory:');
+    const stats = new StatsService(db, 'server-a');
+    const ts3 = {
+      removeClientFromServerGroup: async (_sgid: number, cldbid: number) => {
+        // 用户 1 失败，用户 2 成功
+        return cldbid === 2;
+      },
+    } as unknown as Ts3ClientWrapper;
+    const service = new AchievementService(db, ts3, stats);
+
+    const level = service.addLevel({ hours: 1, serverGroupId: 10, title: '已停用等级' });
+    service.updateLevel(level.id, { hours: 1, serverGroupId: 10, title: '已停用等级', enabled: 0 });
+
+    db.prepare('INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)').run('server-a', 1, level.id, Date.now());
+    db.prepare('INSERT INTO achievement_grants (server_key, client_database_id, level_id, granted_at) VALUES (?, ?, ?, ?)').run('server-a', 2, level.id, Date.now());
+
+    await service.check();
+
+    // 本地 grants 无论 TS3 远端用户 1 状态如何，都应该成功清除停用条目
+    expect(db.prepare('SELECT COUNT(*) as count FROM achievement_grants WHERE server_key = ? AND level_id = ?').get('server-a', level.id)).toEqual({ count: 0 });
+    db.close();
+  });
 });
