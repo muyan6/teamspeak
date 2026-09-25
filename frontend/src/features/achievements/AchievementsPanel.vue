@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api';
 import { toast } from '../../composables/useToast';
 import type { AchievementLevel, BadgeConditionType, BadgeDefinition, ServerGroup, UnlockedAchievement } from '../../types';
@@ -12,6 +12,8 @@ const unlocked = ref<UnlockedAchievement[]>([]);
 const groups = ref<ServerGroup[]>([]);
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
+const saving = ref(false);
+const checking = ref(false);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 时长成就表单与编辑模态框
@@ -141,6 +143,7 @@ function openEditLevelModal(lvl: AchievementLevel): void {
 }
 
 async function saveLevel(): Promise<void> {
+  if (saving.value) return;
   if (!levelEditForm.value.title.trim()) {
     showNotice('保存失败：请输入成就等级名称', 'warning');
     return;
@@ -157,6 +160,7 @@ async function saveLevel(): Promise<void> {
     serverGroupId: Number(levelEditForm.value.serverGroupId || 0),
   };
 
+  saving.value = true;
   try {
     if (editingLevelId.value) {
       const current = levels.value.find((l) => l.id === editingLevelId.value);
@@ -173,10 +177,13 @@ async function saveLevel(): Promise<void> {
     await load();
   } catch (error) {
     showNotice(`保存时长成就等级失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
 async function addLevel(): Promise<void> {
+  if (saving.value) return;
   if (!levelForm.value.title.trim()) {
     showNotice('添加失败：请输入成就等级名称', 'warning');
     return;
@@ -185,6 +192,7 @@ async function addLevel(): Promise<void> {
     showNotice('添加失败：所需在线时长必须大于 0 小时', 'warning');
     return;
   }
+  saving.value = true;
   try {
     await api.addAchievementLevel({ ...levelForm.value, title: levelForm.value.title.trim() });
     levelForm.value = { title: '', hours: 1, serverGroupId: 0 };
@@ -192,6 +200,8 @@ async function addLevel(): Promise<void> {
     await load();
   } catch (error) {
     showNotice(`添加时长成就等级失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -255,6 +265,7 @@ function openEditBadgeModal(b: BadgeDefinition): void {
 }
 
 async function saveBadge(): Promise<void> {
+  if (saving.value) return;
   if (!badgeForm.value.name.trim()) {
     showNotice('保存失败：请输入勋章名称', 'warning');
     return;
@@ -289,6 +300,7 @@ async function saveBadge(): Promise<void> {
     enabled: current ? current.enabled : 1,
   };
 
+  saving.value = true;
   try {
     if (editingBadgeId.value) {
       await api.updateBadge(editingBadgeId.value, payload);
@@ -301,6 +313,8 @@ async function saveBadge(): Promise<void> {
     await load();
   } catch (error) {
     showNotice(`保存勋章失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -330,6 +344,8 @@ async function removeBadge(id: number): Promise<void> {
 }
 
 async function runCheck(): Promise<void> {
+  if (checking.value) return;
+  checking.value = true;
   try {
     const result = await api.checkAchievements();
     const granted = result.results.filter((entry) => entry.granted).length;
@@ -337,6 +353,8 @@ async function runCheck(): Promise<void> {
     await load();
   } catch (error) {
     showNotice(`全员成就检测失败：${(error as Error).message}`, 'error');
+  } finally {
+    checking.value = false;
   }
 }
 
@@ -368,6 +386,9 @@ function groupName(serverGroupId: number): string {
 }
 
 onMounted(() => { void load(); });
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>
@@ -394,8 +415,8 @@ onMounted(() => { void load(); });
       </div>
 
       <div class="top-actions">
-        <button class="btn sm" @click="runCheck" title="立即对全员重新计算并发放">
-          <i class="ph-bold ph-arrows-clockwise"></i> 立即全员检测匹配
+        <button class="btn sm" :disabled="checking" @click="runCheck" title="立即对全员重新计算并发放">
+          <i class="ph-bold" :class="checking ? 'ph-spinner ph-spin' : 'ph-arrows-clockwise'"></i> {{ checking ? '检测计算中...' : '立即全员检测匹配' }}
         </button>
         <button v-if="activeTab === 'badges'" class="btn sm primary" @click="openAddBadgeModal">
           <i class="ph-bold ph-plus"></i> 新增勋章
@@ -509,7 +530,7 @@ onMounted(() => { void load(); });
               </select>
             </td>
             <td colspan="2" style="text-align: right">
-              <button class="btn primary" @click="addLevel">添加时长等级</button>
+              <button class="btn primary" :disabled="saving" @click="addLevel">{{ saving ? '添加中...' : '添加时长等级' }}</button>
             </td>
           </tr>
         </tbody>
@@ -654,8 +675,8 @@ onMounted(() => { void load(); });
         </div>
 
         <div class="modal-foot">
-          <button class="btn" @click="showBadgeModal = false">取消</button>
-          <button class="btn primary" @click="saveBadge">保存并全员匹配</button>
+          <button class="btn" :disabled="saving" @click="showBadgeModal = false">取消</button>
+          <button class="btn primary" :disabled="saving" @click="saveBadge">{{ saving ? '保存中...' : '保存并全员匹配' }}</button>
         </div>
       </div>
     </div>
@@ -689,8 +710,8 @@ onMounted(() => { void load(); });
         </div>
 
         <div class="modal-foot">
-          <button class="btn" @click="showLevelModal = false">取消</button>
-          <button class="btn primary" @click="saveLevel">保存并全员匹配</button>
+          <button class="btn" :disabled="saving" @click="showLevelModal = false">取消</button>
+          <button class="btn primary" :disabled="saving" @click="saveLevel">{{ saving ? '保存中...' : '保存并全员匹配' }}</button>
         </div>
       </div>
     </div>

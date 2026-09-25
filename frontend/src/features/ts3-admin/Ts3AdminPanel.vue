@@ -284,6 +284,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (noticeTimer) clearTimeout(noticeTimer);
 });
 </script>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api';
 import { toast } from '../../composables/useToast';
 import type { AdminChannel, ElasticGroup } from '../../types';
@@ -10,6 +10,7 @@ const EMPTY_FORM = { name: '', namePrefix: '', baseChannelId: 0, createThreshold
 const form = ref({ ...EMPTY_FORM });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
+const saving = ref(false);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
@@ -48,6 +49,7 @@ function getChannelName(cid: number | null): string {
 }
 
 async function add(): Promise<void> {
+  if (saving.value) return;
   const name = form.value.name.trim();
   const prefix = form.value.namePrefix.trim();
   if (!name || !prefix) {
@@ -68,6 +70,7 @@ async function add(): Promise<void> {
     return;
   }
 
+  saving.value = true;
   try {
     await api.addElasticGroup({
       ...form.value,
@@ -80,6 +83,8 @@ async function add(): Promise<void> {
     await load();
   } catch (error) {
     showNotice(`添加弹性频道组失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -98,6 +103,9 @@ async function remove(id: number): Promise<void> {
 }
 
 onMounted(() => { void load(); });
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>
@@ -127,7 +135,7 @@ onMounted(() => { void load(); });
           <td><input v-model.number="form.createThreshold" class="input" type="number" min="1" placeholder="满员阈值" /></td>
           <td><input v-model.number="form.deleteThreshold" class="input" type="number" min="0" placeholder="空置回收" /></td>
           <td><input v-model.number="form.maxChannels" class="input" type="number" min="1" placeholder="最大频道" /></td>
-          <td style="text-align: right"><button class="btn primary" @click="add">添加</button></td>
+          <td style="text-align: right"><button class="btn primary" :disabled="saving" @click="add">{{ saving ? '添加中...' : '添加' }}</button></td>
         </tr>
       </tbody>
     </table>

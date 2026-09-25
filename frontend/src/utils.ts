@@ -82,6 +82,7 @@ function safeUrl(url: string): string {
 }
 
 export function renderMarkdown(md: string): string {
+  if (!md || typeof md !== 'string') return '';
   const lines = md.split('\n');
   let html = '';
   let inList = false;

@@ -75,8 +75,8 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       return;
     }
 
-    const nickname = String(req.query.nickname || '').trim();
-    const uid = String(req.query.uid || '').trim();
+    const nickname = String(req.query.nickname || '').trim().slice(0, 100);
+    const uid = String(req.query.uid || '').trim().slice(0, 100);
     if (!nickname && !uid) {
       res.status(400).json({ error: '请提供昵称或 UID' });
       return;
@@ -191,7 +191,7 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
   }));
 
   router.get('/stats/suggest', (req, res) => {
-    const query = String(req.query.q || '').trim();
+    const query = String(req.query.q || '').trim().slice(0, 50);
     if (!query) {
       res.json({ suggestions: [] });
       return;

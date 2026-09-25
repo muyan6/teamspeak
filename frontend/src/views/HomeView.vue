@@ -63,6 +63,9 @@ const adminQqLink = computed(() => {
   if (!c) return '';
   if (/^https?:\/\//i.test(c) || /^tencent:\/\//i.test(c) || /^mqqwpa:\/\//i.test(c)) return c;
   const num = c.replace(/[^0-9]/g, '');
+  if (/^7656119\d{10}$/.test(num)) {
+    return `https://steamcommunity.com/profiles/${num}`;
+  }
   if (/^[1-9]\d{4,11}$/.test(num)) {
     return `tencent://message/?uin=${num}&Site=TeamSpeak&Menu=yes`;
   }
@@ -75,7 +78,13 @@ const translationDownloadUrl = computed(() => safeHttpUrl(data.value?.site.trans
 const musicBotUrl = computed(() => safeHttpUrl(data.value?.site.musicBotUrl));
 const webClientUrl = computed(() => safeHttpUrl(data.value?.site.webClientUrl));
 const steamBoxUrl = computed(() => safeHttpUrl(data.value?.site.steamBoxUrl));
-const adminQqDisplay = computed(() => 'QQ');
+const adminQqDisplay = computed(() => {
+  const link = adminQqLink.value.toLowerCase();
+  if (link.includes('steam')) return 'Steam';
+  if (link.includes('qq') || link.startsWith('tencent:') || link.startsWith('mqqwpa:')) return 'QQ';
+  if (/^[1-9]\d{4,11}$/.test(adminQqContact.value)) return 'QQ';
+  return '管理员';
+});
 // 版本号来自后台「教程配置」，后端已做白名单校验；这里再兜底一次默认值。
 const downloadVersion = computed(() => {
   const v = (data.value?.site.clientVersion || '').trim();

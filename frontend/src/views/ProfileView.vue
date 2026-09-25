@@ -14,8 +14,9 @@ const error = ref('');
 const profile = ref<ProfileData | null>(null);
 const suggestions = ref<UserSuggestion[]>([]);
 const hoveredDay = ref<{ date: string; seconds: number } | null>(null);
-const badgeFilter = ref<'all' | 'milestone' | 'behavior'>('all');
+const badgeFilter = ref<'all' | 'milestone' | 'behavior' | 'custom'>('all');
 let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+let blurTimer: ReturnType<typeof setTimeout> | null = null;
 let suggestRequestId = 0;
 
 interface HeatmapDay {
@@ -194,7 +195,8 @@ function selectSuggestion(suggestion: UserSuggestion) {
 }
 
 function onBlur() {
-  setTimeout(() => {
+  if (blurTimer) clearTimeout(blurTimer);
+  blurTimer = setTimeout(() => {
     suggestions.value = [];
   }, 200);
 }
@@ -248,6 +250,7 @@ watch(
 
 onUnmounted(() => {
   if (suggestTimer) clearTimeout(suggestTimer);
+  if (blurTimer) clearTimeout(blurTimer);
 });
 </script>
 
@@ -555,6 +558,13 @@ onUnmounted(() => {
               >
                 趣味徽章
               </button>
+              <button
+                class="b-filter-btn"
+                :class="{ active: badgeFilter === 'custom' }"
+                @click="badgeFilter = 'custom'"
+              >
+                自定义勋章
+              </button>
             </div>
           </div>
 
@@ -574,9 +584,9 @@ onUnmounted(() => {
                 </div>
                 <span
                   class="badge-cat-tag"
-                  :class="b.category === 'milestone' ? 'cat-milestone' : 'cat-behavior'"
+                  :class="b.category === 'milestone' ? 'cat-milestone' : (b.category === 'custom' ? 'cat-custom' : 'cat-behavior')"
                 >
-                  {{ b.category === 'milestone' ? '时长成就' : '趣味徽章' }}
+                  {{ b.category === 'milestone' ? '时长成就' : (b.category === 'custom' ? '自定义勋章' : '趣味徽章') }}
                 </span>
               </div>
 
@@ -1510,6 +1520,11 @@ onUnmounted(() => {
 .cat-behavior {
   background: rgba(129, 140, 248, 0.12);
   color: #818cf8;
+}
+
+.cat-custom {
+  background: rgba(34, 211, 238, 0.12);
+  color: #22d3ee;
 }
 
 .badge-card-main {

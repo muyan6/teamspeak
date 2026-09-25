@@ -887,17 +887,19 @@ export class StatsService {
 
   suggestNicknames(q: string, limit = 8): Array<{ nickname: string; uid: string }> {
     const botInSql = this.getExcludedBotUidsInSql();
+    const safeLimit = Math.min(Math.max(1, limit), 20);
+    const escaped = q.replace(/[%_\\]/g, '\\$&');
     return (
       this.db
         .prepare(
           `SELECT nickname, unique_identifier as uid FROM user_online_duration
-           WHERE server_key = ? AND nickname LIKE ?
+           WHERE server_key = ? AND nickname LIKE ? ESCAPE '\\'
              AND unique_identifier NOT IN (${botInSql})
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND nickname != ''
            ORDER BY nickname, total_seconds DESC LIMIT ?`
         )
-        .all(this.serverKey, `%${q}%`, limit) as Array<{ nickname: string; uid: string }>
+        .all(this.serverKey, `%${escaped}%`, safeLimit) as Array<{ nickname: string; uid: string }>
     );
   }
 

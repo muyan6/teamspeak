@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { HOME_MODULES, useHomeModules } from './home-modules';
 import { toast } from '../../composables/useToast';
 
 const { modules, loading, saving, error, enabledCount, load, save, reset } = useHomeModules();
 const notice = ref('');
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setNotice(msg: string, duration = 3000): void {
+  notice.value = msg;
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, duration);
+}
 
 async function saveModules(): Promise<void> {
   try {
     await save();
-    notice.value = '主页模块配置保存成功';
+    setNotice('主页模块配置保存成功', 2600);
     toast.success('主页模块配置保存成功');
-    window.setTimeout(() => (notice.value = ''), 2600);
   } catch (e) {
     const msg = (e as Error).message || error.value || '保存失败';
     toast.error(`主页模块配置保存失败：${msg}`);
@@ -20,12 +26,14 @@ async function saveModules(): Promise<void> {
 
 function resetModules(): void {
   reset();
-  notice.value = '已恢复默认模块设置（请点击保存生效）';
+  setNotice('已恢复默认模块设置（请点击保存生效）', 3000);
   toast.info('已恢复默认模块设置（请点击保存生效）');
-  window.setTimeout(() => (notice.value = ''), 3000);
 }
 
 onMounted(() => void load());
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>

@@ -126,6 +126,15 @@ function scheduleReconnect(): void {
 // 模块加载时即建立 WebSocket 连接（单例，仅连接一次）
 if (typeof window !== 'undefined') {
   connectWebSocket();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      if (!ws && !wsReconnectTimer) {
+        wsFailures = 0;
+        connectWebSocket();
+      }
+      void refresh(true);
+    }
+  });
 }
 
 export function useDashboard(): {

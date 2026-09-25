@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api';
 import { toast } from '../../composables/useToast';
 
@@ -72,6 +72,9 @@ async function save(): Promise<void> {
 }
 
 onMounted(() => { void load(); });
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>
@@ -114,8 +117,8 @@ onMounted(() => { void load(); });
       <input v-model="site.adminName" class="input" placeholder="可留空" />
     </div>
     <div class="field">
-      <label>管理员 QQ (QQ号或加好友链接)</label>
-      <input v-model="site.adminQq" class="input" placeholder="例如：12345678 或 QQ加好友链接" />
+      <label>管理员联系方式（支持 QQ号、17 位 SteamID64 或加好友链接）</label>
+      <input v-model="site.adminQq" class="input" placeholder="例如：12345678、76561198000000000 或加好友链接" />
     </div>
     <div class="field">
       <label>排除机器人 UID (多个 UID 可用逗号、分号或换行分隔)</label>

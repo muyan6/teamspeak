@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { multiSubsiteApi } from './api';
 import { toast } from '../../composables/useToast';
 import type { CreateManagedSubsiteInput, ManagedSubsite, MultiSubsiteSettings, UpdateManagedSubsiteInput } from './types';
@@ -37,6 +37,8 @@ const purgeDatabase = ref(false);
 const canCreate = computed(() => Boolean(settings.value.baseDomain.trim() && form.value.displayName.trim() && form.value.slug.trim() && form.value.ts3Host.trim() && form.value.adminPassword));
 const generatedDomain = computed(() => form.value.slug.trim().toLowerCase() ? `${form.value.slug.trim().toLowerCase()}.${settings.value.baseDomain.trim().toLowerCase()}` : `昵称.${settings.value.baseDomain.trim().toLowerCase() || 'example.com'}`);
 
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
 function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
   notice.value = message;
   noticeType.value = type;
@@ -44,7 +46,8 @@ function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'su
   else if (type === 'error') toast.error(message);
   else toast.warning(message);
 
-  window.setTimeout(() => { if (notice.value === message) notice.value = ''; }, 4000);
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice.value = ''; }, 4000);
 }
 
 async function load(): Promise<void> {
@@ -183,6 +186,9 @@ async function confirmDelete(): Promise<void> {
 }
 
 onMounted(() => { void load(); });
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>

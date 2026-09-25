@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { api } from '../../api';
 import { toast } from '../../composables/useToast';
 
@@ -7,6 +7,7 @@ const tutorial = ref({ download: '', basic: '', advanced: '', music: '' });
 const download = ref({ version: '3.6.2', officialUrl: '', mirrorUrl: '', translationUrl: '' });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
+const saving = ref(false);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
@@ -41,6 +42,8 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (saving.value) return;
+  saving.value = true;
   try {
     await api.saveTutorialConfig({
       tutorial: tutorial.value,
@@ -49,10 +52,15 @@ async function save(): Promise<void> {
     showNotice('教程配置保存成功', 'success');
   } catch (error) {
     showNotice(`教程配置保存失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
 onMounted(() => { void load(); });
+onUnmounted(() => {
+  if (noticeTimer) clearTimeout(noticeTimer);
+});
 </script>
 
 <template>
@@ -86,6 +94,6 @@ onMounted(() => { void load(); });
       <label>汉化包链接</label>
       <input v-model="download.translationUrl" class="input" placeholder="留空使用默认" />
     </div>
-    <div class="modal-actions"><button class="btn primary" @click="save">保存</button></div>
+    <div class="modal-actions"><button class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button></div>
   </div>
 </template>

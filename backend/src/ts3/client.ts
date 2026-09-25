@@ -482,10 +482,14 @@ export class Ts3ClientWrapper extends EventEmitter {
     }
   }
 
-  async getChannel(cid: number): Promise<{ name: string; totalClients: number } | null> {
+  async getChannel(cid: number): Promise<{ name: string; totalClients: number; totalClientsFamily?: number } | null> {
     try {
       const channel = await this.executeQuery(() => this.requireTs3().getChannelById(String(cid)));
-      return channel ? { name: channel.name, totalClients: channel.totalClients } : null;
+      return channel ? {
+        name: channel.name,
+        totalClients: channel.totalClients,
+        totalClientsFamily: channel.totalClientsFamily !== undefined ? Number(channel.totalClientsFamily) : undefined,
+      } : null;
     } catch {
       return null;
     }

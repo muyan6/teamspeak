@@ -224,10 +224,12 @@ export class MultiSubsiteRuntimeManager {
         const archiveFile = path.join(subsiteDir, `${subsite.slug}_archive.db`);
         const walFile = path.join(subsiteDir, `${subsite.slug}.db-wal`);
         const shmFile = path.join(subsiteDir, `${subsite.slug}.db-shm`);
+        const archiveWalFile = path.join(subsiteDir, `${subsite.slug}_archive.db-wal`);
+        const archiveShmFile = path.join(subsiteDir, `${subsite.slug}_archive.db-shm`);
         // 非 WAL 模式（或降级）时 SQLite 会生成 -journal，一并清理避免残留。
         const journalFile = path.join(subsiteDir, `${subsite.slug}.db-journal`);
         const archiveJournalFile = path.join(subsiteDir, `${subsite.slug}_archive.db-journal`);
-        for (const f of [dbFile, archiveFile, walFile, shmFile, journalFile, archiveJournalFile]) {
+        for (const f of [dbFile, archiveFile, walFile, shmFile, archiveWalFile, archiveShmFile, journalFile, archiveJournalFile]) {
           if (existsSync(f)) rmSync(f, { force: true });
         }
       } catch (err) {
