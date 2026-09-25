@@ -59,15 +59,26 @@ function escapeHtml(s: string): string {
 /**
  * 仅允许 http/https 和站内相对路径，拦截 javascript: 等危险协议。
  *
- * 注意：`//evil.com` 这类协议相对地址会被浏览器按当前页协议解析到外域，
- * 对图片/链接而言没有必要，因此一并拒绝，只允许单斜杠开头的站内路径。
+ * 不能只靠字符前缀判断：WHATWG URL 对 http(s) 等「特殊 scheme」会把反斜杠
+ * 归一化成正斜杠，因此 `/(反斜杠)evil.com` 实际等价于 `//evil.com`，会被浏览器
+ * 解析到外域（已用 node 复现：`new URL('/\\evil.com','https://good.example/')`
+ * → `https://evil.com/`）。这里改为先用占位 origin 解析，再据此判定归属。
  */
+const SAFE_URL_SENTINEL_ORIGIN = 'https://safe-url.invalid';
+
 function safeUrl(url: string): string {
   const u = url.trim();
-  if (/^https?:\/\//i.test(u) || (u.startsWith('/') && !u.startsWith('//')) || u.startsWith('./') || u.startsWith('../') || u.startsWith('#')) {
+  if (!u) return '';
+  try {
+    const parsed = new URL(u, SAFE_URL_SENTINEL_ORIGIN);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    // 相对路径必须解析回占位 origin；解析到别处说明它其实是绝对/协议相对地址。
+    if (parsed.origin === SAFE_URL_SENTINEL_ORIGIN) return u;
+    if (u.startsWith('/') || u.startsWith('./') || u.startsWith('../')) return '';
     return u;
+  } catch {
+    return '';
   }
-  return '';
 }
 
 export function renderMarkdown(md: string): string {

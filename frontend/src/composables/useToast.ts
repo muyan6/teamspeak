@@ -11,6 +11,8 @@ export interface ToastItem {
 }
 
 const toasts = ref<ToastItem[]>([]);
+/** 记录每条 toast 的自动关闭定时器，手动关闭/清空时一并回收，避免句柄泄漏。 */
+const dismissTimers = new Map<number, ReturnType<typeof setTimeout>>();
 let nextId = 1;
 
 export function useToast() {
@@ -20,9 +22,11 @@ export function useToast() {
     toasts.value.push(item);
 
     if (duration > 0) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        dismissTimers.delete(id);
         remove(id);
       }, duration);
+      dismissTimers.set(id, timer);
     }
 
     return id;
@@ -45,6 +49,11 @@ export function useToast() {
   }
 
   function remove(id: number): void {
+    const timer = dismissTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      dismissTimers.delete(id);
+    }
     const idx = toasts.value.findIndex((t) => t.id === id);
     if (idx !== -1) {
       toasts.value.splice(idx, 1);
@@ -52,6 +61,8 @@ export function useToast() {
   }
 
   function clear(): void {
+    for (const timer of dismissTimers.values()) clearTimeout(timer);
+    dismissTimers.clear();
     toasts.value = [];
   }
 

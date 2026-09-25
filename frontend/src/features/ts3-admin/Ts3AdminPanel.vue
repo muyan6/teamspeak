@@ -60,13 +60,20 @@ async function loadAll() {
   }
 }
 
+let clientsInFlight = false;
+
 async function loadClients() {
+  // 10s 轮询 + TS3 卡顿时请求会持续堆叠，且旧响应会覆盖新响应；加 in-flight 守卫。
+  if (clientsInFlight) return;
+  clientsInFlight = true;
   try {
     const [chs, cls] = await Promise.all([api.listChannels(), api.listClients()]);
     channels.value = chs;
     clients.value = cls;
   } catch (e) {
     showNotice(`刷新客户端数据失败：${(e as Error).message}`, 'error');
+  } finally {
+    clientsInFlight = false;
   }
 }
 

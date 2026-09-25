@@ -224,17 +224,25 @@ const selectedLevel = ref<{ id: number; title: string; hours: number; unlockedCo
 const levelUsers = ref<LevelUserItem[]>([]);
 const levelUsersLoading = ref(false);
 
+let levelUsersRequestId = 0;
+
 async function openLevelModal(level: { id: number; title: string; hours: number; unlockedCount: number }, idx: number) {
   selectedLevel.value = { ...level, iconIndex: idx };
   showLevelModal.value = true;
   levelUsersLoading.value = true;
   levelUsers.value = [];
+  // 连续点击不同等级时响应顺序无法保证：旧请求后到会把列表覆盖成上一个等级，
+  // 而弹窗标题已经是新等级。用请求序号丢弃过期响应。
+  const requestId = ++levelUsersRequestId;
   try {
-    levelUsers.value = await api.getAchievementLevelUsers(level.id);
+    const users = await api.getAchievementLevelUsers(level.id);
+    if (requestId !== levelUsersRequestId) return;
+    levelUsers.value = users;
   } catch (err) {
+    if (requestId !== levelUsersRequestId) return;
     console.error('获取成就成员列表失败:', err);
   } finally {
-    levelUsersLoading.value = false;
+    if (requestId === levelUsersRequestId) levelUsersLoading.value = false;
   }
 }
 

@@ -18,6 +18,7 @@ const site = ref({
 });
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
+const saving = ref(false);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showNotice(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
@@ -53,6 +54,10 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  // 后端每次保存都会执行 cleanupBotData()（全量机器人数据清理），
+  // 连点「保存」会并发触发多次重复清理，这里加 in-flight 守卫。
+  if (saving.value) return;
+  saving.value = true;
   try {
     await api.saveSiteConfig({
       ...site.value,
@@ -61,6 +66,8 @@ async function save(): Promise<void> {
     showNotice('站点配置保存成功', 'success');
   } catch (error) {
     showNotice(`站点配置保存失败：${(error as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -122,6 +129,6 @@ onMounted(() => { void load(); });
         配置后将自动在在线时长统计、排行榜、荣誉殿堂及活跃分析中排除这些机器人。
       </div>
     </div>
-    <div class="modal-actions"><button class="btn primary" @click="save">保存</button></div>
+    <div class="modal-actions"><button class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button></div>
   </div>
 </template>

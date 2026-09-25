@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, ApiError } from '../api';
 import type { ProfileData, UserSuggestion } from '../types';
@@ -16,6 +16,7 @@ const suggestions = ref<UserSuggestion[]>([]);
 const hoveredDay = ref<{ date: string; seconds: number } | null>(null);
 const badgeFilter = ref<'all' | 'milestone' | 'behavior'>('all');
 let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+let suggestRequestId = 0;
 
 interface HeatmapDay {
   date: string;
@@ -212,23 +213,41 @@ function onInput() {
       suggestions.value = [];
       return;
     }
+    // 快速输入时响应顺序无法保证：旧请求后到会覆盖新候选，这里丢弃过期响应。
+    const requestId = ++suggestRequestId;
     try {
       const r = await api.suggestNicknames(current);
+      if (requestId !== suggestRequestId) return;
       suggestions.value = r.suggestions;
     } catch {
+      if (requestId !== suggestRequestId) return;
       suggestions.value = [];
     }
   }, 250);
 }
 
-onMounted(() => {
-  const q = String(route.query.nickname || '');
-  const uid = String(route.query.uid || '');
-  if (q) {
-    nickname.value = q;
-    selectedUid.value = uid;
+/**
+ * 路由 query 变化时必须重新查询。
+ *
+ * 旧实现只在 onMounted 读一次 query：从首页榜单点另一个用户的链接时
+ * Vue Router 复用同一个 ProfileView 实例，URL 变了但页面仍显示上一个人的数据。
+ */
+watch(
+  () => [route.query.nickname, route.query.uid] as const,
+  ([q, uid]) => {
+    const nextName = String(q || '').trim();
+    const nextUid = String(uid || '').trim();
+    if (!nextName) return;
+    if (nextName === nickname.value.trim() && nextUid === selectedUid.value) return;
+    nickname.value = nextName;
+    selectedUid.value = nextUid;
     void search();
-  }
+  },
+  { immediate: true }
+);
+
+onUnmounted(() => {
+  if (suggestTimer) clearTimeout(suggestTimer);
 });
 </script>
 

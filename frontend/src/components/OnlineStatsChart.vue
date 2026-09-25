@@ -81,10 +81,11 @@ onMounted(() => {
   window.addEventListener('resize', resize);
 });
 
+// trend 是父组件的 computed，每次数据刷新都会产生新对象引用；deep 遍历没有意义，
+// 只会白白递归比较整个 labels/data 数组。
 watch(
   () => props.trend,
-  () => render(),
-  { deep: true }
+  () => render()
 );
 
 onBeforeUnmount(() => {

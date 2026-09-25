@@ -74,8 +74,9 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
     const parsedHours = Number(hours);
     const parsedGroupId = parseNonNegativeInteger(serverGroupId, 0);
     const normalizedTitle = parseTitle(title);
-    if (!Number.isFinite(parsedHours) || parsedHours < 0 || parsedGroupId === null || !normalizedTitle) {
-      res.status(400).json({ error: `成就名称（1~${MAX_TITLE_LENGTH} 字符）与非负时长必填` });
+    // hours 必须 > 0：0 小时成就会让前端进度条按 current/0 计算，宽度变成 "NaN%"。
+    if (!Number.isFinite(parsedHours) || parsedHours <= 0 || parsedGroupId === null || !normalizedTitle) {
+      res.status(400).json({ error: `成就名称（1~${MAX_TITLE_LENGTH} 字符）与大于 0 的时长必填` });
       return;
     }
     const created = deps.achievement.addLevel({
@@ -94,7 +95,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
     const parsedGroupId = parseNonNegativeInteger(serverGroupId, 0);
     const parsedEnabled = Number(enabled);
     const normalizedTitle = parseTitle(title);
-    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(parsedHours) || parsedHours < 0 || parsedGroupId === null || ![0, 1].includes(parsedEnabled) || !normalizedTitle) {
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(parsedHours) || parsedHours <= 0 || parsedGroupId === null || ![0, 1].includes(parsedEnabled) || !normalizedTitle) {
       res.status(400).json({ error: `成就配置无效（名称需为 1~${MAX_TITLE_LENGTH} 字符）` });
       return;
     }

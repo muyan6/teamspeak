@@ -7,6 +7,8 @@ const error = ref('');
 const isWsConnected = ref(false);
 let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wsFailures = 0;
+const WS_MAX_FAILURES = 6;
 let refreshPromise: Promise<void> | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingRefresh = false;
@@ -65,6 +67,7 @@ function connectWebSocket(): void {
   }
   ws.onopen = () => {
     isWsConnected.value = true;
+    wsFailures = 0;
   };
   ws.onmessage = (event) => {
     try {
@@ -103,12 +106,21 @@ function connectWebSocket(): void {
   };
 }
 
+const WS_RECONNECT_BASE_MS = 5000;
+const WS_RECONNECT_MAX_MS = 60000;
+
 function scheduleReconnect(): void {
   if (wsReconnectTimer) return;
+  // 固定 5 秒重试会在反向代理未转发 /ws 时变成永不停歇的请求风暴
+  // （多标签页再放大 N 倍）。这里改为指数退避并在达到上限后停止重连，
+  // 由 App.vue 的 HTTP 轮询继续兜底刷新。
+  if (wsFailures >= WS_MAX_FAILURES) return;
+  const delay = Math.min(WS_RECONNECT_BASE_MS * 2 ** wsFailures, WS_RECONNECT_MAX_MS);
+  wsFailures += 1;
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null;
     connectWebSocket();
-  }, 5000);
+  }, delay);
 }
 
 // 模块加载时即建立 WebSocket 连接（单例，仅连接一次）

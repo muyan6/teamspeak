@@ -48,40 +48,48 @@ const tsManagerUrl = ref('');
 const webClientUrl = ref('');
 const steamBoxUrl = ref('');
 
-function openTsManager(): void {
-  if (tsManagerUrl.value) {
-    window.open(tsManagerUrl.value, '_blank', 'noopener,noreferrer');
-  } else {
+/**
+ * 打开外部面板前必须校验协议。
+ *
+ * 这些地址来自 `/site-config`，虽然写入接口只接受 http(s)，但历史遗留值或
+ * 直接改库写入的值仍可能不是 http(s)；不校验就 `window.open` 会打开
+ * `javascript:` / `data:` 之类地址。
+ */
+function openExternal(url: string, missingHint: string): void {
+  const target = url.trim();
+  if (target) {
+    let protocol = '';
+    try {
+      protocol = new URL(target).protocol;
+    } catch {
+      protocol = '';
+    }
+    if (protocol === 'http:' || protocol === 'https:') {
+      window.open(target, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    toast.error('该链接不是有效的 HTTP(S) 地址，请到「站点配置」中修正');
     activeTab.value = 'site';
-    toast.info('请在「站点配置」中设置 TS Manager Web 地址');
+    return;
   }
+  activeTab.value = 'site';
+  toast.info(missingHint);
+}
+
+function openTsManager(): void {
+  openExternal(tsManagerUrl.value, '请在「站点配置」中设置 TS Manager Web 地址');
 }
 
 function openWebClient(): void {
-  if (webClientUrl.value) {
-    window.open(webClientUrl.value, '_blank', 'noopener,noreferrer');
-  } else {
-    activeTab.value = 'site';
-    toast.info('请在「站点配置」中设置 WebSpeak 网页端链接');
-  }
+  openExternal(webClientUrl.value, '请在「站点配置」中设置 WebSpeak 网页端链接');
 }
 
 function openSteamBox(): void {
-  if (steamBoxUrl.value) {
-    window.open(steamBoxUrl.value, '_blank', 'noopener,noreferrer');
-  } else {
-    activeTab.value = 'site';
-    toast.info('请在「站点配置」中设置 Steam 盒子链接');
-  }
+  openExternal(steamBoxUrl.value, '请在「站点配置」中设置 Steam 盒子链接');
 }
 
 function openMusicBot(): void {
-  if (musicBotUrl.value) {
-    window.open(musicBotUrl.value, '_blank', 'noopener,noreferrer');
-  } else {
-    activeTab.value = 'site';
-    toast.info('请在「站点配置」中设置 TSMusicBot Web 链接');
-  }
+  openExternal(musicBotUrl.value, '请在「站点配置」中设置 TSMusicBot Web 链接');
 }
 
 async function loadAdminScope(): Promise<void> {

@@ -40,7 +40,9 @@ async function load(): Promise<void> {
 }
 
 function getChannelName(cid: number | null): string {
-  if (!cid) return '根目录';
+  // 只有 null 才代表「未设置父频道」。用 `!cid` 会把 cid=0（根频道）也显示成
+  // 「根目录」，掩盖了后端写入 0 时的真实语义差异。
+  if (cid === null) return '根目录';
   const c = channels.value.find((item) => item.cid === cid);
   return c ? c.name : `#${cid}`;
 }

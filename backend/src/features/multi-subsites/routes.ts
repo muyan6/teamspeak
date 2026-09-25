@@ -1,3 +1,4 @@
+import type { RequestHandler, Router } from 'express';
 import { subsiteUrl, type MultiSubsiteRuntimeManager } from './runtime.js';
 
 /**

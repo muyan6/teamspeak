@@ -145,8 +145,9 @@ async function saveLevel(): Promise<void> {
     showNotice('保存失败：请输入成就等级名称', 'warning');
     return;
   }
-  if (levelEditForm.value.hours < 0) {
-    showNotice('保存失败：所需在线时长不能为负数', 'warning');
+  // 后端要求 hours > 0：0 小时成就会让个人页进度条按 current/0 算出 "NaN%"。
+  if (!(levelEditForm.value.hours > 0)) {
+    showNotice('保存失败：所需在线时长必须大于 0 小时', 'warning');
     return;
   }
 
@@ -180,8 +181,8 @@ async function addLevel(): Promise<void> {
     showNotice('添加失败：请输入成就等级名称', 'warning');
     return;
   }
-  if (levelForm.value.hours < 0) {
-    showNotice('添加失败：所需在线时长不能为负数', 'warning');
+  if (!(levelForm.value.hours > 0)) {
+    showNotice('添加失败：所需在线时长必须大于 0 小时', 'warning');
     return;
   }
   try {
@@ -500,7 +501,7 @@ onMounted(() => { void load(); });
           </tr>
           <tr class="tbl-form-row">
             <td><input v-model="levelForm.title" class="input" placeholder="例如：百小时老兵" /></td>
-            <td><input v-model.number="levelForm.hours" class="input" type="number" min="0" placeholder="时长(小时)" /></td>
+            <td><input v-model.number="levelForm.hours" class="input" type="number" min="1" placeholder="时长(小时)" /></td>
             <td>
               <select v-model.number="levelForm.serverGroupId" class="input">
                 <option :value="0">无（仅勋章徽章与荣誉殿堂）</option>
@@ -675,7 +676,7 @@ onMounted(() => { void load(); });
 
           <div class="form-group">
             <label>达成条件：所需累计在线时长 (小时) *</label>
-            <input v-model.number="levelEditForm.hours" class="input" type="number" min="0" placeholder="例如：100" />
+            <input v-model.number="levelEditForm.hours" class="input" type="number" min="1" placeholder="例如：100" />
           </div>
 
           <div class="form-group">

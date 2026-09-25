@@ -97,7 +97,17 @@ async function save(): Promise<void> {
   saving.value = true;
   try {
     const result = await api.saveTs3Config({ ...form.value, host: form.value.host.trim(), username: form.value.username.trim() });
-    connection.value = { ...(connection.value ?? {}), ...result.config, connected: false } as Ts3ConnectionInfo;
+    // 不要用 `connected: false` 覆盖：后端返回的 config 不含 serverId，且硬编码 false 会让
+    // UI 先闪一下「未连接」（再靠 waitForReconnect 轮询纠正）。这里直接回读真实状态。
+    connection.value = {
+      ...connection.value,
+      host: form.value.host.trim(),
+      queryPort: form.value.queryPort,
+      serverPort: form.value.serverPort,
+      serverId: form.value.serverId,
+      username: form.value.username.trim(),
+      hasPassword: Boolean(form.value.password) || Boolean(result.config?.hasPassword),
+    } as Ts3ConnectionInfo;
     showNotice('服务器配置已保存，正在重新连接 TS3...', 'info');
     await waitForReconnect();
   } catch (error) {
