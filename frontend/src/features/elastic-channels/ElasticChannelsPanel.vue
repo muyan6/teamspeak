@@ -49,7 +49,10 @@ function getChannelName(cid: number | null): string {
 }
 
 async function add(): Promise<void> {
-  if (saving.value) return;
+  if (saving.value) {
+    showNotice('正在添加弹性频道组，请勿重复操作', 'warning');
+    return;
+  }
   const name = form.value.name.trim();
   const prefix = form.value.namePrefix.trim();
   if (!name || !prefix) {

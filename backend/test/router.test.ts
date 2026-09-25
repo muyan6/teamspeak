@@ -504,4 +504,18 @@ describe('管理接口与配置回归', () => {
     expect(response.status).toBe(404);
     expect(clientDbListCalls()).toBe(1); // 远端回退查询了一次
   });
+
+  it('用户查询与搜索建议对超长参数显式返回 400 校验错误', async () => {
+    const { baseUrl } = await startRouter();
+    const overlong = 'a'.repeat(101);
+    const userRes = await fetch(`${baseUrl}/stats/user?nickname=${overlong}`);
+    expect(userRes.status).toBe(400);
+    const userData = await userRes.json();
+    expect(userData.error).toContain('超出限制');
+
+    const suggestRes = await fetch(`${baseUrl}/stats/suggest?q=${'b'.repeat(51)}`);
+    expect(suggestRes.status).toBe(400);
+    const suggestData = await suggestRes.json();
+    expect(suggestData.error).toContain('超出限制');
+  });
 });

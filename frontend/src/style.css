@@ -2407,3 +2407,13 @@ button {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes ph-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ph-spin {
+  display: inline-block;
+  animation: ph-spin 1s linear infinite;
+}
+
+

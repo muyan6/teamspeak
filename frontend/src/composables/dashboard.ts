@@ -128,7 +128,11 @@ if (typeof window !== 'undefined') {
   connectWebSocket();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      if (!ws && !wsReconnectTimer) {
+      if (!ws) {
+        if (wsReconnectTimer) {
+          clearTimeout(wsReconnectTimer);
+          wsReconnectTimer = null;
+        }
         wsFailures = 0;
         connectWebSocket();
       }

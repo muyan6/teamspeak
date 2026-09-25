@@ -75,8 +75,12 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       return;
     }
 
-    const nickname = String(req.query.nickname || '').trim().slice(0, 100);
-    const uid = String(req.query.uid || '').trim().slice(0, 100);
+    const nickname = String(req.query.nickname || '').trim();
+    const uid = String(req.query.uid || '').trim();
+    if (nickname.length > 100 || uid.length > 100) {
+      res.status(400).json({ error: '昵称或 UID 长度超出限制（最多 100 字符）' });
+      return;
+    }
     if (!nickname && !uid) {
       res.status(400).json({ error: '请提供昵称或 UID' });
       return;
@@ -191,7 +195,11 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
   }));
 
   router.get('/stats/suggest', (req, res) => {
-    const query = String(req.query.q || '').trim().slice(0, 50);
+    const query = String(req.query.q || '').trim();
+    if (query.length > 50) {
+      res.status(400).json({ error: '搜索关键词长度超出限制（最多 50 字符）' });
+      return;
+    }
     if (!query) {
       res.json({ suggestions: [] });
       return;

@@ -56,7 +56,10 @@ async function load(): Promise<void> {
 async function save(): Promise<void> {
   // 后端每次保存都会执行 cleanupBotData()（全量机器人数据清理），
   // 连点「保存」会并发触发多次重复清理，这里加 in-flight 守卫。
-  if (saving.value) return;
+  if (saving.value) {
+    showNotice('正在保存站点配置，请勿重复操作', 'warning');
+    return;
+  }
   saving.value = true;
   try {
     await api.saveSiteConfig({

@@ -12,7 +12,9 @@ const unlocked = ref<UnlockedAchievement[]>([]);
 const groups = ref<ServerGroup[]>([]);
 const notice = ref('');
 const noticeType = ref<'success' | 'error' | 'warning'>('success');
-const saving = ref(false);
+const savingLevel = ref(false);
+const addingInlineLevel = ref(false);
+const savingBadge = ref(false);
 const checking = ref(false);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -143,7 +145,10 @@ function openEditLevelModal(lvl: AchievementLevel): void {
 }
 
 async function saveLevel(): Promise<void> {
-  if (saving.value) return;
+  if (savingLevel.value) {
+    showNotice('正在保存成就等级，请勿重复操作', 'warning');
+    return;
+  }
   if (!levelEditForm.value.title.trim()) {
     showNotice('保存失败：请输入成就等级名称', 'warning');
     return;
@@ -160,7 +165,7 @@ async function saveLevel(): Promise<void> {
     serverGroupId: Number(levelEditForm.value.serverGroupId || 0),
   };
 
-  saving.value = true;
+  savingLevel.value = true;
   try {
     if (editingLevelId.value) {
       const current = levels.value.find((l) => l.id === editingLevelId.value);
@@ -178,12 +183,15 @@ async function saveLevel(): Promise<void> {
   } catch (error) {
     showNotice(`保存时长成就等级失败：${(error as Error).message}`, 'error');
   } finally {
-    saving.value = false;
+    savingLevel.value = false;
   }
 }
 
 async function addLevel(): Promise<void> {
-  if (saving.value) return;
+  if (addingInlineLevel.value) {
+    showNotice('正在添加成就等级，请勿重复操作', 'warning');
+    return;
+  }
   if (!levelForm.value.title.trim()) {
     showNotice('添加失败：请输入成就等级名称', 'warning');
     return;
@@ -192,7 +200,7 @@ async function addLevel(): Promise<void> {
     showNotice('添加失败：所需在线时长必须大于 0 小时', 'warning');
     return;
   }
-  saving.value = true;
+  addingInlineLevel.value = true;
   try {
     await api.addAchievementLevel({ ...levelForm.value, title: levelForm.value.title.trim() });
     levelForm.value = { title: '', hours: 1, serverGroupId: 0 };
@@ -201,7 +209,7 @@ async function addLevel(): Promise<void> {
   } catch (error) {
     showNotice(`添加时长成就等级失败：${(error as Error).message}`, 'error');
   } finally {
-    saving.value = false;
+    addingInlineLevel.value = false;
   }
 }
 
@@ -265,7 +273,10 @@ function openEditBadgeModal(b: BadgeDefinition): void {
 }
 
 async function saveBadge(): Promise<void> {
-  if (saving.value) return;
+  if (savingBadge.value) {
+    showNotice('正在保存勋章，请勿重复操作', 'warning');
+    return;
+  }
   if (!badgeForm.value.name.trim()) {
     showNotice('保存失败：请输入勋章名称', 'warning');
     return;
@@ -300,7 +311,7 @@ async function saveBadge(): Promise<void> {
     enabled: current ? current.enabled : 1,
   };
 
-  saving.value = true;
+  savingBadge.value = true;
   try {
     if (editingBadgeId.value) {
       await api.updateBadge(editingBadgeId.value, payload);
@@ -314,7 +325,7 @@ async function saveBadge(): Promise<void> {
   } catch (error) {
     showNotice(`保存勋章失败：${(error as Error).message}`, 'error');
   } finally {
-    saving.value = false;
+    savingBadge.value = false;
   }
 }
 
@@ -344,7 +355,10 @@ async function removeBadge(id: number): Promise<void> {
 }
 
 async function runCheck(): Promise<void> {
-  if (checking.value) return;
+  if (checking.value) {
+    showNotice('全员检测计算中，请稍候...', 'warning');
+    return;
+  }
   checking.value = true;
   try {
     const result = await api.checkAchievements();
@@ -530,7 +544,7 @@ onUnmounted(() => {
               </select>
             </td>
             <td colspan="2" style="text-align: right">
-              <button class="btn primary" :disabled="saving" @click="addLevel">{{ saving ? '添加中...' : '添加时长等级' }}</button>
+              <button class="btn primary" :disabled="addingInlineLevel" @click="addLevel">{{ addingInlineLevel ? '添加中...' : '添加时长等级' }}</button>
             </td>
           </tr>
         </tbody>
@@ -675,8 +689,8 @@ onUnmounted(() => {
         </div>
 
         <div class="modal-foot">
-          <button class="btn" :disabled="saving" @click="showBadgeModal = false">取消</button>
-          <button class="btn primary" :disabled="saving" @click="saveBadge">{{ saving ? '保存中...' : '保存并全员匹配' }}</button>
+          <button class="btn" :disabled="savingBadge" @click="showBadgeModal = false">取消</button>
+          <button class="btn primary" :disabled="savingBadge" @click="saveBadge">{{ savingBadge ? '保存中...' : '保存并全员匹配' }}</button>
         </div>
       </div>
     </div>
@@ -710,8 +724,8 @@ onUnmounted(() => {
         </div>
 
         <div class="modal-foot">
-          <button class="btn" :disabled="saving" @click="showLevelModal = false">取消</button>
-          <button class="btn primary" :disabled="saving" @click="saveLevel">{{ saving ? '保存中...' : '保存并全员匹配' }}</button>
+          <button class="btn" :disabled="savingLevel" @click="showLevelModal = false">取消</button>
+          <button class="btn primary" :disabled="savingLevel" @click="saveLevel">{{ savingLevel ? '保存中...' : '保存并全员匹配' }}</button>
         </div>
       </div>
     </div>

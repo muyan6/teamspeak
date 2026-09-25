@@ -40,7 +40,10 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  if (saving.value) return;
+  if (saving.value) {
+    showNotice('正在保存周冠军配置，请勿重复操作', 'warning');
+    return;
+  }
   if (form.value.enabled === 1 && (!form.value.serverGroupId || form.value.serverGroupId <= 0)) {
     showNotice('保存失败：启用周冠军时必须选择奖励服务器组', 'warning');
     return;

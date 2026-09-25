@@ -42,7 +42,10 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  if (saving.value) return;
+  if (saving.value) {
+    showNotice('正在保存教程配置，请勿重复操作', 'warning');
+    return;
+  }
   saving.value = true;
   try {
     await api.saveTutorialConfig({

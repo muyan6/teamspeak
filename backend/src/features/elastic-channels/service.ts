@@ -191,8 +191,9 @@ export class ElasticChannelService {
       );
       for (const ch of managedEmptyChannels.slice(0, deletionCount)) {
         const currentChannel = await this.ts3.getChannel(ch.cid);
-        const users = currentChannel ? (currentChannel.totalClientsFamily ?? currentChannel.totalClients) : 0;
-        if (!currentChannel || users > group.deleteThreshold) continue;
+        const rawUsers = currentChannel ? (currentChannel.totalClientsFamily ?? currentChannel.totalClients) : 0;
+        const users = Number(rawUsers);
+        if (!currentChannel || Number.isNaN(users) || users > group.deleteThreshold) continue;
         const ok = await this.ts3.deleteChannel(ch.cid);
         if (ok) {
           this.forgetManagedChannel(group.id, ch.cid);
