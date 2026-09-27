@@ -12,6 +12,7 @@ import { ElasticChannelService } from '../src/features/elastic-channels/service.
 import { AchievementService } from '../src/features/achievements/service.js';
 import { WeeklyChampionService } from '../src/features/weekly-champion/service.js';
 import { MonitorService } from '../src/services/monitor.js';
+import { DashboardService } from '../src/services/dashboard.js';
 import { WsHub } from '../src/ws/hub.js';
 
 describe('TS3 监控后端核心链路', () => {
@@ -1321,5 +1322,79 @@ describe('TS3 监控后端核心链路', () => {
     expect(deleted).toEqual([55]);
     expect(elastic.listGroups().some((item) => item.id === group.id)).toBe(false);
     elasticDb.close();
+  });
+
+  it('实时在线包含机器人，而历史趋势与峰值采样严格仅统计真人用户', async () => {
+    const testDb = openDatabase(':memory:');
+    const stats = new StatsService(testDb);
+    const now = Date.now();
+    const human = {
+      clid: 1,
+      clientDatabaseId: 101,
+      uniqueIdentifier: 'uid-real-user',
+      nickname: 'RealHuman',
+      serverGroupIds: [1],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: Math.floor(now / 1000) - 300,
+      clientType: 0,
+    };
+    const bot = {
+      clid: 2,
+      clientDatabaseId: 102,
+      uniqueIdentifier: 'LAGEsRxRDiUge8unI5aK/S77C28=', // default bot uid
+      nickname: 'MusicBot',
+      serverGroupIds: [2],
+      channelId: 1,
+      channelName: 'Lobby',
+      channelGroupId: 1,
+      connectedTime: Math.floor(now / 1000) - 600,
+      clientType: 0,
+    };
+
+    const mockTs3 = {
+      getServerState: async () => ({ name: 'TestServer', maxClients: 32, uptime: 1000 }),
+      getClients: async () => [human, bot],
+      getChannels: async () => [{ cid: 1, parentId: 0, name: 'Lobby', totalClients: 2, totalClientsFamily: 2, order: 0 }],
+      getServerGroups: async () => [{ sgid: 1, name: 'Member' }, { sgid: 2, name: 'Bot' }],
+    };
+    const achievement = new AchievementService(testDb, mockTs3 as never, stats);
+
+    const dashboard = new DashboardService(
+      {
+        site: { slug: 'test', serverName: 'Test', adminQq: '', adminSteam: '', clientDownload: '', mirrorDownload: '', translationDownload: '', clientVersion: '', connectUrl: '' },
+        publicServer: { host: '127.0.0.1', port: 9987 },
+      } as never,
+      mockTs3 as never,
+      stats,
+      { getJson: () => ({}), get: () => '', getUpdatedAt: () => 0 } as never,
+      { listGroups: () => [], getOverallChannels: () => 0 } as never,
+      achievement
+    );
+
+    const data = await dashboard.getData();
+    // 实时在线人数与列表必须包含机器人（2人：RealHuman与MusicBot）
+    expect(data.online_count).toBe(2);
+    expect(data.realtime_list).toHaveLength(2);
+    expect(data.realtime_list.some((u) => u.nickname === 'MusicBot')).toBe(true);
+    expect(data.realtime_list.some((u) => u.nickname === 'RealHuman')).toBe(true);
+
+    // 验证 MonitorService 的 onlineUpdated 广播包含机器人，但 sampleOnline 只记录真人
+    const monitor = new MonitorService(mockTs3 as never, stats, testDb, 1000, 1000);
+    let broadcastOnline = 0;
+    monitor.on('onlineUpdated', (payload) => {
+      broadcastOnline = payload.online;
+    });
+
+    await monitor.collect();
+    expect(broadcastOnline).toBe(2);
+
+    // 峰值与趋势采样表中应只有真人数量 (1人)
+    const samples = testDb.prepare('SELECT online_count FROM online_samples').all() as Array<{ online_count: number }>;
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples[0].online_count).toBe(1);
+
+    testDb.close();
   });
 });

@@ -185,9 +185,8 @@ export class DashboardService {
 
     const serverName = state?.name ?? this.config.site.serverName;
     const connected = state !== null;
-    // 与 MonitorService / WebSocket 推送保持一致：剔除机器人后再统计。
-    const humans = clients.filter((c) => !this.stats.isBot(c.uniqueIdentifier, c.nickname));
-    const onlineCount = humans.length;
+    // 实时在线人数与列表包含所有在线客户端（包含音乐机器人等）；在线峰值与历史趋势仅统计真人
+    const onlineCount = clients.length;
     const maxClients = state?.maxClients ?? 0;
 
     // TS3 瞬时抖动时不返回空榜单，改为回退最近一次成功构建的数据（仅替换连接态字段）。
@@ -207,8 +206,8 @@ export class DashboardService {
     // 服务器组名映射（带 5 分钟缓存）
     const groupNames = await this.getGroupNames();
 
-    // 实时列表同样剔除机器人，否则页面会出现「在线 0 人」却列出 MusicBot 的矛盾现象。
-    const realtimeList: RealtimeEntry[] = humans.map((c) => ({
+    // 实时在线列表展示所有在线客户端（包含音乐机器人等）
+    const realtimeList: RealtimeEntry[] = clients.map((c) => ({
       nickname: c.nickname,
       channel: c.channelName,
       groups: c.serverGroupIds.map((id) => groupNames.get(id) ?? `SG${id}`),
