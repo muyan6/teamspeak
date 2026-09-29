@@ -72,6 +72,9 @@ export class ElasticChannelService {
   }
 
   async removeGroupAndChannels(id: number): Promise<{ ok: boolean; found: boolean; error?: string }> {
+    const serverKey = this.getServerKey();
+    const generation = this.ts3.getGeneration?.();
+    const isCurrent = (): boolean => !this.db.closed && serverKey === this.getServerKey() && generation === this.ts3.getGeneration?.();
     const group = this.listGroups().find((item) => item.id === id);
     if (!group) return { ok: false, found: false };
 
@@ -87,6 +90,7 @@ export class ElasticChannelService {
       return { ok: false, found: true, error: '无法获取频道列表，未删除弹性频道组配置' };
     }
     const channelMap = new Map(channels.map((channel) => [channel.cid, channel]));
+    if (!isCurrent()) return { ok: false, found: true, error: '服务器已切换，请重试' };
     const existingManaged = [...managedChannelIds]
       .map((channelId) => channelMap.get(channelId))
       .filter((channel): channel is (typeof channels)[number] => Boolean(channel));
@@ -99,6 +103,7 @@ export class ElasticChannelService {
     }
 
     for (const channelId of managedChannelIds) {
+      if (!isCurrent()) return { ok: false, found: true, error: '服务器已切换，请重试' };
       const channel = channelMap.get(channelId);
       if (!channel) {
         this.forgetManagedChannel(id, channelId);
@@ -107,6 +112,7 @@ export class ElasticChannelService {
       if (!await this.ts3.deleteChannel(channelId)) {
         return { ok: false, found: true, error: `删除托管频道「${channel.name}」失败，未删除弹性频道组配置` };
       }
+      if (!isCurrent()) return { ok: false, found: true, error: '服务器已切换，请重试' };
       this.forgetManagedChannel(id, channelId);
     }
 
@@ -139,6 +145,9 @@ export class ElasticChannelService {
   }
 
   private async tickInternal(): Promise<Array<{ type: string; group: string; channelName: string }>> {
+    const serverKey = this.getServerKey();
+    const generation = this.ts3.getGeneration?.();
+    const isCurrent = (): boolean => !this.db.closed && serverKey === this.getServerKey() && generation === this.ts3.getGeneration?.();
     const actions: Array<{ type: string; group: string; channelName: string }> = [];
     const groups = this.listGroups().filter((g) => g.enabled === 1);
     if (groups.length === 0) return actions;
@@ -151,6 +160,7 @@ export class ElasticChannelService {
     }
 
     for (const group of groups) {
+      if (!isCurrent()) return actions;
       const prefix = group.namePrefix;
       const members = channels.filter((c) =>
         c.name.startsWith(prefix) && (group.baseChannelId === null || c.parentId === group.baseChannelId)
@@ -175,6 +185,7 @@ export class ElasticChannelService {
           cpid: group.baseChannelId ?? undefined,
           password: group.password ?? undefined,
         });
+        if (!isCurrent()) return actions;
         if (cid) {
           this.rememberManagedChannel(group.id, cid);
           actions.push({ type: 'create', group: group.name, channelName: newName });
@@ -191,10 +202,12 @@ export class ElasticChannelService {
       );
       for (const ch of managedEmptyChannels.slice(0, deletionCount)) {
         const currentChannel = await this.ts3.getChannel(ch.cid);
+        if (!isCurrent()) return actions;
         const rawUsers = currentChannel ? (currentChannel.totalClientsFamily ?? currentChannel.totalClients) : 0;
         const users = Number(rawUsers);
         if (!currentChannel || Number.isNaN(users) || users > group.deleteThreshold) continue;
         const ok = await this.ts3.deleteChannel(ch.cid);
+        if (!isCurrent()) return actions;
         if (ok) {
           this.forgetManagedChannel(group.id, ch.cid);
           actions.push({ type: 'delete', group: group.name, channelName: ch.name });

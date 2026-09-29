@@ -240,13 +240,21 @@ class CompatStatement {
 
 export class AppDatabase {
   private db: DatabaseSync;
+  private statements = new Map<string, CompatStatement>();
+  private isClosed = false;
 
-  constructor(path: string) {
-    this.db = new DatabaseSync(path);
+  constructor(readonly filePath: string) {
+    this.db = new DatabaseSync(filePath);
   }
 
   prepare(sql: string): CompatStatement {
-    return new CompatStatement(this.db.prepare(sql));
+    if (this.isClosed) throw new Error('数据库已关闭');
+    const cached = this.statements.get(sql);
+    if (cached) return cached;
+    const statement = new CompatStatement(this.db.prepare(sql));
+    if (this.statements.size >= 500) this.statements.delete(this.statements.keys().next().value!);
+    this.statements.set(sql, statement);
+    return statement;
   }
 
   exec(sql: string): void {
@@ -254,8 +262,13 @@ export class AppDatabase {
   }
 
   close(): void {
+    if (this.isClosed) return;
+    this.isClosed = true;
+    this.statements.clear();
     this.db.close();
   }
+
+  get closed(): boolean { return this.isClosed; }
 
   transaction<T>(fn: () => T): () => T {
     return (): T => {

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import net from 'node:net';
 import fs, { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
@@ -16,7 +17,7 @@ import { DashboardService } from '../src/services/dashboard.js';
 import { WsHub } from '../src/ws/hub.js';
 
 describe('TS3 监控后端核心链路', () => {
-  const mock = new MockTs3Server(10012);
+  const mock = new MockTs3Server(0);
   const db = openDatabase(':memory:');
   let ts3: Ts3ClientWrapper;
 
@@ -29,7 +30,7 @@ describe('TS3 监控后端核心链路', () => {
 
     ts3 = new Ts3ClientWrapper({
       host: '127.0.0.1',
-      queryPort: 10012,
+      queryPort: mock.queryPort,
       username: 'serveradmin',
       password: '',
     });
@@ -37,7 +38,7 @@ describe('TS3 监控后端核心链路', () => {
   }, 20000);
 
   afterAll(() => {
-    ts3.stop();
+    ts3?.stop();
     mock.stop();
     db.close();
   });
@@ -223,20 +224,20 @@ describe('TS3 监控后端核心链路', () => {
   });
 
   it('指定虚拟服务器 ID 时按 SID 选择，并隔离统计数据键', async () => {
-    const sidMock = new MockTs3Server(10014);
+    const sidMock = new MockTs3Server(0);
+    await sidMock.start();
     const sidClient = new Ts3ClientWrapper({
       host: '127.0.0.1',
-      queryPort: 10014,
+      queryPort: sidMock.queryPort,
       serverPort: 9987,
       serverId: 42,
       username: 'serveradmin',
       password: '',
     });
-    await sidMock.start();
     try {
       await sidClient.start();
       expect(sidMock.selectedServer).toEqual({ type: 'sid', value: 42 });
-      expect(getTs3ServerKey(sidClient.getConfig())).toBe('127.0.0.1:10014:sid:42');
+      expect(getTs3ServerKey(sidClient.getConfig())).toBe(`127.0.0.1:${sidMock.queryPort}:sid:42`);
     } finally {
       sidClient.stop();
       sidMock.stop();
@@ -1001,7 +1002,10 @@ describe('TS3 监控后端核心链路', () => {
   });
 
   it('首次连接失败后会自动重试并恢复连接', async () => {
-    const retryPort = 10013;
+    const probe = net.createServer();
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const retryPort = (probe.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
     const retryClient = new Ts3ClientWrapper({
       host: '127.0.0.1',
       queryPort: retryPort,

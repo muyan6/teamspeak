@@ -70,6 +70,9 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
   });
 
   router.get('/stats/user', asyncRoute(async (req, res) => {
+    const serverKey = deps.stats.getServerKey?.();
+    const generation = deps.ts3.getGeneration?.();
+    const isCurrent = (): boolean => serverKey === deps.stats.getServerKey?.() && generation === deps.ts3.getGeneration?.();
     if (isRateLimited(req)) {
       res.status(429).json({ error: '查询请求过于频繁，请稍后再试' });
       return;
@@ -110,6 +113,7 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
           ? await deps.ts3.findClientDb(uid || nickname, Boolean(uid))
           : await deps.ts3.getClientDbList();
         const found = findClient(remoteClients, nickname, uid);
+        if (!isCurrent()) { res.status(409).json({ error: '服务器已切换，请重新查询' }); return; }
         if (found) {
           identity = {
             clientDatabaseId: found.clientDatabaseId,
@@ -174,17 +178,20 @@ export function registerProfileRoutes(router: Router, deps: ApiDeps): void {
       }
     }
 
-    let createdAt = '';
-    if (deps.ts3.connected) {
+    const cachedCreated = deps.stats.getClientCreated?.(identity.clientDatabaseId) ?? 0;
+    let createdAt = cachedCreated > 0 ? formatTs3Date(cachedCreated) : '';
+    if (!createdAt && deps.ts3.connected) {
       try {
         const dbInfo = await deps.ts3.getClientDbInfo(identity.clientDatabaseId);
         createdAt = dbInfo && dbInfo.created > 0 ? formatTs3Date(dbInfo.created) : '';
+        if (isCurrent() && dbInfo) deps.stats.syncClientIdentities?.([dbInfo]);
       } catch {
         createdAt = '';
       }
     }
 
     const { dbid: _dbid, ...profile } = stats;
+    if (!isCurrent()) { res.status(409).json({ error: '服务器已切换，请重新查询' }); return; }
 
     res.json({
       ...profile,

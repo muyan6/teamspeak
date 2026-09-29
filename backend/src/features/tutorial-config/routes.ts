@@ -110,14 +110,19 @@ export function registerTutorialConfigRoutes(router: Router, deps: ApiDeps, admi
   router.post('/tutorial-config', admin, (req, res) => {
     const body = (req.body ?? {}) as TutorialConfigPayload;
     try {
-      if (body.tutorial !== undefined) deps.configStore.setJson('tutorial', normalizeTutorial(body.tutorial));
-      if (body.clientDownload !== undefined) deps.configStore.setJson('clientDownload', normalizeClientDownload(body.clientDownload));
-      if (body.musicBotUrl !== undefined) {
-        deps.configStore.set('musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot Web 链接') ?? '');
-      }
-      if (body.tsManagerUrl !== undefined) {
-        deps.configStore.set('tsManagerUrl', normalizeHttpUrl(body.tsManagerUrl, 'TS Manager Web 链接') ?? '');
-      }
+      const tutorial = body.tutorial === undefined ? undefined : normalizeTutorial(body.tutorial);
+      const download = body.clientDownload === undefined ? undefined : normalizeClientDownload(body.clientDownload);
+      const musicBotUrl = normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot Web 链接');
+      const tsManagerUrl = normalizeHttpUrl(body.tsManagerUrl, 'TS Manager Web 链接');
+      const save = (): void => {
+        if (tutorial !== undefined) deps.configStore.setJson('tutorial', tutorial);
+        if (download !== undefined) deps.configStore.setJson('clientDownload', download);
+        if (musicBotUrl !== undefined) deps.configStore.set('musicBotUrl', musicBotUrl);
+        if (tsManagerUrl !== undefined) deps.configStore.set('tsManagerUrl', tsManagerUrl);
+      };
+      if (deps.configStore.transaction) deps.configStore.transaction(save);
+      else save();
+      deps.dashboard?.invalidateCache?.();
       res.json(loadTutorialConfig(deps));
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });

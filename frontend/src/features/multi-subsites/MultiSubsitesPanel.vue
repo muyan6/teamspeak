@@ -146,8 +146,8 @@ function openResetPassword(subsite: ManagedSubsite): void {
 }
 
 async function submitResetPassword(): Promise<void> {
-  if (!newAdminPassword.value || newAdminPassword.value.length < 8) {
-    showNotice('重置失败：新密码至少需要 8 个字符', 'warning');
+  if (newAdminPassword.value.length < 8 || newAdminPassword.value.length > 256) {
+    showNotice('重置失败：新密码需为 8 到 256 个字符', 'warning');
     return;
   }
   resettingPassword.value = true;
@@ -221,7 +221,7 @@ onUnmounted(() => {
       <div class="field"><label>虚拟服务器 ID（可选）</label><input v-model.number="form.serverId" class="input" type="number" min="0" step="1" /></div>
       <div class="field"><label>ServerQuery 账号</label><input v-model="form.username" class="input" /></div>
       <div class="field"><label>ServerQuery 密码</label><input v-model="form.password" class="input" type="password" /></div>
-      <div class="field"><label>分站后台密码</label><input v-model="form.adminPassword" class="input" type="password" placeholder="至少 8 个字符" /></div>
+      <div class="field"><label>分站后台密码</label><input v-model="form.adminPassword" class="input" type="password" minlength="8" maxlength="256" placeholder="8 到 256 个字符" /></div>
     </div>
     <div class="modal-actions">
       <button class="btn primary" :disabled="creating || !canCreate" @click="create">
@@ -300,7 +300,7 @@ onUnmounted(() => {
         <p class="modal-desc">为分站 <code>{{ resettingSubsite.domain }}</code> 设置新的后台管理员密码。</p>
         <div class="field">
           <label>新后台管理密码</label>
-          <input v-model="newAdminPassword" class="input" type="password" placeholder="至少 8 个字符" @keyup.enter="submitResetPassword" />
+          <input v-model="newAdminPassword" class="input" type="password" minlength="8" maxlength="256" placeholder="8 到 256 个字符" @keyup.enter="submitResetPassword" />
         </div>
         <div class="modal-buttons">
           <button class="btn sm" @click="resettingSubsite = null">取消</button>

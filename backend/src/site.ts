@@ -1,4 +1,5 @@
 import type { AppConfig } from './config.js';
+import { isIP } from 'node:net';
 
 export interface SiteData {
   title: string;
@@ -90,7 +91,7 @@ export function buildSiteData(
   webClientUrl?: string,
   steamBoxUrl?: string
 ): SiteData {
-  const host = config.publicServer.host;
+  const host = isIP(config.publicServer.host) === 6 ? `[${config.publicServer.host}]` : config.publicServer.host;
   const port = config.publicServer.port;
   const defaultAddress = port === 9987 ? host : `${host}:${port}`;
   const address = safeText(siteInfo?.serverAddress) || defaultAddress;
@@ -200,7 +201,7 @@ const MUSIC_TUTORIAL = `### 音乐机器人指令
 https://music.163.com/#/my/m/music/playlist?id=**2139305008**`;
 
 export function buildTutorial(config: AppConfig, tutorialOverride?: TutorialConfig, updatedAtMs?: number, legacyGuide?: string): TutorialData {
-  const host = config.publicServer.host;
+  const host = isIP(config.publicServer.host) === 6 ? `[${config.publicServer.host}]` : config.publicServer.host;
   const port = config.publicServer.port;
   const address = port === 9987 ? host : `${host}:${port}`;
 

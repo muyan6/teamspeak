@@ -116,24 +116,21 @@ export function registerSiteConfigRoutes(router: Router, deps: ApiDeps, admin: R
       if (typeof body.adminQq === 'string') {
         siteInfo.adminQq = normalizeAdminContact(body.adminQq);
       }
-      // 这些外链只写入独立的 site_config 键（单一数据源）。
-      // 旧实现同时写进 siteInfo，两处一旦不同步就会出现「后台显示 A、首页显示 B」。
-      if (body.tsManagerUrl !== undefined) {
-        deps.configStore.set('tsManagerUrl', normalizeHttpUrl(body.tsManagerUrl, 'TS Manager 链接') ?? '');
-      }
-      if (body.musicBotUrl !== undefined) {
-        deps.configStore.set('musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接') ?? '');
-      }
-      if (body.webClientUrl !== undefined) {
-        deps.configStore.set('webClientUrl', normalizeHttpUrl(body.webClientUrl, 'WebSpeak 网页端链接') ?? '');
-      }
-      if (body.steamBoxUrl !== undefined) {
-        deps.configStore.set('steamBoxUrl', normalizeHttpUrl(body.steamBoxUrl, 'Steam 盒子链接') ?? '');
-      }
-      deps.configStore.setJson('siteInfo', siteInfo);
-      if (deps.stats?.getDatabase) {
-        cleanupBotData(deps.stats.getDatabase());
-      }
+      const links = [
+        ['tsManagerUrl', normalizeHttpUrl(body.tsManagerUrl, 'TS Manager 链接')],
+        ['musicBotUrl', normalizeHttpUrl(body.musicBotUrl, 'TSMusicBot 链接')],
+        ['webClientUrl', normalizeHttpUrl(body.webClientUrl, 'WebSpeak 网页端链接')],
+        ['steamBoxUrl', normalizeHttpUrl(body.steamBoxUrl, 'Steam 盒子链接')],
+      ] as const;
+      const save = (): void => {
+        for (const [key, value] of links) if (value !== undefined) deps.configStore.set(key, value);
+        deps.configStore.setJson('siteInfo', siteInfo);
+        if (deps.stats?.getDatabase) cleanupBotData(deps.stats.getDatabase());
+      };
+      if (deps.configStore.transaction) deps.configStore.transaction(save);
+      else save();
+      deps.stats?.invalidateRankCaches?.();
+      deps.dashboard?.invalidateCache?.();
       res.json(loadSiteConfig(deps));
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });

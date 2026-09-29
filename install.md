@@ -249,6 +249,8 @@ bash update.sh --full
 
 `--full` 适合首次在已有代码目录中部署、构建产物丢失或需要排查部署状态时使用。
 
+构建或重启失败后，默认更新也会保留待完成状态。修正错误后重跑 `bash update.sh` 即可重试；只有构建和必要的重启都成功，脚本才记录新的成功部署版本。
+
 ---
 
 ### 方式二：手动按需更新
@@ -288,6 +290,8 @@ curl http://127.0.0.1:4321/api/health
 /opt/ts3-monitor/backend/.env
 /opt/ts3-monitor/backend/data/
 ```
+
+`data/` 中的 `.credentials.key`、各分站数据库和归档库必须一起保留。若使用 `CREDENTIAL_ENCRYPTION_KEY`，还需保留相同环境密钥。归档不是删除累计荣誉数据，主库与归档库迁移时应一起移动。
 
 可使用以下命令创建一次备份：
 

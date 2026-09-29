@@ -1,5 +1,9 @@
 import { openDatabase, getEffectiveExcludedBotUids, DEFAULT_EXCLUDED_BOT_UIDS, type AppDatabase } from '../db/database.js';
 import type { OnlineClientData, ChannelData } from '../ts3/client.js';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { LifetimeArchiveReader, overlapsNightWindow } from '../features/achievements/archive-reader.js';
+import { IdentityCache } from '../features/profile/identity-cache.js';
 
 export interface OnlineRecord {
   clientDatabaseId: number;
@@ -51,6 +55,9 @@ export interface TopUser {
 }
 
 export class StatsService {
+  private readonly archiveReader: LifetimeArchiveReader;
+  private readonly identities: IdentityCache;
+  private snapshotBotUids: Set<string> | null = null;
   private suspendedOnline = new Map<number, {
     uniqueIdentifier: string;
     nickname: string;
@@ -60,7 +67,13 @@ export class StatsService {
     lastSeen: number;
   }>();
 
-  constructor(private db: AppDatabase, private serverKey = 'legacy') {}
+  constructor(private db: AppDatabase, private serverKey = 'legacy') {
+    this.identities = new IdentityCache(db);
+    const savedPath = db.prepare("SELECT value FROM site_config WHERE key='statsArchivePath'").get<{ value: string }>()?.value;
+    const defaultPath = db.filePath === ':memory:' ? undefined : path.join(path.dirname(db.filePath),
+      path.basename(path.dirname(db.filePath)) === 'subsites' ? `${path.basename(db.filePath, '.db')}_archive.db` : 'archive.db');
+    this.archiveReader = new LifetimeArchiveReader(savedPath && existsSync(savedPath) ? savedPath : defaultPath);
+  }
 
   getServerKey(): string {
     return this.serverKey;
@@ -86,6 +99,7 @@ export class StatsService {
         'badge_grants',
         'champion_config',
         'champion_history',
+        'client_identities',
       ];
       const tx = this.db.transaction(() => {
         for (const table of tables) {
@@ -110,7 +124,7 @@ export class StatsService {
   }
 
   getExcludedBotUids(): Set<string> {
-    return new Set(getEffectiveExcludedBotUids(this.db));
+    return this.snapshotBotUids ?? new Set(getEffectiveExcludedBotUids(this.db));
   }
 
   getExcludedBotUidsInSql(): string {
@@ -125,10 +139,10 @@ export class StatsService {
 
   private static readonly BOT_REGEX = /^(musicbot|ts3bot|sinusbot|bot|tsbot|serverquery)$|^\[bot\]/i;
 
-  isBot(uniqueIdentifierOrNickname?: string, nickname?: string): boolean {
+  isBot(uniqueIdentifierOrNickname?: string, nickname?: string, excluded = this.getExcludedBotUids()): boolean {
     if (!uniqueIdentifierOrNickname) return false;
     const trimmed1 = uniqueIdentifierOrNickname.trim();
-    if (this.getExcludedBotUids().has(trimmed1)) {
+    if (excluded.has(trimmed1)) {
       return true;
     }
     if (StatsService.BOT_REGEX.test(trimmed1)) {
@@ -174,6 +188,7 @@ export class StatsService {
   }
 
   recordSnapshot(clients: OnlineClientData[], channels: ChannelData[], now = Date.now()): void {
+    this.snapshotBotUids = new Set(getEffectiveExcludedBotUids(this.db));
     const tx = this.db.transaction(() => {
       const prevRows = this.db
         .prepare('SELECT client_database_id, unique_identifier, nickname, channel_id, channel_name, connected_time, last_seen FROM online_clients WHERE server_key = ?')
@@ -269,15 +284,17 @@ export class StatsService {
           channel_name = excluded.channel_name,
           seconds = seconds + excluded.seconds
       `);
-      const bondUpsertStmt = this.db.prepare(`
-        INSERT INTO user_channel_bonds (server_key, user1_dbid, user2_dbid, user1_name, user2_name, seconds, last_meet)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(server_key, user1_dbid, user2_dbid) DO UPDATE SET
-          user1_name = excluded.user1_name,
-          user2_name = excluded.user2_name,
-          seconds = seconds + excluded.seconds,
-          last_meet = excluded.last_meet
-      `);
+      const bonds: Array<Array<string | number>> = [];
+      const flushBonds = (): void => {
+        if (bonds.length === 0) return;
+        this.db.prepare(`INSERT INTO user_channel_bonds
+          (server_key,user1_dbid,user2_dbid,user1_name,user2_name,seconds,last_meet)
+          VALUES ${bonds.map(() => '(?,?,?,?,?,?,?)').join(',')}
+          ON CONFLICT(server_key,user1_dbid,user2_dbid) DO UPDATE SET
+          user1_name=excluded.user1_name,user2_name=excluded.user2_name,
+          seconds=seconds+excluded.seconds,last_meet=excluded.last_meet`).run(...bonds.flat());
+        bonds.length = 0;
+      };
 
       const splitByDay = (startSec: number, endSec: number, add: (day: string, seconds: number) => void): void => {
         let cursor = Math.max(0, startSec);
@@ -469,7 +486,7 @@ export class StatsService {
             const sharedSec = Math.min(u1.deltaSec, u2.deltaSec);
             if (sharedSec <= 0) continue;
             const [first, second] = u1.dbId < u2.dbId ? [u1, u2] : [u2, u1];
-            bondUpsertStmt.run(
+            bonds.push([
               this.serverKey,
               first.dbId,
               second.dbId,
@@ -477,12 +494,14 @@ export class StatsService {
               second.nickname,
               sharedSec,
               nowSec
-            );
+            ]);
+            if (bonds.length >= 128) flushBonds();
           }
         }
       }
 
       // 处理离线的旧用户：结算剩余时长并关闭会话
+      flushBonds();
       const removeStmt = this.db.prepare('DELETE FROM online_clients WHERE server_key = ? AND client_database_id = ?');
       for (const r of prevRows) {
         if (!currentIds.has(r.client_database_id)) {
@@ -521,7 +540,7 @@ export class StatsService {
         if (!currentIds.has(dbId)) this.suspendedOnline.delete(dbId);
       }
     });
-    tx();
+    try { tx(); } finally { this.snapshotBotUids = null; }
   }
 
   /** 清理连接中断时的实时状态，并保留快照供恢复后补算断线期间。 */
@@ -589,7 +608,8 @@ export class StatsService {
           `SELECT client_database_id as clientDatabaseId, MAX(nickname) as nickname, SUM(active_seconds) as seconds
            FROM user_daily_activity
            WHERE server_key = ? AND day >= ?
-             AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
+              AND lower(nickname) NOT LIKE '[bot]%'
              AND client_database_id NOT IN (
                SELECT client_database_id FROM user_online_duration
                WHERE server_key = ? AND unique_identifier IN (${botInSql})
@@ -658,7 +678,7 @@ export class StatsService {
       .map((row) => ({
         clientDatabaseId: row.clientDatabaseId,
         nickname: row.nickname,
-        days: this.computeStreak(row.days.split(',')).current,
+        days: this.computeStreak(this.getLifetimeActiveDays(row.clientDatabaseId)).current,
       }))
       .filter((row) => row.days > 0)
       .sort((a, b) => b.days - a.days || a.clientDatabaseId - b.clientDatabaseId)
@@ -674,17 +694,20 @@ export class StatsService {
   findLocalIdentities(nickname: string): ClientIdentityData[] {
     return this.db
       .prepare(
-        'SELECT client_database_id as clientDatabaseId, nickname, unique_identifier as uniqueIdentifier FROM user_online_duration WHERE server_key = ? AND nickname = ?'
+        `SELECT client_database_id as clientDatabaseId,nickname,unique_identifier as uniqueIdentifier
+         FROM client_identities WHERE server_key=? AND nickname=?
+         UNION SELECT client_database_id,nickname,unique_identifier FROM user_online_duration WHERE server_key=? AND nickname=?`
       )
-      .all(this.serverKey, nickname) as ClientIdentityData[];
+      .all(this.serverKey, nickname, this.serverKey, nickname) as ClientIdentityData[];
   }
 
   getLocalIdentityByUid(uid: string): ClientIdentityData | null {
     const row = this.db
       .prepare(
-        'SELECT client_database_id as clientDatabaseId, nickname, unique_identifier as uniqueIdentifier FROM user_online_duration WHERE server_key = ? AND unique_identifier = ? LIMIT 1'
+        `SELECT client_database_id as clientDatabaseId,nickname,unique_identifier as uniqueIdentifier FROM client_identities WHERE server_key=? AND unique_identifier=?
+         UNION SELECT client_database_id,nickname,unique_identifier FROM user_online_duration WHERE server_key=? AND unique_identifier=? LIMIT 1`
       )
-      .get(this.serverKey, uid) as ClientIdentityData | undefined;
+      .get(this.serverKey, uid, this.serverKey, uid) as ClientIdentityData | undefined;
     return row ?? null;
   }
 
@@ -715,10 +738,7 @@ export class StatsService {
       )
       .get(this.serverKey, dbid) as { total: number } | undefined;
 
-    const daysRows = this.db
-      .prepare('SELECT day FROM user_daily_activity WHERE server_key = ? AND client_database_id = ?')
-      .all(this.serverKey, dbid) as Array<{ day: string }>;
-    const daySet = daysRows.map((r) => r.day);
+    const daySet = this.getLifetimeActiveDays(dbid);
     const sortedDays = [...new Set(daySet)].sort();
 
     const totalSeconds = totalRow?.total ?? 0;
@@ -809,6 +829,7 @@ export class StatsService {
 
       for (const client of clients) {
         if (!client.clientDatabaseId || !client.uniqueIdentifier) continue;
+        this.identities.save(this.serverKey, client);
         updated += statements[0].run(client.nickname, client.uniqueIdentifier, this.serverKey, client.clientDatabaseId).changes;
         updated += statements[1].run(client.nickname, client.uniqueIdentifier, this.serverKey, client.clientDatabaseId).changes;
         updated += statements[2].run(client.nickname, this.serverKey, client.clientDatabaseId).changes;
@@ -892,12 +913,15 @@ export class StatsService {
     return (
       this.db
         .prepare(
-          `SELECT nickname, unique_identifier as uid FROM user_online_duration
+           `SELECT nickname, unique_identifier as uid FROM (
+             SELECT server_key,nickname,unique_identifier FROM client_identities
+             UNION SELECT server_key,nickname,unique_identifier FROM user_online_duration
+           )
            WHERE server_key = ? AND nickname LIKE ? ESCAPE '\\'
              AND unique_identifier NOT IN (${botInSql})
              AND lower(nickname) NOT IN ('musicbot', 'ts3bot', 'sinusbot', 'bot', 'tsbot', 'serverquery')
              AND nickname != ''
-           ORDER BY nickname, total_seconds DESC LIMIT ?`
+            ORDER BY nickname, uid LIMIT ?`
         )
         .all(this.serverKey, `%${escaped}%`, safeLimit) as Array<{ nickname: string; uid: string }>
     );
@@ -1053,34 +1077,10 @@ export class StatsService {
   }
 
   hasNightOwlSessions(clientDatabaseId: number): boolean {
-    const row = this.db.prepare(`
-      SELECT 1 FROM sessions
-      WHERE server_key = ? AND client_database_id = ?
-        AND (
-          CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5
-          OR (end_time IS NOT NULL AND CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) BETWEEN 2 AND 5)
-          OR (
-            CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) < 2
-            AND (
-              end_time IS NULL
-              OR CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) > 5
-              OR strftime('%Y-%m-%d', datetime(end_time, 'unixepoch', 'localtime')) > strftime('%Y-%m-%d', datetime(start_time, 'unixepoch', 'localtime'))
-            )
-            AND (end_time IS NULL OR end_time - start_time >= 7200)
-          )
-          OR (
-            CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) >= 20
-            AND (
-              end_time IS NULL
-              OR CAST(strftime('%H', datetime(end_time, 'unixepoch', 'localtime')) AS INTEGER) >= 2
-              OR strftime('%Y-%m-%d', datetime(end_time, 'unixepoch', 'localtime')) > strftime('%Y-%m-%d', datetime(start_time, 'unixepoch', 'localtime'))
-            )
-            AND (end_time IS NULL OR end_time - start_time >= 18000)
-          )
-        )
-      LIMIT 1
-    `).get(this.serverKey, clientDatabaseId);
-    return Boolean(row);
+    const sql = 'SELECT start_time,end_time FROM sessions WHERE server_key=? AND client_database_id=?';
+    const rows = this.db.prepare(sql).all<{ start_time: number; end_time: number | null }>(this.serverKey, clientDatabaseId);
+    const archived = this.archiveReader.read<{ start_time: number; end_time: number | null }>(sql, this.serverKey, clientDatabaseId);
+    return [...rows, ...archived].some((r) => overlapsNightWindow(r.start_time, r.end_time));
   }
 
   getUserTopChannelDuration(clientDatabaseId: number): number {
@@ -1093,16 +1093,34 @@ export class StatsService {
   }
 
   getUserActiveDays(clientDatabaseId: number): number {
-    const row = this.db.prepare(`
-      SELECT COUNT(DISTINCT day) as days
-      FROM user_daily_activity
-      WHERE server_key = ? AND client_database_id = ?
-    `).get(this.serverKey, clientDatabaseId) as { days: number };
-    return row?.days || 0;
+    return this.getLifetimeActiveDays(clientDatabaseId).length;
+  }
+
+  getLifetimeActiveDays(clientDatabaseId: number): string[] {
+    const sql = 'SELECT day FROM user_daily_activity WHERE server_key=? AND client_database_id=? AND active_seconds>0';
+    const active = this.db.prepare(sql).all<{ day: string }>(this.serverKey, clientDatabaseId);
+    const archived = this.archiveReader.read<{ day: string }>(sql, this.serverKey, clientDatabaseId);
+    return [...new Set([...active, ...archived].map((r) => r.day))].sort();
+  }
+
+  getUserStreak(clientDatabaseId: number): { current: number; max: number } {
+    return this.computeStreak(this.getLifetimeActiveDays(clientDatabaseId));
+  }
+
+  getClientCreated(clientDatabaseId: number): number {
+    return this.identities.getCreated(this.serverKey, clientDatabaseId);
   }
 
   getBondFriendsCount(clientDatabaseId: number): number {
-    return this.getBondFriends(clientDatabaseId).length;
+    const rows = this.db.prepare(`SELECT
+      COALESCE(u.nickname, CASE WHEN b.user1_dbid=? THEN b.user2_name ELSE b.user1_name END) AS name,
+      u.unique_identifier AS uid
+      FROM user_channel_bonds b LEFT JOIN user_online_duration u
+      ON u.server_key=b.server_key AND u.client_database_id=(CASE WHEN b.user1_dbid=? THEN b.user2_dbid ELSE b.user1_dbid END)
+      WHERE b.server_key=? AND (b.user1_dbid=? OR b.user2_dbid=?) AND (b.seconds>0 OR b.last_meet>0)`)
+      .all<{ name: string; uid?: string }>(clientDatabaseId, clientDatabaseId, this.serverKey, clientDatabaseId, clientDatabaseId);
+    const excluded = this.getExcludedBotUids();
+    return rows.filter((r) => !this.isBot(r.uid || r.name, r.name, excluded)).length;
   }
 
   isWeeklyChampionWinner(clientDatabaseId: number): boolean {
@@ -1129,6 +1147,13 @@ export class StatsService {
     `).run(this.serverKey, clientDatabaseId, nickname, Date.now(), ws);
   }
 
+  getChampionWinCount(clientDatabaseId: number): number {
+    const row = this.db.prepare('SELECT COUNT(DISTINCT week_start) AS count FROM champion_history WHERE server_key=? AND client_database_id=?')
+      .get<{ count: number }>(this.serverKey, clientDatabaseId);
+    // 迁移前只有当前获奖者记录时仍保留“一次”资格，但不虚构多次胜出。
+    return Math.max(row?.count ?? 0, this.isWeeklyChampionWinner(clientDatabaseId) ? 1 : 0);
+  }
+
   /**
    * 把超期历史数据迁移到独立的归档库。
    *
@@ -1149,6 +1174,10 @@ export class StatsService {
     archivedChannelDays: number;
     archivedUserDays: number;
   } {
+    if (this.db.filePath !== ':memory:' && path.resolve(archiveDbPath) === path.resolve(this.db.filePath)) throw new Error('归档库必须与主数据库使用不同路径');
+    this.archiveReader.filePath = archiveDbPath;
+    this.db.prepare("INSERT INTO site_config(key,value,updated_at) VALUES('statsArchivePath',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at")
+      .run(path.resolve(archiveDbPath), Date.now());
     const archiveDb = openDatabase(archiveDbPath);
     const nowSec = Math.floor(Date.now() / 1000);
     const sampleCutoffSec = nowSec - sampleRetentionDays * 86400;
@@ -1237,6 +1266,8 @@ export class StatsService {
       this.db.exec('PRAGMA optimize;');
     } finally {
       archiveDb.close();
+      this.archiveReader.invalidate();
+      this.invalidateRankCaches();
     }
 
     return { archivedSamples, archivedSessions, archivedChannelDays, archivedUserDays };

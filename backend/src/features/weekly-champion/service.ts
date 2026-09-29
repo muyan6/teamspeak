@@ -1,6 +1,8 @@
 import type { AppDatabase } from '../../db/database.js';
 import { Ts3ClientWrapper } from '../../ts3/client.js';
 import { StatsService } from '../../services/stats.js';
+import { EventEmitter } from 'node:events';
+import { ChampionRecovery } from './recovery.js';
 
 const MIN_CHECK_INTERVAL_HOURS = 1;
 const MAX_CHECK_INTERVAL_HOURS = 168;
@@ -16,14 +18,19 @@ export interface ChampionConfig {
   lastWinnerNickname: string | null;
 }
 
-export class WeeklyChampionService {
+export class WeeklyChampionService extends EventEmitter {
   private checkInFlight: Promise<{ nickname: string; seconds: number; granted: boolean } | null> | null = null;
+  private readonly recovery: ChampionRecovery;
+  private revision = 0;
 
   constructor(
     private db: AppDatabase,
     private ts3: Ts3ClientWrapper,
     private stats: StatsService
-  ) {}
+  ) {
+    super();
+    this.recovery = new ChampionRecovery(db);
+  }
 
   private defaults(): ChampionConfig {
     return {
@@ -87,6 +94,7 @@ export class WeeklyChampionService {
     if (!this.isValidCheckIntervalHours(data.checkIntervalHours)) {
       throw new Error(`周冠军检查周期需为 ${MIN_CHECK_INTERVAL_HOURS} 到 ${MAX_CHECK_INTERVAL_HOURS} 小时的整数`);
     }
+    this.revision += 1;
     const serverKey = this.stats.getServerKey();
     const cfg = this.getConfigForServer(serverKey);
     this.db
@@ -109,7 +117,9 @@ export class WeeklyChampionService {
         cfg.lastWinnerNickname,
         Date.now()
       );
-    return this.getConfigForServer(serverKey);
+    const result = this.getConfigForServer(serverKey);
+    this.emit('configChanged');
+    return result;
   }
 
   async saveConfigWithRevoke(data: {
@@ -117,17 +127,31 @@ export class WeeklyChampionService {
     serverGroupId: number | null;
     checkIntervalHours: number;
   }): Promise<ChampionConfig> {
+    const serverKey = this.stats.getServerKey();
+    const generation = this.ts3.getGeneration?.();
+    if (this.checkInFlight) await this.checkInFlight;
+    if (this.db.closed || serverKey !== this.stats.getServerKey() || generation !== this.ts3.getGeneration?.()) throw new Error('服务器已切换，请重试');
     const current = this.getConfig();
     const nextGroupId = data.enabled === 1 ? data.serverGroupId : null;
     const needsRevoke = current.lastWinnerClientDbId !== null
       && (data.enabled === 0 || current.serverGroupId !== nextGroupId);
+    if (data.enabled === 0 || current.serverGroupId !== nextGroupId) {
+      for (const pending of this.recovery.list(serverKey)) {
+        if (!await this.ts3.removeClientFromServerGroup(pending.groupId, pending.dbid)) throw new Error('旧周冠军服务器组回收失败，请稍后重试');
+        if (this.db.closed || serverKey !== this.stats.getServerKey() || generation !== this.ts3.getGeneration?.()) throw new Error('服务器已切换，请重试');
+        this.recovery.forget(serverKey, pending.groupId, pending.dbid);
+      }
+    }
     if (needsRevoke && !await this.revokeCurrentWinner(current)) {
       throw new Error('旧周冠军服务器组回收失败，请稍后重试');
     }
+    if (this.db.closed || serverKey !== this.stats.getServerKey() || generation !== this.ts3.getGeneration?.()) throw new Error('服务器已切换，请重试');
     return this.saveConfig(data);
   }
 
   private async revokeCurrentWinner(config: ChampionConfig): Promise<boolean> {
+    const serverKey = this.stats.getServerKey();
+    const generation = this.ts3.getGeneration?.();
     if (config.lastWinnerClientDbId === null) return true;
     if (config.serverGroupId && config.serverGroupId > 0) {
       try {
@@ -137,11 +161,12 @@ export class WeeklyChampionService {
         return false;
       }
     }
+    if (this.db.closed || serverKey !== this.stats.getServerKey() || generation !== this.ts3.getGeneration?.()) return false;
     this.db.prepare(
       `UPDATE champion_config
        SET last_winner_client_db_id = NULL, last_winner_nickname = NULL
        WHERE server_key = ?`
-    ).run(this.stats.getServerKey());
+    ).run(serverKey);
     return true;
   }
 
@@ -163,6 +188,10 @@ export class WeeklyChampionService {
 
   private async checkInternal(): Promise<{ nickname: string; seconds: number; granted: boolean } | null> {
     const serverKey = this.stats.getServerKey();
+    const generation = this.ts3.getGeneration?.();
+    const revision = this.revision;
+    const isCurrent = (): boolean => !this.db.closed && serverKey === this.stats.getServerKey()
+      && generation === this.ts3.getGeneration?.() && revision === this.revision;
     const cfg = this.getConfigForServer(serverKey);
     if (!cfg.enabled || !cfg.serverGroupId) return null;
 
@@ -170,11 +199,21 @@ export class WeeklyChampionService {
     if (!top) return null;
 
     const clientDbId = top.clientDatabaseId;
+    for (const pending of this.recovery.list(serverKey)) {
+      if (pending.groupId === cfg.serverGroupId && (pending.dbid === clientDbId || pending.dbid === cfg.lastWinnerClientDbId)) continue;
+      if (!isCurrent()) return null;
+      const removed = await this.ts3.removeClientFromServerGroup(pending.groupId, pending.dbid);
+      if (!isCurrent()) return null;
+      if (!removed) return { nickname: top.nickname, seconds: top.seconds, granted: false };
+      this.recovery.forget(serverKey, pending.groupId, pending.dbid);
+    }
 
     let granted = false;
     const alreadyWinner = cfg.lastWinnerClientDbId === clientDbId;
     if (!alreadyWinner) {
+      this.recovery.record(serverKey, cfg.serverGroupId, clientDbId);
       granted = await this.ts3.addClientToServerGroup(cfg.serverGroupId, clientDbId);
+      if (!isCurrent()) return null;
       if (!granted) {
         this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
         return { nickname: top.nickname, seconds: top.seconds, granted: false };
@@ -183,6 +222,7 @@ export class WeeklyChampionService {
       // 先确认新冠军已获得权限，再移除旧冠军；移除失败时保留旧状态，以便下一轮重试。
       if (cfg.lastWinnerClientDbId) {
         const removed = await this.ts3.removeClientFromServerGroup(cfg.serverGroupId, cfg.lastWinnerClientDbId);
+        if (!isCurrent()) return null;
         if (!removed) {
           console.warn(`[champion] 移除旧周冠军权限未成功，将在下一轮重试: dbid=${cfg.lastWinnerClientDbId}`);
           this.db.prepare('UPDATE champion_config SET last_check_time = ? WHERE server_key = ?').run(Date.now(), serverKey);
@@ -191,6 +231,8 @@ export class WeeklyChampionService {
       }
     }
 
+    if (!isCurrent()) return null;
+
     this.db
       .prepare(
         `UPDATE champion_config
@@ -198,6 +240,7 @@ export class WeeklyChampionService {
          WHERE server_key = ?`
       )
       .run(Date.now(), clientDbId, top.nickname, serverKey);
+    this.recovery.forget(serverKey, cfg.serverGroupId, clientDbId);
 
     if (typeof this.stats.recordChampionWinner === 'function') {
       const weekStart = typeof this.stats.calendarWeekStartKey === 'function'

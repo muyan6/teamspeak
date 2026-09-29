@@ -39,4 +39,8 @@ export class SiteConfigStore {
   setJson(key: string, value: unknown): void {
     this.set(key, JSON.stringify(value));
   }
+
+  transaction<T>(action: () => T): T {
+    return this.db.transaction(action)();
+  }
 }

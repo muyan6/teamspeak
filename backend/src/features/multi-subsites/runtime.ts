@@ -9,6 +9,7 @@ import { SiteConfigStore } from '../../db/site-config.js';
 import { AchievementService } from '../achievements/service.js';
 import { ElasticChannelService } from '../elastic-channels/service.js';
 import { WeeklyChampionService } from '../weekly-champion/service.js';
+import { ChampionScheduler } from '../weekly-champion/scheduler.js';
 import { adminAuth } from '../../api/middleware.js';
 import { AuthService, type CredentialCipher } from '../../services/auth.js';
 import { DashboardService } from '../../services/dashboard.js';
@@ -43,9 +44,9 @@ class ManagedSubsiteRuntime {
   private readonly elastic: ElasticChannelService;
   private readonly champion: WeeklyChampionService;
   private readonly achievement: AchievementService;
-  /** 只存放 setInterval 句柄；setTimeout（周冠军/初始归档）单独用 championTimer / initialArchiveTimer 管理。 */
+  /** 周期句柄单独回收；周冠军由可重新排期的调度器管理。 */
   private readonly intervalTimers: NodeJS.Timeout[] = [];
-  private championTimer?: NodeJS.Timeout;
+  private readonly championScheduler: ChampionScheduler;
   private initialArchiveTimer?: NodeJS.Timeout;
   private stopped = false;
 
@@ -61,7 +62,7 @@ class ManagedSubsiteRuntime {
     const config: AppConfig = {
       ...rootConfig,
       ts3: { host: subsite.ts3Host, queryPort: subsite.queryPort, serverPort: subsite.serverPort, serverId: subsite.serverId, username: subsite.username, password: subsite.password },
-      publicServer: { host: subsite.publicHost, port: subsite.publicPort },
+      publicServer: { host: subsite.publicHost, port: subsite.publicPort, hostConfigured: true, portConfigured: true },
       site: { ...rootConfig.site, title: subsite.displayName, serverName: subsite.displayName, slug: subsite.slug, domain: subsite.domain },
     };
     const store = new SiteConfigStore(this.db);
@@ -71,6 +72,7 @@ class ManagedSubsiteRuntime {
     const auth = new AuthService(subsite.adminPassword, createHmac('sha256', rootConfig.jwtSecret).update(`subsite:${subsite.id}`).digest('hex'));
     this.elastic = new ElasticChannelService(this.db, this.ts3, credentialCipher, () => this.stats.getServerKey());
     this.champion = new WeeklyChampionService(this.db, this.ts3, this.stats);
+    this.championScheduler = new ChampionScheduler(this.champion, this.ts3);
     this.achievement = new AchievementService(this.db, this.ts3, this.stats);
     this.monitor = new MonitorService(this.ts3, this.stats, this.db, rootConfig.collectIntervalMs, rootConfig.sampleIntervalMs);
     const dashboard = new DashboardService(config, this.ts3, this.stats, store, this.elastic, this.achievement);
@@ -113,7 +115,7 @@ class ManagedSubsiteRuntime {
       void this.safeRun(() => this.runArchive(archiveDbPath));
     }, 10_000);
     this.initialArchiveTimer.unref();
-    void this.runChampionAndSchedule();
+    this.championScheduler.start();
   }
 
   stop(): void {
@@ -121,10 +123,7 @@ class ManagedSubsiteRuntime {
     this.monitor.stop();
     this.ts3.stop();
     for (const timer of this.intervalTimers.splice(0)) clearInterval(timer);
-    if (this.championTimer) {
-      clearTimeout(this.championTimer);
-      this.championTimer = undefined;
-    }
+    this.championScheduler.stop();
     if (this.initialArchiveTimer) {
       clearTimeout(this.initialArchiveTimer);
       this.initialArchiveTimer = undefined;
@@ -133,9 +132,11 @@ class ManagedSubsiteRuntime {
   }
 
   private async syncClientDirectory(): Promise<void> {
+    const generation = this.ts3.getGeneration();
+    const serverKey = this.stats.getServerKey();
     try {
       const clients = await this.ts3.getClientDbList();
-      if (clients.length > 0) {
+      if (!this.stopped && generation === this.ts3.getGeneration() && serverKey === this.stats.getServerKey() && clients.length > 0) {
         const updated = this.stats.syncClientIdentities(clients);
         console.log(`[ts3:${this.subsite.slug}] 成员数据库同步完成: ${clients.length} 人，更新 ${updated} 条本地身份记录`);
       }
@@ -157,19 +158,6 @@ class ManagedSubsiteRuntime {
     if (res.archivedSamples > 0 || res.archivedSessions > 0 || res.archivedChannelDays > 0 || res.archivedUserDays > 0) {
       console.log(`[archive:${this.subsite.slug}] 历史数据已归档: samples=${res.archivedSamples}, sessions=${res.archivedSessions}`);
     }
-  }
-
-  private async runChampionAndSchedule(): Promise<void> {
-    if (this.stopped) return;
-    await this.safeRun(async () => {
-      if (this.ts3.connected) await this.champion.check();
-    });
-    if (this.stopped) return;
-    const hours = this.champion.getConfig().checkIntervalHours;
-    // 与 WeeklyChampionService 的合法区间保持一致（1..168 小时），避免脏数据产生超长定时器。
-    const intervalHours = Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24;
-    this.championTimer = setTimeout(() => void this.runChampionAndSchedule(), intervalHours * 3600 * 1000);
-    this.championTimer.unref();
   }
 
   private async safeRun(action: () => Promise<void>): Promise<void> {

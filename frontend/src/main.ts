@@ -8,16 +8,13 @@ import '@phosphor-icons/web/fill';
 import '@phosphor-icons/web/duotone';
 import './style.css';
 
-import HomeView from './views/HomeView.vue';
-import ProfileView from './views/ProfileView.vue';
-import AdminModal from './components/AdminModal.vue';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'home', component: HomeView },
-    { path: '/profile', name: 'profile', component: ProfileView },
-    { path: '/admin', name: 'admin', component: AdminModal },
+    { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
+    { path: '/profile', name: 'profile', component: () => import('./views/ProfileView.vue') },
+    { path: '/admin', name: 'admin', component: () => import('./components/AdminModal.vue') },
   ],
 });
 

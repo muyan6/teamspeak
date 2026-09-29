@@ -34,8 +34,13 @@ export class MockTs3Server {
 
   constructor(private port = 10011) {}
 
+  get queryPort(): number {
+    const address = this.server?.address();
+    return address && typeof address !== 'string' ? address.port : this.port;
+  }
+
   start(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.server = net.createServer((socket) => {
         socket.write(WELCOME);
         socket.setEncoding('utf8');
@@ -62,6 +67,7 @@ export class MockTs3Server {
           socket.destroy();
         });
       });
+      this.server.once('error', reject);
       this.server.listen(this.port, '127.0.0.1', () => resolve());
     });
   }

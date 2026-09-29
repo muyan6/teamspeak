@@ -166,6 +166,7 @@ async function kick(clid: number) {
 async function ban(c: AdminClient) {
   if (!window.confirm(`确定封禁用户「${c.nickname}」？`)) return;
   const input = window.prompt('封禁时长（秒，留空为永久）：');
+  if (input === null) return;
   const normalizedInput = input?.trim() ?? '';
   let time: number | undefined;
   if (normalizedInput !== '') {
@@ -193,6 +194,7 @@ async function move(clid: number) {
     return;
   }
   const password = window.prompt('目标频道密码（无密码请留空）：');
+  if (password === null) return;
   try {
     await api.moveClient(clid, cid, password && password.trim() !== '' ? password.trim() : undefined);
     moveSel.value[clid] = 0;

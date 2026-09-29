@@ -22,7 +22,7 @@ import { WsHub } from './ws/hub.js';
 import { MultiSubsiteRegistry } from './features/multi-subsites/service.js';
 import { MultiSubsiteRuntimeManager } from './features/multi-subsites/runtime.js';
 import { createHostSelectedApiRouter, createMultiSubsitePlatformRouter, resolveRequestHost } from './features/multi-subsites/host-router.js';
-import { syncTs3ConfigToEnv } from './env-file.js';
+import { ChampionScheduler } from './features/weekly-champion/scheduler.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -82,13 +82,7 @@ async function main(): Promise<void> {
     publicServer: config.publicServer,
     credentialCipher,
     persistAdminPasswordHash: (passwordHash) => configStore.set('adminPassword', passwordHash),
-    persistTs3Config: (cfg) => {
-      try {
-        syncTs3ConfigToEnv(cfg);
-      } catch (e) {
-        console.warn('[config] 同步 TS3 配置到 .env 失败', e);
-      }
-    },
+
   });
   const subsiteRegistry = new MultiSubsiteRegistry(db, config.platform.baseDomain, credentialCipher);
   const subsiteManager = new MultiSubsiteRuntimeManager(config, subsiteRegistry, wsHub, credentialCipher);
@@ -146,14 +140,14 @@ async function main(): Promise<void> {
   startDataArchiveTimer(stats, config);
 
   // 周期任务：周冠军检测（每次执行后按当前配置的间隔重新调度）
-  scheduleChampionCheck(champion);
+  new ChampionScheduler(champion, ts3).start();
 
   // 连接 TS3
   ts3.on('connected', () => {
     console.log('[ts3] ServerQuery 已连接');
     monitor.start();
     const syncTimer = setTimeout(() => {
-      if (ts3.connected) void syncClientDirectory(ts3, stats);
+      if (ts3.connected) void syncClientDirectory(ts3, stats).catch((error) => console.error('[ts3] 成员同步失败:', error));
     }, 1000);
     syncTimer.unref();
   });
@@ -202,8 +196,10 @@ function startDataArchiveTimer(stats: StatsService, config: AppConfig): void {
 }
 
 async function syncClientDirectory(ts3: Ts3ClientWrapper, stats: StatsService): Promise<void> {
+  const generation = ts3.getGeneration();
+  const serverKey = stats.getServerKey();
   const clients = await ts3.getClientDbList();
-  if (clients.length === 0) return;
+  if (generation !== ts3.getGeneration() || serverKey !== stats.getServerKey() || clients.length === 0) return;
   const updated = stats.syncClientIdentities(clients);
   console.log(`[ts3] 成员数据库同步完成: ${clients.length} 人，更新 ${updated} 条本地身份记录`);
 }
@@ -250,24 +246,6 @@ function elasticTimer(elastic: ElasticChannelService): void {
   void run();
   const timer = setInterval(run, 60000);
   timer.unref();
-}
-
-function scheduleChampionCheck(champion: WeeklyChampionService): void {
-  const run = async (): Promise<void> => {
-    try {
-      const r = await champion.check();
-      if (r) console.log(`[champion] 周冠军检测: ${r.nickname} granted=${r.granted}`);
-    } catch (err) {
-      console.error('[champion] 检测失败:', (err as Error).message);
-    }
-    const hours = champion.getConfig().checkIntervalHours;
-    const interval = (Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24) * 3600 * 1000;
-    const timer = setTimeout(() => {
-      void run();
-    }, interval);
-    timer.unref();
-  };
-  void run();
 }
 
 function achievementTimer(achievement: AchievementService): void {

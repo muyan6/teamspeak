@@ -50,16 +50,30 @@ async function request<T>(path: string, options: RequestInit = {}, clearSessionO
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers, cache: 'no-store' });
-  if (!res.ok) {
-    if (res.status === 401 && clearSessionOnUnauthorized) {
-      clearAuth();
+  const requestToken = authToken;
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const timeoutMs = path === '/achievements/check' ? 300000 : 15000;
+  const timeout = setTimeout(abort, timeoutMs);
+  try {
+    const res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal, cache: 'no-store' });
+    if (!res.ok) {
+      if (res.status === 401 && clearSessionOnUnauthorized && requestToken === authToken) clearAuth();
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const message = (body?.error as string) || (body?.message as string) || `请求失败 (${res.status})`;
+      throw new ApiError(message, res.status, body);
     }
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const message = (body?.error as string) || (body?.message as string) || `请求失败 (${res.status})`;
-    throw new ApiError(message, res.status, body);
+    // 超时覆盖响应体读取，而不仅是响应头到达之前。
+    return await res.json() as T;
+  } catch (error) {
+    if (controller.signal.aborted) throw new ApiError('请求超时或已取消，请重试', 0);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
   }
-  return res.json() as Promise<T>;
 }
 
 export const api = {

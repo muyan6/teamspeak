@@ -28,7 +28,7 @@ esac
 
 cd "$SCRIPT_DIR"
 
-if [[ ! -d .git ]]; then
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "Error: update.sh must be run from a Git checkout."
   exit 1
 fi
@@ -57,7 +57,15 @@ restart_backend=false
 
 echo "Fetching updates..."
 git fetch --prune origin
-before="$(git rev-parse HEAD)"
+state_file="$(git rev-parse --git-path ts3-monitor-last-deployed)"
+# 首次先保存当前部署基线；构建/重启失败时绝不推进它。
+if [[ ! -f "$state_file" ]]; then git rev-parse HEAD > "$state_file"; fi
+before="$(cat "$state_file")"
+if ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+  echo "Error: saved deployment commit is invalid. Use --full to rebuild."
+  if [[ "$FULL_UPDATE" != true ]]; then exit 1; fi
+  before="$(git rev-parse HEAD)"
+fi
 git pull --ff-only
 after="$(git rev-parse HEAD)"
 
@@ -133,13 +141,19 @@ fi
 if [[ "$restart_backend" == true ]]; then
   if ! command -v pm2 >/dev/null 2>&1; then
     echo "Warning: backend was updated, but PM2 is not installed. Start or restart the service manually."
+    exit 3
   elif pm2 describe ts3-monitor >/dev/null 2>&1; then
     echo "Restarting PM2 process ts3-monitor..."
     pm2 restart ts3-monitor --update-env
   else
     echo "Warning: backend was updated, but PM2 process ts3-monitor was not found. Start it manually."
+    exit 3
   fi
 fi
+
+# 原子更新成功版本。下一次默认运行将补做上次失败的所有阶段。
+printf '%s\n' "$after" > "${state_file}.tmp"
+mv -- "${state_file}.tmp" "$state_file"
 
 if [[ "$before" == "$after" && "$FULL_UPDATE" == false && "$install_backend" == false && "$install_frontend" == false && "$build_backend" == false && "$build_frontend" == false ]]; then
   echo "Already up to date. No build or restart was required."

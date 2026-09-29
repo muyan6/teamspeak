@@ -1,6 +1,7 @@
 import type { Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute, pruneRateLimitMap } from '../../api/route-utils.js';
+import { isIP } from 'node:net';
 
 const DATA_WINDOW_MS = 60 * 1000;
 /**
@@ -48,10 +49,12 @@ export function registerDashboardRoutes(router: Router, deps: ApiDeps): void {
   }));
 
   router.get('/server-info', (_req, res) => {
+    const server = deps.dashboard.getPublicServer?.() ?? deps.publicServer;
+    const host = isIP(server.host) === 6 ? `[${server.host}]` : server.host;
     res.json({
-      host: deps.publicServer.host,
-      port: deps.publicServer.port,
-      quickConnectUrl: `ts3server://${deps.publicServer.host}?port=${deps.publicServer.port}`,
+      host: server.host,
+      port: server.port,
+      quickConnectUrl: `ts3server://${host}?port=${server.port}`,
     });
   });
 }

@@ -60,6 +60,12 @@ export interface ClientDatabaseData {
   totalConnections: number;
 }
 
+export interface Ts3Snapshot {
+  state: ServerStateData | null;
+  clients: OnlineClientData[];
+  channels: ChannelData[];
+}
+
 export class Ts3ClientWrapper extends EventEmitter {
   private ts3: TeamSpeak | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -67,6 +73,10 @@ export class Ts3ClientWrapper extends EventEmitter {
   private connectionVersion = 0;
   private connectingVersion: number | null = null;
   private stopped = false;
+  private snapshotCache: { version: number; expiresAt: number; value: Ts3Snapshot } | null = null;
+  private snapshotInFlight: { version: number; promise: Promise<Ts3Snapshot> } | null = null;
+  private readonly dbInfoCache = new Map<number, { expiresAt: number; value: ClientDatabaseData }>();
+  private groupCache: { expiresAt: number; value: Array<{ sgid: number; name: string }> } | null = null;
   connected = false;
   lastError: string | null = null;
 
@@ -84,6 +94,41 @@ export class Ts3ClientWrapper extends EventEmitter {
     return { ...this.config };
   }
 
+  getGeneration(): number {
+    return this.connectionVersion;
+  }
+
+  invalidateSnapshot(): void {
+    this.snapshotCache = null;
+  }
+
+  private invalidateConnectionCaches(): void {
+    this.snapshotCache = null;
+    this.snapshotInFlight = null;
+    this.dbInfoCache.clear();
+    this.groupCache = null;
+  }
+
+  private async closeConnection(connection: TeamSpeak, force = false): Promise<void> {
+    connection.removeAllListeners();
+    // 库仍可能异步发出 error；清理后也必须保留监听器。
+    connection.on?.('error', () => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      if (!force) {
+        await Promise.race([
+          Promise.resolve().then(() => connection.quit()),
+          new Promise<void>((resolve) => { timer = setTimeout(resolve, 500); timer.unref(); }),
+        ]);
+      }
+    } catch {
+      // quit 是 Promise，同步 try/catch 捕获不到其拒绝。
+    } finally {
+      if (timer) clearTimeout(timer);
+      try { connection.forceQuit?.(); } catch { /* 已关闭 */ }
+    }
+  }
+
   updateConfig(newConfig: Partial<Ts3ConnectionConfig>): void {
     this.config = { ...this.config, ...newConfig };
     this.stop();
@@ -99,18 +144,14 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   stop(): void {
     this.connectionVersion += 1;
+    this.invalidateConnectionCaches();
     this.stopped = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ts3) {
-      try {
-        this.ts3.removeAllListeners();
-        void this.ts3.quit();
-      } catch {
-        /* ignore */
-      }
+      void this.closeConnection(this.ts3);
       this.ts3 = null;
     }
     this.connected = false;
@@ -118,7 +159,7 @@ export class Ts3ClientWrapper extends EventEmitter {
 
   private async connect(): Promise<void> {
     const version = this.connectionVersion;
-    if (this.connectingVersion === version || this.stopped) return;
+    if (this.connectingVersion === version || this.stopped || this.connected) return;
     if (!this.config.host) return;
     this.connectingVersion = version;
     const isCurrentConnection = (): boolean => !this.stopped && version === this.connectionVersion;
@@ -128,7 +169,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       // Runtime event subscriptions must be registered afterwards, otherwise this library queues them before login.
       const useServerId = Number.isInteger(this.config.serverId) && (this.config.serverId as number) > 0;
       connection = await TeamSpeak.connect({
-        host: this.config.host,
+        host: this.config.host.replace(/^\[|\]$/g, ''),
         queryport: this.config.queryPort,
         serverport: useServerId ? undefined : this.config.serverPort,
         username: this.config.username,
@@ -140,7 +181,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       const ts3 = connection;
 
       if (!isCurrentConnection()) {
-        void ts3.quit();
+        void this.closeConnection(ts3);
         return;
       }
 
@@ -152,12 +193,15 @@ export class Ts3ClientWrapper extends EventEmitter {
         this.connected = false;
         if (this.ts3 === ts3) this.ts3 = null;
         if (this.connectingVersion === version) this.connectingVersion = null;
+        this.connectionVersion += 1;
+        this.invalidateConnectionCaches();
+        void this.closeConnection(ts3, true);
         if (error) {
           this.lastError = error.message;
           if (this.listenerCount('error') > 0) this.emit('error', error);
         }
         this.emit('disconnected');
-        void this.scheduleReconnect(version);
+        void this.scheduleReconnect(this.connectionVersion);
       };
 
       ts3.on('close', () => terminate());
@@ -170,12 +214,7 @@ export class Ts3ClientWrapper extends EventEmitter {
       this.emit('connected');
     } catch (err) {
       if (connection) {
-        try {
-          connection.removeAllListeners();
-          void connection.quit();
-        } catch {
-          /* ignore */
-        }
+        void this.closeConnection(connection);
       }
       if (!isCurrentConnection()) return;
       this.lastError = (err as Error).message;
@@ -209,16 +248,19 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   private async executeQuery<T>(operation: () => Promise<T>): Promise<T> {
+    const version = this.connectionVersion;
     let timer: NodeJS.Timeout | null = null;
     try {
-      return await Promise.race([
+      const value = await Promise.race([
         operation(),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error('TS3 查询响应超时')), Ts3ClientWrapper.QUERY_TIMEOUT_MS);
         }),
       ]);
+      if (version !== this.connectionVersion || this.stopped) throw new Error('TS3 连接已切换，已丢弃旧查询');
+      return value;
     } catch (error) {
-      if ((error as Error).message === 'TS3 查询响应超时') this.handleQueryTimeout(error as Error);
+      if (version === this.connectionVersion && (error as Error).message === 'TS3 查询响应超时') this.handleQueryTimeout(error as Error);
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
@@ -231,12 +273,9 @@ export class Ts3ClientWrapper extends EventEmitter {
     this.ts3 = null;
     this.connected = false;
     this.lastError = error.message;
-    try {
-      ts3.removeAllListeners();
-      void ts3.quit();
-    } catch {
-      /* ignore */
-    }
+    this.connectionVersion += 1;
+    this.invalidateConnectionCaches();
+    void this.closeConnection(ts3, true);
     if (this.listenerCount('error') > 0) this.emit('error', error);
     this.emit('disconnected');
     void this.scheduleReconnect(this.connectionVersion);
@@ -256,11 +295,31 @@ export class Ts3ClientWrapper extends EventEmitter {
     }
   }
 
-  async getClients(): Promise<OnlineClientData[]> {
+  async getSnapshot(force = false): Promise<Ts3Snapshot> {
+    const version = this.connectionVersion;
+    if (!force && this.snapshotCache?.version === version && this.snapshotCache.expiresAt > Date.now()) return this.snapshotCache.value;
+    if (this.snapshotInFlight?.version === version) return this.snapshotInFlight.promise;
+    const promise = (async (): Promise<Ts3Snapshot> => {
+      const state = await this.getServerState();
+      if (!state) return { state: null, clients: [], channels: [] };
+      const channels = await this.getChannels();
+      const clients = await this.getClients(channels);
+      if (version !== this.connectionVersion || this.stopped) throw new Error('TS3 快照已过期');
+      const value = { state, clients, channels };
+      this.snapshotCache = { version, expiresAt: Date.now() + 10_000, value };
+      return value;
+    })().finally(() => {
+      if (this.snapshotInFlight?.promise === promise) this.snapshotInFlight = null;
+    });
+    this.snapshotInFlight = { version, promise };
+    return promise;
+  }
+
+  async getClients(knownChannels?: ChannelData[]): Promise<OnlineClientData[]> {
     const clients = await this.executeQuery(() => this.requireTs3().clientList());
-    const channels = await this.executeQuery(() => this.requireTs3().channelList());
+    const channels = knownChannels ?? await this.getChannels();
     const channelNames = new Map<number, string>();
-    for (const ch of channels) channelNames.set(parseInt(ch.cid, 10), ch.name);
+    for (const ch of channels) channelNames.set(ch.cid, ch.name);
 
     const regular = clients.filter((c) => c.type === 0);
 
@@ -291,10 +350,14 @@ export class Ts3ClientWrapper extends EventEmitter {
   }
 
   async getServerGroups(): Promise<Array<{ sgid: number; name: string }>> {
+    if (this.groupCache && this.groupCache.expiresAt > Date.now()) return this.groupCache.value;
+    const version = this.connectionVersion;
     const groups = await this.executeQuery(() => this.requireTs3().serverGroupList());
-    return groups
+    const value = groups
       .filter((g) => g.type === 1)
       .map((g) => ({ sgid: parseInt(g.sgid, 10), name: g.name }));
+    if (version === this.connectionVersion) this.groupCache = { value, expiresAt: Date.now() + 300_000 };
+    return value;
   }
 
   async getChannelGroups(): Promise<Array<{ cgid: number; name: string }>> {
@@ -321,11 +384,13 @@ export class Ts3ClientWrapper extends EventEmitter {
     totalConnections: number;
     nickname: string;
   } | null> {
+    const cached = this.dbInfoCache.get(dbId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
     try {
       const infos = await this.executeQuery(() => this.requireTs3().clientDbInfo(String(dbId)));
       const info = infos[0];
       if (!info) return null;
-      return {
+      const value = {
         clientDatabaseId: Number(info.clientDatabaseId),
         uniqueIdentifier: info.clientUniqueIdentifier,
         created: info.clientCreated,
@@ -333,6 +398,9 @@ export class Ts3ClientWrapper extends EventEmitter {
         totalConnections: info.clientTotalconnections,
         nickname: info.clientNickname,
       };
+      if (this.dbInfoCache.size >= 10_000) this.dbInfoCache.delete(this.dbInfoCache.keys().next().value!);
+      this.dbInfoCache.set(dbId, { value, expiresAt: Date.now() + 60_000 });
+      return value;
     } catch {
       return null;
     }

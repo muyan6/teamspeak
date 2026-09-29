@@ -9,11 +9,12 @@ export class WsHub {
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(server: Server, path = '/ws') {
-    this.wss = new WebSocketServer({ server, path });
+    this.wss = new WebSocketServer({ server, path, maxPayload: 16 * 1024 });
     this.wss.on('error', (err) => {
       if (server.listening) console.error(`[ws] 服务错误: ${err.message}`);
     });
     this.wss.on('connection', (ws, request) => {
+      if (this.clients.size >= 5000) { ws.close(1013, '连接数量已达上限'); return; }
       // 与 HTTP 侧使用同一套归一化逻辑，兼容 IPv6 字面量（[::1]:4321）。
       const host = normalizeHost(request.headers.host || '');
       this.clients.set(ws, host);
@@ -97,6 +98,8 @@ export class WsHub {
     const msg = JSON.stringify({ event, data });
     for (const ws of clients) {
       if (ws.readyState === ws.OPEN) {
+        // 状态消息可由下一次更新补齐，慢连接不应无限占用服务端内存。
+        if (ws.bufferedAmount > 1024 * 1024) { ws.terminate(); this.clients.delete(ws); continue; }
         try {
           ws.send(msg);
         } catch {
@@ -115,6 +118,8 @@ export class WsHub {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    for (const client of this.clients.keys()) client.terminate();
+    this.clients.clear();
     this.wss.close();
   }
 }

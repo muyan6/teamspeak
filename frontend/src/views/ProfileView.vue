@@ -18,6 +18,7 @@ const badgeFilter = ref<'all' | 'milestone' | 'behavior' | 'custom'>('all');
 let suggestTimer: ReturnType<typeof setTimeout> | null = null;
 let blurTimer: ReturnType<typeof setTimeout> | null = null;
 let suggestRequestId = 0;
+let searchRequestId = 0;
 
 interface HeatmapDay {
   date: string;
@@ -161,14 +162,21 @@ function formatDate(ts: number): string {
 async function search() {
   const name = nickname.value.trim();
   if (!name) return;
+  const uid = selectedUid.value;
+  const requestId = ++searchRequestId;
+  ++suggestRequestId;
+  if (suggestTimer) clearTimeout(suggestTimer);
   loading.value = true;
   error.value = '';
   profile.value = null;
   suggestions.value = [];
   try {
-    profile.value = await api.getUserStats(name, selectedUid.value || undefined);
-    router.replace({ query: selectedUid.value ? { nickname: name, uid: selectedUid.value } : { nickname: name } });
+    const result = await api.getUserStats(name, uid || undefined);
+    if (requestId !== searchRequestId) return;
+    profile.value = result;
+    void router.replace({ query: uid ? { nickname: name, uid } : { nickname: name } });
   } catch (e) {
+    if (requestId !== searchRequestId) return;
     error.value = (e as Error).message;
     const apiErr = e instanceof ApiError ? e : null;
     const candidates = apiErr?.data?.candidates;
@@ -177,13 +185,14 @@ async function search() {
     } else {
       try {
         const r = await api.suggestNicknames(name);
-        suggestions.value = r.suggestions.filter((s) => s.uid !== selectedUid.value);
+        if (requestId !== searchRequestId) return;
+        suggestions.value = r.suggestions.filter((s) => s.uid !== uid);
       } catch {
-        suggestions.value = [];
+        if (requestId === searchRequestId) suggestions.value = [];
       }
     }
   } finally {
-    loading.value = false;
+    if (requestId === searchRequestId) loading.value = false;
   }
 }
 
@@ -202,6 +211,7 @@ function onBlur() {
 }
 
 function onInput() {
+  ++suggestRequestId;
   selectedUid.value = '';
   if (suggestTimer) clearTimeout(suggestTimer);
   const v = nickname.value.trim();
@@ -249,6 +259,8 @@ watch(
 );
 
 onUnmounted(() => {
+  ++searchRequestId;
+  ++suggestRequestId;
   if (suggestTimer) clearTimeout(suggestTimer);
   if (blurTimer) clearTimeout(blurTimer);
 });

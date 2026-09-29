@@ -399,7 +399,7 @@ describe('成就服务', () => {
     db.close();
   });
 
-  it('停用成就清理时单个成员 TS3 移除失败不应阻断其他成员与本地 grants 清理', async () => {
+  it('停用成就清理逐人完成，并保留失败成员授权供下一轮重试', async () => {
     const db = openDatabase(':memory:');
     const stats = new StatsService(db, 'server-a');
     const ts3 = {
@@ -418,7 +418,10 @@ describe('成就服务', () => {
 
     await service.check();
 
-    // 本地 grants 无论 TS3 远端用户 1 状态如何，都应该成功清除停用条目
+    expect(db.prepare('SELECT client_database_id FROM achievement_grants WHERE server_key = ? AND level_id = ?').all('server-a', level.id))
+      .toEqual([{ client_database_id: 1 }]);
+    ts3.removeClientFromServerGroup = async () => true;
+    await service.check();
     expect(db.prepare('SELECT COUNT(*) as count FROM achievement_grants WHERE server_key = ? AND level_id = ?').get('server-a', level.id)).toEqual({ count: 0 });
     db.close();
   });

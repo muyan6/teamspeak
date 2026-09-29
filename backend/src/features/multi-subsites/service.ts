@@ -1,5 +1,5 @@
 import type { AppDatabase } from '../../db/database.js';
-import { CredentialCipher, hashAdminPassword, isAdminPasswordHash } from '../../services/auth.js';
+import { CredentialCipher, hashAdminPassword, isAdminPasswordHash, MIN_ADMIN_PASSWORD_LENGTH, MAX_ADMIN_PASSWORD_LENGTH } from '../../services/auth.js';
 import { normalizeHost } from '../../net/host.js';
 import { isValidHost } from '../ts3-admin/routes.js';
 
@@ -232,9 +232,10 @@ export class MultiSubsiteRegistry {
     const ts3Host = asText(input.ts3Host);
     const username = asText(input.username) || 'serveradmin';
     const password = String(input.password ?? '');
-    const adminPassword = String(input.adminPassword ?? '');
+    const adminPassword = typeof input.adminPassword === 'string' ? input.adminPassword : '';
     if (!ts3Host || !isValidHost(ts3Host)) throw new Error('TS3 服务器地址格式无效，请填写域名或 IP');
-    if (!adminPassword || adminPassword.length < 8) throw new Error('分站后台密码至少需要 8 个字符');
+    if (adminPassword.length < MIN_ADMIN_PASSWORD_LENGTH) throw new Error('分站后台密码至少需要 8 个字符');
+    if (adminPassword.length > MAX_ADMIN_PASSWORD_LENGTH) throw new Error('分站后台密码最多允许 256 个字符');
     const queryPort = asPort(input.queryPort, 10011);
     const serverPort = asPort(input.serverPort, 9987);
     const serverId = asServerId(input.serverId);
@@ -349,8 +350,9 @@ export class MultiSubsiteRegistry {
   }
 
   resetAdminPassword(id: number, newPassword: unknown): void {
-    const password = String(newPassword ?? '');
-    if (!password || password.length < 8) throw new Error('分站后台密码至少需要 8 个字符');
+    const password = typeof newPassword === 'string' ? newPassword : '';
+    if (password.length < MIN_ADMIN_PASSWORD_LENGTH) throw new Error('分站后台密码至少需要 8 个字符');
+    if (password.length > MAX_ADMIN_PASSWORD_LENGTH) throw new Error('分站后台密码最多允许 256 个字符');
     const result = this.db.prepare('UPDATE managed_subsites SET admin_password = ?, updated_at = ? WHERE id = ?')
       .run(hashAdminPassword(password), Date.now(), id);
     if (!result.changes) throw new Error('分站不存在');

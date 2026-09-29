@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config.js';
-import { buildSiteData, buildTutorial, type DownloadConfig, type SiteData, type SiteInfoConfig, type TutorialConfig, type TutorialData } from '../site.js';
+import { buildSiteData, buildTutorial, type SiteData, type SiteInfoConfig, type TutorialConfig, type TutorialData } from '../site.js';
 import type { StatsService } from './stats.js';
 import type { Ts3ClientWrapper, OnlineClientData, ChannelData } from '../ts3/client.js';
 import type { ElasticChannelService } from '../features/elastic-channels/service.js';
@@ -77,13 +77,18 @@ export class DashboardService {
     private configStore: SiteConfigStore,
     private elastic: ElasticChannelService,
     private achievement: AchievementService
-  ) {}
+  ) {
+    this.ts3.on?.('disconnected', () => this.invalidateCache());
+    this.ts3.on?.('connected', () => this.invalidateCache());
+  }
 
   private readonly cacheTtlMs = 10_000;
   private readonly groupCacheTtlMs = 5 * 60 * 1000;
   private cachedData: { value: DashboardData; expiresAt: number } | null = null;
   private cachedGroupNames: { value: Map<number, string>; expiresAt: number } | null = null;
   private dataInFlight: Promise<DashboardData> | null = null;
+  private revision = 0;
+  private cacheServerKey = '';
   /**
    * 最近一次「已连接」时构建成功的数据。
    * TS3 瞬时抖动（getServerState 返回 null）时用它兜底，避免首页所有榜单
@@ -91,7 +96,41 @@ export class DashboardService {
    */
   private lastConnectedData: DashboardData | null = null;
 
+  invalidateCache(clearHistory = false): void {
+    this.revision += 1;
+    this.cachedData = null;
+    this.cachedGroupNames = null;
+    this.dataInFlight = null;
+    if (clearHistory) this.lastConnectedData = null;
+  }
+
+  getPublicServer(): { host: string; port: number } {
+    const current = this.ts3.getConfig?.() ?? this.config.ts3 ?? { host: this.config.publicServer.host, serverPort: this.config.publicServer.port };
+    const fixedHost = this.config.publicServer.hostConfigured
+      ?? Boolean(this.config.publicServer.host && this.config.publicServer.host !== this.config.ts3?.host);
+    const fixedPort = this.config.publicServer.portConfigured ?? this.config.publicServer.port !== 9987;
+    return {
+      host: fixedHost ? this.config.publicServer.host : current.host,
+      port: fixedPort ? this.config.publicServer.port : current.serverPort,
+    };
+  }
+
+  private content(serverName: string): Pick<DashboardData, 'site' | 'tutorial'> {
+    const config = { ...this.config, publicServer: this.getPublicServer() };
+    const download = this.configStore.getJson<ClientDownloadConfig>('clientDownload', {});
+    const tutorial = this.configStore.getJson<TutorialConfig>('tutorial', {});
+    return {
+      site: buildSiteData(config, serverName, { clientDownload: download.officialUrl, mirrorDownload: download.mirrorUrl,
+        translationDownload: download.translationUrl, version: download.version },
+        this.configStore.getJson<SiteInfoConfig>('siteInfo', {}), this.configStore.get('musicBotUrl') ?? '',
+        this.configStore.get('webClientUrl') ?? '', this.configStore.get('steamBoxUrl') ?? ''),
+      tutorial: buildTutorial(config, tutorial, this.configStore.getUpdatedAt('tutorial') ?? this.configStore.getUpdatedAt('guide') ?? undefined,
+        this.configStore.get('guide') ?? undefined),
+    };
+  }
+
   private async getGroupNames(): Promise<Map<number, string>> {
+    const revision = this.revision;
     const now = Date.now();
     if (this.cachedGroupNames && this.cachedGroupNames.expiresAt > now) {
       return this.cachedGroupNames.value;
@@ -100,7 +139,7 @@ export class DashboardService {
       const groups = await this.ts3.getServerGroups();
       const map = new Map<number, string>();
       for (const g of groups) map.set(g.sgid, g.name);
-      this.cachedGroupNames = { value: map, expiresAt: now + this.groupCacheTtlMs };
+      if (revision === this.revision) this.cachedGroupNames = { value: map, expiresAt: now + this.groupCacheTtlMs };
       return map;
     } catch {
       return this.cachedGroupNames?.value ?? new Map();
@@ -155,29 +194,38 @@ export class DashboardService {
   }
 
   async getData(): Promise<DashboardData> {
+    const serverKey = this.stats.getServerKey?.() ?? '';
+    if (serverKey !== this.cacheServerKey) {
+      this.cacheServerKey = serverKey;
+      this.invalidateCache(true);
+    }
+    const revision = this.revision;
     const now = Date.now();
     if (this.cachedData && this.cachedData.expiresAt > now) return this.cachedData.value;
     if (this.dataInFlight) return this.dataInFlight;
 
-    this.dataInFlight = this.loadData()
+    const loading = this.loadData()
       .then((value) => {
+        if (revision !== this.revision) return this.getData();
         this.cachedData = { value, expiresAt: Date.now() + this.cacheTtlMs };
         if (value.connected) this.lastConnectedData = value;
         return value;
       })
       .finally(() => {
-        this.dataInFlight = null;
+        if (this.dataInFlight === loading) this.dataInFlight = null;
       });
-    return this.dataInFlight;
+    this.dataInFlight = loading;
+    return loading;
   }
 
   private async loadData(): Promise<DashboardData> {
-    const state = await this.ts3.getServerState();
+    const snapshot = this.ts3.getSnapshot ? await this.ts3.getSnapshot() : null;
+    const state = snapshot ? snapshot.state : await this.ts3.getServerState();
     let clients: OnlineClientData[] = [];
     let channels: ChannelData[] = [];
     try {
-      clients = await this.ts3.getClients();
-      channels = await this.ts3.getChannels();
+      clients = snapshot ? snapshot.clients : await this.ts3.getClients();
+      channels = snapshot ? snapshot.channels : await this.ts3.getChannels();
     } catch {
       clients = [];
       channels = [];
@@ -193,6 +241,7 @@ export class DashboardService {
     if (!connected && this.lastConnectedData) {
       return {
         ...this.lastConnectedData,
+        ...this.content(serverName),
         connected: false,
         status: 'success',
         server_name: serverName,
@@ -233,27 +282,11 @@ export class DashboardService {
     const weekTrend = this.stats.getDailyTrends(7);
     const monthTrend = this.stats.getDailyTrends(30);
 
-    // 后台可配置的站点信息、下载链接与教程内容。
-    const clientDownload = this.configStore.getJson<ClientDownloadConfig>('clientDownload', {});
-    const download: DownloadConfig = {
-      clientDownload: clientDownload.officialUrl,
-      mirrorDownload: clientDownload.mirrorUrl,
-      translationDownload: clientDownload.translationUrl,
-      version: clientDownload.version,
-    };
-    const tutorial = this.configStore.getJson<TutorialConfig>('tutorial', {});
-    const tutorialUpdatedAt = this.configStore.getUpdatedAt('tutorial');
-    const legacyGuide = this.configStore.get('guide') ?? undefined;
-    const legacyGuideUpdatedAt = this.configStore.getUpdatedAt('guide');
-    const siteInfo = this.configStore.getJson<SiteInfoConfig>('siteInfo', {});
-    const musicBotUrl = this.configStore.get('musicBotUrl') ?? '';
-    const webClientUrl = this.configStore.get('webClientUrl') ?? '';
-    const steamBoxUrl = this.configStore.get('steamBoxUrl') ?? '';
 
     return {
       status: 'success',
       connected,
-      site: buildSiteData(this.config, serverName, download, siteInfo, musicBotUrl, webClientUrl, steamBoxUrl),
+      ...this.content(serverName),
       server_name: serverName,
       online_count: onlineCount,
       max_clients: maxClients,
@@ -266,7 +299,6 @@ export class DashboardService {
       },
       elastic_channels: this.buildElastic(channels),
       achievements: this.achievement.getHallOfFame(),
-      tutorial: buildTutorial(this.config, tutorial, tutorialUpdatedAt ?? legacyGuideUpdatedAt ?? undefined, legacyGuide),
       cache_time: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
   }

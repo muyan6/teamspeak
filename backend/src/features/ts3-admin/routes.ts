@@ -1,4 +1,5 @@
 import net from 'net';
+import { domainToASCII } from 'node:url';
 import type { RequestHandler, Router } from 'express';
 import type { ApiDeps } from '../../api/router.js';
 import { asyncRoute } from '../../api/route-utils.js';
@@ -14,20 +15,16 @@ export function isValidHost(host: string): boolean {
   if (/[\s/\\?#]/.test(host)) return false;
   if (host.includes('://')) return false;
   if (net.isIP(host)) return true;
-  const bracketMatch = host.match(/^\[([0-9a-fA-F:]+)\](?::(\d{1,5}))?$/);
+  const bracketMatch = host.match(/^\[([0-9a-fA-F:]+)\]$/);
   if (bracketMatch) {
     if (!net.isIPv6(bracketMatch[1])) return false;
-    if (bracketMatch[2] && (Number(bracketMatch[2]) < 1 || Number(bracketMatch[2]) > 65535)) return false;
     return true;
   }
-  try {
-    const url = new URL(`http://${host}`);
-    if (url.pathname !== '/' && url.pathname !== '') return false;
-    if (url.search || url.hash) return false;
-    return Boolean(url.hostname);
-  } catch {
-    return false;
-  }
+  // TCP 的 host 不能携带端口或 URL userinfo；端口由独立字段提供。
+  if (host.includes(':') || host.includes('@')) return false;
+  const domain = domainToASCII(host);
+  return domain.length > 0 && domain.length <= 253
+    && /^(?:[a-zA-Z0-9_](?:[a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?)(?:\.(?:[a-zA-Z0-9_](?:[a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?))*\.?$/.test(domain);
 }
 
 export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: RequestHandler): void {
@@ -63,7 +60,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     // host 会被写入 SQLite 并同步回 .env，若不校验格式，脏值（超长字符串、
     // 含换行/空格的地址）会污染配置文件并导致后续连接出现难排查的失败。
     if (!isValidHost(normalizedHost)) {
-      res.status(400).json({ error: '服务器地址格式无效，请填写域名或 IP（可含端口以外的字符）' });
+      res.status(400).json({ error: '服务器地址格式无效，请填写纯域名或 IP，端口在独立字段填写' });
       return;
     }
     const config = {
@@ -84,6 +81,7 @@ export function registerTs3AdminRoutes(router: Router, deps: ApiDeps, admin: Req
     });
     deps.stats.setServerKey(getTs3ServerKey(config), true);
     deps.ts3.updateConfig(config);
+    deps.dashboard?.invalidateCache?.(true);
     if (deps.persistTs3Config) deps.persistTs3Config(config);
     res.json({
       success: true,

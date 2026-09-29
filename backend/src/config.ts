@@ -69,6 +69,8 @@ export interface AppConfig {
   publicServer: {
     host: string;
     port: number;
+    hostConfigured?: boolean;
+    portConfigured?: boolean;
   };
   site: {
     title: string;
@@ -125,6 +127,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicServer: {
       host: env.TS3_PUBLIC_HOST || ts3Host,
       port: intEnv(env, 'TS3_PUBLIC_PORT', 9987, 1, 65535),
+      hostConfigured: Boolean(env.TS3_PUBLIC_HOST),
+      portConfigured: Boolean(env.TS3_PUBLIC_PORT),
     },
     site: {
       title: env.SITE_TITLE || 'Voice',

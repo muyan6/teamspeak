@@ -84,7 +84,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       serverGroupId: parsedGroupId,
       title: normalizedTitle,
     });
-    void deps.achievement.check();
+    void deps.achievement.check().catch((error) => console.error('[achievement] 自动匹配失败:', error));
     res.status(201).json(created);
   }));
 
@@ -123,7 +123,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       res.status(404).json({ error: '成就等级不存在' });
       return;
     }
-    void deps.achievement.check();
+    void deps.achievement.check().catch((error) => console.error('[achievement] 自动匹配失败:', error));
     res.json({ success: true });
   }));
 
@@ -182,7 +182,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       sortOrder: parseSortOrder(sortOrder, 100),
     });
 
-    void deps.achievement.check();
+    void deps.achievement.check().catch((error) => console.error('[achievement] 自动匹配失败:', error));
     res.status(201).json(created);
   }));
 
@@ -241,7 +241,7 @@ export function registerAchievementRoutes(router: Router, deps: ApiDeps, admin: 
       return;
     }
 
-    void deps.achievement.check();
+    void deps.achievement.check().catch((error) => console.error('[achievement] 自动匹配失败:', error));
     res.json({ success: true });
   }));
 
